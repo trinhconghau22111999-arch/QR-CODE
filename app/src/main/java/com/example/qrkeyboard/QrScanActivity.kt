@@ -1,6 +1,7 @@
 package com.example.qrkeyboard
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
@@ -87,6 +88,22 @@ class QrScanActivity : AppCompatActivity() {
         } else {
             requestPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
+    }
+
+    /** Vi Activity nay khai bao launchMode="singleTop" trong Manifest, neu
+     *  nguoi dung bam nut [QR] lan nua trong luc instance cu chua kip huy
+     *  het, he thong se TAI SU DUNG instance cu va goi onNewIntent() thay
+     *  vi onCreate(). Neu khong xu ly o day, hai van de se xay ra:
+     *   1) `handled` van con true tu lan quet truoc -> processFrame() se
+     *      bo qua moi ma QR moi, xem nhu "quet khong duoc" cho lan mo lai.
+     *   2) Vi tri/kich thuoc khung quet (dua theo EXTRA_KEYBOARD_HEIGHT_PX)
+     *      khong duoc cap nhat lai theo Intent moi.
+     *  Ham nay reset lai ca hai de moi lan mo deu hoat dong dung nhu mo moi. */
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handled.set(false)
+        floatAboveKeyboard()
     }
 
     private fun dp(value: Int): Int =
