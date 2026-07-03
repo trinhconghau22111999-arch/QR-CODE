@@ -7,6 +7,7 @@ import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
 import android.inputmethodservice.InputMethodService
+import android.util.Log
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
@@ -52,7 +53,10 @@ class QrKeyboardService : InputMethodService() {
 
         /** QrScanActivity goi ham nay khi quet duoc ma. Ket qua duoc luu tam,
          *  se duoc dien vao o nhap lieu ngay khi ban phim ket noi lai (onStartInputView). */
+        private const val TAG = "QRKB_DEBUG"
+
         fun deliverScanResult(text: String) {
+            Log.d(TAG, "deliverScanResult() nhan duoc text='$text', activeService=${activeService != null}")
             // QUAN TRONG: KHONG duoc commitText() ngay tai day.
             // Ly do: luc ham nay chay, QrScanActivity dang che man hinh nen o nhap lieu
             // goc DA MAT FOCUS -> InputConnection cu (svc.currentInputConnection) tren
@@ -69,8 +73,11 @@ class QrKeyboardService : InputMethodService() {
             val svc = activeService
             if (svc != null) {
                 android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    Log.d(TAG, "goi requestShowSelf(0)")
                     svc.requestShowSelf(0)
                 }
+            } else {
+                Log.d(TAG, "activeService dang NULL luc deliverScanResult() chay -> chi con cach cho onStartInputView/onWindowShown cua instance moi")
             }
         }
     }
@@ -91,6 +98,7 @@ class QrKeyboardService : InputMethodService() {
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        Log.d(TAG, "onStartInputView(restarting=$restarting), pendingScanResult=$pendingScanResult, ic=${currentInputConnection != null}")
         // Moi lan chuyen sang o nhap khac, reset bo dem tu dang go
         resetTelexWord()
         flushPendingScanResult()
@@ -103,6 +111,7 @@ class QrKeyboardService : InputMethodService() {
     // ket qua quet QR luon duoc dien vao, khong bi ket dinh (stuck) trong bo nho.
     override fun onWindowShown() {
         super.onWindowShown()
+        Log.d(TAG, "onWindowShown(), pendingScanResult=$pendingScanResult, ic=${currentInputConnection != null}")
         flushPendingScanResult()
     }
 
@@ -123,11 +132,13 @@ class QrKeyboardService : InputMethodService() {
         val result = pendingScanResult ?: return
         val ic = currentInputConnection
         if (ic == null) {
+            Log.d(TAG, "flushPendingScanResult(): ic=NULL -> lich retry (lan thu ${retryAttempt + 1}/$maxRetryAttempts)")
             scheduleFlushRetry()
             return
         }
         pendingScanResult = null
-        ic.commitText(result, 1)
+        val ok = ic.commitText(result, 1)
+        Log.d(TAG, "flushPendingScanResult(): DA GOI commitText('$result') -> ket qua commitText tra ve=$ok")
     }
 
     /** InputConnection doi khi chua kip gan lai ngay tai thoi diem
@@ -142,6 +153,7 @@ class QrKeyboardService : InputMethodService() {
 
     private fun scheduleFlushRetry() {
         if (retryAttempt >= maxRetryAttempts) {
+            Log.d(TAG, "scheduleFlushRetry(): HET SO LAN THU, BO CUOC. pendingScanResult van con='$pendingScanResult' -> DAY LA DAU HIEU MAT CHU")
             retryAttempt = 0
             return
         }
