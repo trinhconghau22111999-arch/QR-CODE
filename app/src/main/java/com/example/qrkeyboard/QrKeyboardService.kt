@@ -121,12 +121,12 @@ class QrKeyboardService : InputMethodService() {
             setPadding(0, 0, 0, dp(6))
         }
 
-        val qrBtn = makeKey("[QR] Qu茅t m茫", weight = 2f, isSpecial = true)
+        val qrBtn = makeKey("[QR] Qu\u00e9t m\u00e3", weight = 2f, isSpecial = true)
         qrBtn.setBackgroundColor(Color.parseColor("#1A73E8"))
         qrBtn.setTextColor(Color.WHITE)
         qrBtn.setOnClickListener { openQrScanner() }
 
-        val globeBtn = makeKey("馃寪", weight = 1f, isSpecial = true)
+        val globeBtn = makeKey("\ud83c\udf10", weight = 1f, isSpecial = true)
         globeBtn.setOnClickListener {
             val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
             imm.showInputMethodPicker()
@@ -161,7 +161,7 @@ class QrKeyboardService : InputMethodService() {
             ).apply { setMargins(0, 0, 0, dp(4)) }
         }
 
-        val shiftBtn = makeKey("鈬�", weight = 1.5f, isSpecial = true)
+        val shiftBtn = makeKey("\u21e7", weight = 1.5f, isSpecial = true)
         shiftBtn.setOnClickListener {
             if (!isSymbols) {
                 isShifted = !isShifted
@@ -177,7 +177,7 @@ class QrKeyboardService : InputMethodService() {
             row.addView(btn)
         }
 
-        val backspaceBtn = makeKey("鈱�", weight = 1.5f, isSpecial = true)
+        val backspaceBtn = makeKey("\u232b", weight = 1.5f, isSpecial = true)
         backspaceBtn.setOnClickListener { onBackspacePressed() }
         row.addView(backspaceBtn)
 
@@ -207,7 +207,7 @@ class QrKeyboardService : InputMethodService() {
         }
         row.addView(commaBtn)
 
-        val spaceBtn = makeKey("kho岷g c谩ch", weight = 4f)
+        val spaceBtn = makeKey("kho\u1ea3ng c\u00e1ch", weight = 4f)
         spaceBtn.setOnClickListener {
             resetTelexWord()
             currentInputConnection?.commitText(" ", 1)
@@ -221,7 +221,7 @@ class QrKeyboardService : InputMethodService() {
         }
         row.addView(periodBtn)
 
-        val enterBtn = makeKey("鈴�", weight = 1.5f, isSpecial = true)
+        val enterBtn = makeKey("\u23ce", weight = 1.5f, isSpecial = true)
         enterBtn.setOnClickListener {
             resetTelexWord()
             sendEnter()
@@ -319,18 +319,18 @@ class QrKeyboardService : InputMethodService() {
     private data class CChar(val ch: Char, val upper: Boolean)
 
     private val vowelTable: Map<Char, CharArray> = mapOf(
-        'a' to charArrayOf('a', '谩', '脿', '岷�', '茫', '岷�'),
-        '膬' to charArrayOf('膬', '岷�', '岷�', '岷�', '岷�', '岷�'),
-        '芒' to charArrayOf('芒', '岷�', '岷�', '岷�', '岷�', '岷�'),
-        'e' to charArrayOf('e', '茅', '猫', '岷�', '岷�', '岷�'),
-        '锚' to charArrayOf('锚', '岷�', '峄�', '峄�', '峄�', '峄�'),
-        'i' to charArrayOf('i', '铆', '矛', '峄�', '末', '峄�'),
-        'o' to charArrayOf('o', '贸', '貌', '峄�', '玫', '峄�'),
-        '么' to charArrayOf('么', '峄�', '峄�', '峄�', '峄�', '峄�'),
-        '啤' to charArrayOf('啤', '峄�', '峄�', '峄�', '峄�', '峄�'),
-        'u' to charArrayOf('u', '煤', '霉', '峄�', '农', '峄�'),
-        '瓢' to charArrayOf('瓢', '峄�', '峄�', '峄�', '峄�', '峄�'),
-        'y' to charArrayOf('y', '媒', '峄�', '峄�', '峄�', '峄�')
+        'a' to charArrayOf('a', '\u00e1', '\u00e0', '\u1ea3', '\u00e3', '\u1ea1'),
+        '\u0103' to charArrayOf('\u0103', '\u1eaf', '\u1eb1', '\u1eb3', '\u1eb5', '\u1eb7'),
+        '\u00e2' to charArrayOf('\u00e2', '\u1ea5', '\u1ea7', '\u1ea9', '\u1eab', '\u1ead'),
+        'e' to charArrayOf('e', '\u00e9', '\u00e8', '\u1ebb', '\u1ebd', '\u1eb9'),
+        '\u00ea' to charArrayOf('\u00ea', '\u1ebf', '\u1ec1', '\u1ec3', '\u1ec5', '\u1ec7'),
+        'i' to charArrayOf('i', '\u00ed', '\u00ec', '\u1ec9', '\u0129', '\u1ecb'),
+        'o' to charArrayOf('o', '\u00f3', '\u00f2', '\u1ecf', '\u00f5', '\u1ecd'),
+        '\u00f4' to charArrayOf('\u00f4', '\u1ed1', '\u1ed3', '\u1ed5', '\u1ed7', '\u1ed9'),
+        '\u01a1' to charArrayOf('\u01a1', '\u1edb', '\u1edd', '\u1edf', '\u1ee1', '\u1ee3'),
+        'u' to charArrayOf('u', '\u00fa', '\u00f9', '\u1ee7', '\u0169', '\u1ee5'),
+        '\u01b0' to charArrayOf('\u01b0', '\u1ee9', '\u1eeb', '\u1eed', '\u1eef', '\u1ef1'),
+        'y' to charArrayOf('y', '\u00fd', '\u1ef3', '\u1ef7', '\u1ef9', '\u1ef5')
     )
 
     private val charToVowelInfo: Map<Char, Pair<Char, Int>> by lazy {
@@ -350,20 +350,20 @@ class QrKeyboardService : InputMethodService() {
         val lower = rawKeys.map { it.lowercaseChar() }
         val upperFlags = rawKeys.map { it.isUpperCase() }
 
-        // Buoc 1: ghep cap ky tu dac biet (aa->芒, aw->膬, ee->锚, oo->么, ow->啤, uw/w->瓢, dd->膽)
+        // Buoc 1: ghep cap ky tu dac biet (aa->\u00e2, aw->\u0103, ee->\u00ea, oo->\u00f4, ow->\u01a1, uw/w->\u01b0, dd->\u0111)
         val stage1 = mutableListOf<CChar>()
         var i = 0
         while (i < lower.size) {
             if (i + 1 < lower.size) {
                 val pair = "" + lower[i] + lower[i + 1]
                 val replacement = when (pair) {
-                    "aa" -> '芒'
-                    "aw" -> '膬'
-                    "ee" -> '锚'
-                    "oo" -> '么'
-                    "ow" -> '啤'
-                    "uw" -> '瓢'
-                    "dd" -> '膽'
+                    "aa" -> '\u00e2'
+                    "aw" -> '\u0103'
+                    "ee" -> '\u00ea'
+                    "oo" -> '\u00f4'
+                    "ow" -> '\u01a1'
+                    "uw" -> '\u01b0'
+                    "dd" -> '\u0111'
                     else -> null
                 }
                 if (replacement != null) {
@@ -373,7 +373,7 @@ class QrKeyboardService : InputMethodService() {
                 }
             }
             if (lower[i] == 'w') {
-                stage1.add(CChar('瓢', upperFlags[i]))
+                stage1.add(CChar('\u01b0', upperFlags[i]))
             } else {
                 stage1.add(CChar(lower[i], upperFlags[i]))
             }
@@ -417,10 +417,10 @@ class QrKeyboardService : InputMethodService() {
 
     /** Chon vi tri nguyen am se mang dau thanh, theo quy tac don gian hoa. */
     private fun pickToneTargetIndex(body: List<CChar>, vowelIdxs: List<Int>): Int? {
-        // Uu tien nguyen am co dau mu/moc (膬,芒,锚,么,啤,瓢) - lay lan xuat hien cuoi
+        // Uu tien nguyen am co dau mu/moc (\u0103,\u00e2,\u00ea,\u00f4,\u01a1,\u01b0) - lay lan xuat hien cuoi
         val modified = vowelIdxs.filter { idx ->
             val base = charToVowelInfo[body[idx].ch]?.first
-            base != null && base in listOf('膬', '芒', '锚', '么', '啤', '瓢')
+            base != null && base in listOf('\u0103', '\u00e2', '\u00ea', '\u00f4', '\u01a1', '\u01b0')
         }
         if (modified.isNotEmpty()) return modified.last()
 
