@@ -45,6 +45,7 @@ class QrKeyboardService : InputMethodService() {
 
     private fun insertScannedText(text: String) {
         currentInputConnection?.commitText(text, 1)
+        sendEnter()
     }
 
     private fun openQrScanner() {
