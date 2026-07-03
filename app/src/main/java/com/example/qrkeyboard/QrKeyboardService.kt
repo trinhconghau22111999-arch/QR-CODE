@@ -93,14 +93,30 @@ class QrKeyboardService : InputMethodService() {
         super.onStartInputView(info, restarting)
         // Moi lan chuyen sang o nhap khac, reset bo dem tu dang go
         resetTelexWord()
+        flushPendingScanResult()
+    }
 
-        // Neu vua co ket qua quet QR dang cho, dien vao o nhap lieu ngay luc nay
-        val result = pendingScanResult
-        if (result != null) {
-            pendingScanResult = null
-            currentInputConnection?.commitText(result, 1)
-            sendEnter()
-        }
+    // onStartInputView() khong phai luc nao cung duoc goi lai sau khi QrScanActivity
+    // dong (neu Android khong coi input session la bi ngat, chi la bi che tam thoi).
+    // onWindowShown() thi dang tin cay hon: no duoc goi MOI LAN cua so ban phim
+    // thuc su hien thi tro lai, nen dung no lam "luoi an toan" thu hai de dam bao
+    // ket qua quet QR luon duoc dien vao, khong bi ket dinh (stuck) trong bo nho.
+    override fun onWindowShown() {
+        super.onWindowShown()
+        flushPendingScanResult()
+    }
+
+    /** Dien pendingScanResult vao o nhap lieu neu co, va chi xoa no SAU KHI
+     *  chac chan da commit duoc (currentInputConnection != null). Neu chua co
+     *  InputConnection hop le luc nay, giu nguyen pendingScanResult de lan
+     *  goi tiep theo (onStartInputView hoac onWindowShown) thu lai, tranh
+     *  mat du lieu da quet duoc. */
+    private fun flushPendingScanResult() {
+        val result = pendingScanResult ?: return
+        val ic = currentInputConnection ?: return
+        pendingScanResult = null
+        ic.commitText(result, 1)
+        sendEnter()
     }
 
     /** Cho phep goi requestShowSelf (protected) tu companion object. */
