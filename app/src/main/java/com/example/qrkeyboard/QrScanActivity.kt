@@ -2,11 +2,17 @@ package com.example.qrkeyboard
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.Bundle
+import android.util.TypedValue
 import android.view.Gravity
+import android.view.View
 import android.view.WindowManager
+import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -40,6 +46,7 @@ class QrScanActivity : AppCompatActivity() {
     }
 
     private lateinit var cameraExecutor: ExecutorService
+    private lateinit var previewView: PreviewView
     private val handled = AtomicBoolean(false)
 
     // ToneGenerator dung de phat tieng "bip" ngay khi quet duoc ma QR
@@ -59,7 +66,12 @@ class QrScanActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_qr_scan)
+        // Khong con dung setContentView(R.layout.activity_qr_scan) nua: layout XML
+        // do khong co san trong du an duoc chia se, nen dung code de dung toan bo
+        // giao dien (giong phong cach QrKeyboardService), giup kiem soat chinh xac
+        // vi tri tung phan tu (vd nut Huy o goc phai duoi) ma khong phu thuoc file
+        // XML nao khac.
+        setContentView(buildScanContentView())
         cameraExecutor = Executors.newSingleThreadExecutor()
 
         // Dat cua so quet thanh mot khung noi, nam ngang, cao 1/5 man hinh,
@@ -68,8 +80,6 @@ class QrScanActivity : AppCompatActivity() {
         // binh thuong phia duoi trong luc quet.
         floatAboveKeyboard()
 
-        findViewById<android.widget.Button>(R.id.btnCancel).setOnClickListener { finish() }
-
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             == PackageManager.PERMISSION_GRANTED
         ) {
@@ -77,6 +87,46 @@ class QrScanActivity : AppCompatActivity() {
         } else {
             requestPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
+    }
+
+    private fun dp(value: Int): Int =
+        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics).toInt()
+
+    /** Dung toan bo giao dien cua man hinh quet bang code: lop preview camera
+     *  chiem het cua so, va nut Huy noi o GOC PHAI DUOI cua khung quet (thay
+     *  vi o giua nhu truoc), de khong che khung QR o giua va de bam bang
+     *  ngon tay cai khi dang cam may 1 tay. */
+    private fun buildScanContentView(): View {
+        val root = FrameLayout(this)
+
+        previewView = PreviewView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+        root.addView(previewView)
+
+        val cancelBg = GradientDrawable().apply {
+            cornerRadius = dp(8).toFloat()
+            setColor(Color.parseColor("#CC202124"))
+        }
+        val cancelBtn = Button(this).apply {
+            text = "Hu\u1ef7"
+            isAllCaps = false
+            setTextColor(Color.WHITE)
+            background = cancelBg
+            setPadding(dp(16), dp(8), dp(16), dp(8))
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM or Gravity.END
+            ).apply {
+                setMargins(0, 0, dp(12), dp(12))
+            }
+            setOnClickListener { finish() }
+        }
+        root.addView(cancelBtn)
+
+        return root
     }
 
     /** Bien cua so cua Activity nay thanh mot khung noi (khong chiem toan man
@@ -107,18 +157,26 @@ class QrScanActivity : AppCompatActivity() {
         val windowHeightPx = metrics.heightPixels / 5
         val keyboardHeightPx = intent.getIntExtra(EXTRA_KEYBOARD_HEIGHT_PX, 0)
 
+        // Tru them mot khoang nho (overlapPx) khoi offset, de canh duoi cua
+        // khung quet KHONG chi cham dung diem tren cung cua ban phim ma con
+        // lan xuong phu them mot chut - dam bao khong bao gio ho mot khe ho
+        // (do sai so lam tron px) va che luon phan "dong dang nhap" (o nhap
+        // lieu/thanh soan tin) thuong nam sat ngay phia tren ban phim trong
+        // hau het cac app (Zalo, Messenger, form web...).
+        val overlapPx = dp(24)
+        val yOffset = (keyboardHeightPx - overlapPx).coerceAtLeast(0)
+
         window.addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
         window.setGravity(Gravity.BOTTOM)
         window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, windowHeightPx)
 
         val params = window.attributes
-        params.y = keyboardHeightPx
+        params.y = yOffset
         window.attributes = params
     }
 
     @OptIn(androidx.camera.core.ExperimentalGetImage::class)
     private fun startCamera() {
-        val previewView = findViewById<PreviewView>(R.id.previewView)
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
 
         cameraProviderFuture.addListener({
