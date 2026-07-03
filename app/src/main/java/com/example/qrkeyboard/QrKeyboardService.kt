@@ -30,8 +30,22 @@ class QrKeyboardService : InputMethodService() {
         /** QrScanActivity goi ham nay khi quet duoc ma. Ket qua duoc luu tam,
          *  se duoc dien vao o nhap lieu ngay khi ban phim ket noi lai (onStartInputView). */
         fun deliverScanResult(text: String) {
-            pendingScanResult = text
-            activeService?.triggerShowKeyboard()
+            val svc = activeService
+            if (svc != null) {
+                // Dien ngay vao o nhap lieu dang mo (chay tren main thread)
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    val ic = svc.currentInputConnection
+                    if (ic != null) {
+                        ic.commitText(text, 1)
+                    } else {
+                        // Neu chua co InputConnection, luu tam de dien khi ket noi lai
+                        pendingScanResult = text
+                    }
+                    svc.requestShowSelf(0)
+                }
+            } else {
+                pendingScanResult = text
+            }
         }
     }
 
