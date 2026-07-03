@@ -5,6 +5,8 @@ import android.content.pm.PackageManager
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.Bundle
+import android.view.Gravity
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -53,6 +55,13 @@ class QrScanActivity : AppCompatActivity() {
         setContentView(R.layout.activity_qr_scan)
         cameraExecutor = Executors.newSingleThreadExecutor()
 
+        // Thu nho cua so quet: chi cao bang 1/5 chieu cao man hinh, rong het
+        // chieu ngang (nam ngang), va ghim xuong day man hinh - dung vao vung
+        // ma ban phim ao van thuong chiem giu. Phai goi SAU setContentView() de
+        // decor view cua Activity da duoc tao, neu khong window.setLayout() se
+        // khong co tac dung.
+        resizeScanWindow()
+
         findViewById<android.widget.Button>(R.id.btnCancel).setOnClickListener { finish() }
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
@@ -62,6 +71,26 @@ class QrScanActivity : AppCompatActivity() {
         } else {
             requestPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
+    }
+
+    /** Dat kich thuoc + vi tri cho cua so trong suot cua Activity nay:
+     *  - Chieu cao = 1/5 chieu cao man hinh (khung nam ngang, thap va dai).
+     *  - Chieu rong = het chieu ngang man hinh.
+     *  - Gravity.BOTTOM: ghim khung quet xuong day man hinh, dung vao vi tri
+     *    ma ban phim ao (QrKeyboardService) van thuong nam, de nguoi dung co
+     *    cam giac khung quet "thay the" ban phim tam thoi thay vi chiem het
+     *    man hinh nhu truoc.
+     *
+     *  Luu y: activity_qr_scan.xml can co PreviewView/nut Huy dung
+     *  match_parent cho chieu rong/cao de tu dong co giau theo kich thuoc
+     *  cua so moi nay; neu layout dang dung gia tri co dinh (fixed dp/height)
+     *  thi can sua lai layout do cho khop. */
+    private fun resizeScanWindow() {
+        val metrics = resources.displayMetrics
+        val windowHeightPx = metrics.heightPixels / 5
+
+        window.setGravity(Gravity.BOTTOM)
+        window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, windowHeightPx)
     }
 
     @OptIn(androidx.camera.core.ExperimentalGetImage::class)
