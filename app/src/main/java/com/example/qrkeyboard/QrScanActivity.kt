@@ -125,13 +125,21 @@ class QrScanActivity : AppCompatActivity() {
     private fun onQrFound(text: String) {
         // Phat tieng "bip" ngay lap tuc (co the goi tu bat ky thread nao),
         // truoc khi chen du lieu vao o nhap
-        toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, 150)
+        val beepDurationMs = 150
+        toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, beepDurationMs)
 
         runOnUiThread {
             // Luu ket qua lai, ban phim se tu dien vao o nhap lieu khi ket noi lai
             QrKeyboardService.deliverScanResult(text)
             Toast.makeText(this, "\u0110\u00e3 qu\u00e9t: $text", Toast.LENGTH_SHORT).show()
-            finish()
+
+            // QUAN TRONG: khong goi finish() ngay lap tuc. startTone() phat am thanh
+            // BAT DONG BO trong nen; neu Activity dong ngay, onDestroy() se goi
+            // toneGenerator.release() va cat ngang tieng bip truoc khi no kip phat het.
+            // Doi them mot chut (dai hon thoi luong tieng bip) roi moi dong Activity.
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                finish()
+            }, (beepDurationMs + 100).toLong())
         }
     }
 
