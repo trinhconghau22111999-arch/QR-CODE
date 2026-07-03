@@ -116,8 +116,8 @@ class QrScanActivity : AppCompatActivity() {
 
     private fun onQrFound(text: String) {
         runOnUiThread {
-            // Gui ket qua ve ban phim de chen vao o nhap lieu
-            QrKeyboardService.pendingResultCallback?.invoke(text)
+            // Luu ket qua lai, ban phim se tu dien vao o nhap lieu khi ket noi lai
+            QrKeyboardService.deliverScanResult(text)
             Toast.makeText(this, "Đã quét: $text", Toast.LENGTH_SHORT).show()
             finish()
         }
