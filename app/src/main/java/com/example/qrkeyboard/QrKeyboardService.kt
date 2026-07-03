@@ -32,6 +32,11 @@ class QrKeyboardService : InputMethodService() {
     private val locAnchor = IntArray(2)
     private val locOverlay = IntArray(2)
 
+    // Giu tham chieu toi root view cua ban phim de co the do chieu cao THAT SU
+    // dang hien thi tren man hinh (dung de dat khung quet QR nam dung ngay
+    // phia tren ban phim, xem openQrScanner()).
+    private var keyboardRootView: FrameLayout? = null
+
     // ----- Trang thai bo go Telex (tieng Viet co dau) -----
     private val currentWordRaw = mutableListOf<Char>()
     private var currentRenderedLength = 0
@@ -191,6 +196,19 @@ class QrKeyboardService : InputMethodService() {
             Intent.FLAG_ACTIVITY_NEW_TASK or
                 Intent.FLAG_ACTIVITY_MULTIPLE_TASK
         )
+
+        // Do chieu cao THAT SU dang hien thi cua ban phim (root.height, tinh bang px)
+        // de QrScanActivity biet can chiem khoang khong gian nao va dat khung quet
+        // nam dung SAT PHIA TREN ban phim, khong che mat ban phim. Neu vi ly do nao
+        // do chua do duoc (vd: ban phim vua duoc tao, chua kip layout xong -> height
+        // con = 0), dung tam mot gia tri du phong hop ly (250dp) de tranh khung quet
+        // bi dat sai vi tri.
+        val measuredHeight = keyboardRootView?.height ?: 0
+        val fallbackHeightPx = dp(250)
+        val keyboardHeightPx = if (measuredHeight > 0) measuredHeight else fallbackHeightPx
+
+        intent.putExtra(QrScanActivity.EXTRA_KEYBOARD_HEIGHT_PX, keyboardHeightPx)
+
         startActivity(intent)
     }
 
@@ -236,6 +254,7 @@ class QrKeyboardService : InputMethodService() {
             FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
         )
 
+        keyboardRootView = root
         return root
     }
 
