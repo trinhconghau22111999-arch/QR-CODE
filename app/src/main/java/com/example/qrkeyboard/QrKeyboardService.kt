@@ -112,7 +112,17 @@ class QrKeyboardService : InputMethodService() {
 
     private fun openQrScanner() {
         val intent = Intent(this, QrScanActivity::class.java)
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        // FLAG_ACTIVITY_MULTIPLE_TASK + taskAffinity="" (trong manifest) dam bao
+        // QrScanActivity luon mo trong 1 task rieng, tam thoi. Neu thieu 2 thu nay,
+        // Android co the gop QrScanActivity vao task cua chinh app QrKeyboard (vi
+        // trung taskAffinity mac dinh), khien sau khi finish() man hinh quay ve
+        // MainActivity/task cu cua app nay thay vi quay dung ve o nhap lieu goc
+        // -> chu quet duoc se KHONG duoc dien vao dau ca.
+        intent.addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_ACTIVITY_MULTIPLE_TASK
+        )
         startActivity(intent)
     }
 
