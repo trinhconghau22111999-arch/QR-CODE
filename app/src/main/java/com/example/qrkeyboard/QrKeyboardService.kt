@@ -53,21 +53,24 @@ class QrKeyboardService : InputMethodService() {
         /** QrScanActivity goi ham nay khi quet duoc ma. Ket qua duoc luu tam,
          *  se duoc dien vao o nhap lieu ngay khi ban phim ket noi lai (onStartInputView). */
         fun deliverScanResult(text: String) {
+            // QUAN TRONG: KHONG duoc commitText() ngay tai day.
+            // Ly do: luc ham nay chay, QrScanActivity dang che man hinh nen o nhap lieu
+            // goc DA MAT FOCUS -> InputConnection cu (svc.currentInputConnection) tren
+            // thuc te da "chet" (finished), nhung no van tra ve mot object KHAC null.
+            // => neu kiem tra "ic != null" roi goi commitText(), lenh nay se am tham
+            // khong co tac dung gi (khong loi, khong insert duoc chu), va vi ic != null
+            // nen nhanh du phong luu pendingScanResult cung khong duoc chay -> mat chu.
+            //
+            // Giai phap: luon luu ket qua vao pendingScanResult, roi de onStartInputView()
+            // (chay khi ban phim THAT SU ket noi lai voi o nhap sau khi Activity dong)
+            // dam nhan viec dien chu. Cach nay dam bao chu luon duoc dien dung luc.
+            pendingScanResult = text
+
             val svc = activeService
             if (svc != null) {
-                // Dien ngay vao o nhap lieu dang mo (chay tren main thread)
                 android.os.Handler(android.os.Looper.getMainLooper()).post {
-                    val ic = svc.currentInputConnection
-                    if (ic != null) {
-                        ic.commitText(text, 1)
-                    } else {
-                        // Neu chua co InputConnection, luu tam de dien khi ket noi lai
-                        pendingScanResult = text
-                    }
                     svc.requestShowSelf(0)
                 }
-            } else {
-                pendingScanResult = text
             }
         }
     }
