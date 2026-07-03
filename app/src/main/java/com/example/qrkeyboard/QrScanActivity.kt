@@ -75,10 +75,11 @@ class QrScanActivity : AppCompatActivity() {
         setContentView(buildScanContentView())
         cameraExecutor = Executors.newSingleThreadExecutor()
 
-        // Dat cua so quet thanh mot khung noi, nam ngang, cao 1/5 man hinh,
-        // dinh ngay phia tren ban phim ao - KHONG cuop focus cua o nhap lieu
-        // dang mo, de ban phim (QrKeyboardService) van tiep tuc hien thi
-        // binh thuong phia duoi trong luc quet.
+        // Dat cua so quet thanh mot khung noi, nam ngang, cao vua du de PHU LEN
+        // toan bo ban phim ao ben duoi (thay vi chi nam vua khit phia tren no
+        // nhu truoc) - KHONG cuop focus cua o nhap lieu dang mo, ban phim
+        // (QrKeyboardService) van "song" binh thuong o duoi, chi la bi khung
+        // quet nay che mat trong luc quet.
         floatAboveKeyboard()
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
@@ -156,11 +157,14 @@ class QrScanActivity : AppCompatActivity() {
      *    focus, nen he thong KHONG tu dong an ban phim ao khi Activity nay
      *    mo len. Cac nut/camera preview ben trong Activity nay van nhan
      *    duoc cham (touch) binh thuong, chi rieng key/IME focus la khong co.
-     *  - Chieu cao = 1/5 chieu cao man hinh, chieu rong = het man hinh
-     *    (khung nam ngang).
-     *  - Gravity.BOTTOM + offset y = chieu cao ban phim (nhan tu Intent extra,
-     *    do QrKeyboardService do va gui kem) -> khung quet duoc "dat" ngay
-     *    sat phia tren ban phim, khong de bi ban phim che mat.
+     *  - Chieu rong = het man hinh (khung nam ngang). Chieu cao = chieu cao
+     *    ban phim (nhan tu Intent extra, do QrKeyboardService do va gui kem)
+     *    CONG THEM mot khoang du (extraAbovePx) nhoi len phia tren -> khung
+     *    quet khong chi vua khit ban phim ma con PHU KIN toan bo no, dong
+     *    thoi to hon ro ret so ban dau de de dua ma QR vao quet hon.
+     *  - Gravity.BOTTOM + y = 0: canh duoi khung quet luon trung voi canh
+     *    duoi man hinh, dam bao khong ho mot khe ho nao o duoi cung, noi
+     *    ban phim dang "an" ben duoi lop preview camera.
      *
      *  Luu y: day la ky thuat khong chinh thong (Activity thuong khong dung
      *  de lam overlay), nen hanh vi co the khac nhau giua cac dong may/ban
@@ -171,24 +175,25 @@ class QrScanActivity : AppCompatActivity() {
      */
     private fun floatAboveKeyboard() {
         val metrics = resources.displayMetrics
-        val windowHeightPx = metrics.heightPixels / 5
         val keyboardHeightPx = intent.getIntExtra(EXTRA_KEYBOARD_HEIGHT_PX, 0)
 
-        // Tru them mot khoang nho (overlapPx) khoi offset, de canh duoi cua
-        // khung quet KHONG chi cham dung diem tren cung cua ban phim ma con
-        // lan xuong phu them mot chut - dam bao khong bao gio ho mot khe ho
-        // (do sai so lam tron px) va che luon phan "dong dang nhap" (o nhap
-        // lieu/thanh soan tin) thuong nam sat ngay phia tren ban phim trong
-        // hau het cac app (Zalo, Messenger, form web...).
-        val overlapPx = dp(24)
-        val yOffset = (keyboardHeightPx - overlapPx).coerceAtLeast(0)
+        // Phan them vao PHIA TREN chieu cao ban phim, de khung quet khong chi
+        // vua du che ban phim ma con to hon han mot doan (co the chinh so nay
+        // de tang/giam do "bu" tuy y).
+        val extraAbovePx = dp(160)
+
+        // Phong khi keyboardHeightPx = 0 (vd do doc chua kip xong luc gui
+        // Intent), dat mot muc san toi thieu = 1/3 man hinh de khung quet
+        // khong bi qua nho.
+        val minHeightPx = metrics.heightPixels / 3
+        val windowHeightPx = (keyboardHeightPx + extraAbovePx).coerceAtLeast(minHeightPx)
 
         window.addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
         window.setGravity(Gravity.BOTTOM)
         window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, windowHeightPx)
 
         val params = window.attributes
-        params.y = yOffset
+        params.y = 0
         window.attributes = params
     }
 
