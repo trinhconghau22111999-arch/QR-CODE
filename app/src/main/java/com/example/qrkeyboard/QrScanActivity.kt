@@ -32,6 +32,13 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class QrScanActivity : AppCompatActivity() {
 
+    companion object {
+        /** Key cua Intent extra chua chieu cao (px) cua ban phim dang hien thi,
+         *  do QrKeyboardService gui qua khi mo Activity nay, dung de dat khung
+         *  quet nam dung ngay phia tren ban phim. */
+        const val EXTRA_KEYBOARD_HEIGHT_PX = "extra_keyboard_height_px"
+    }
+
     private lateinit var cameraExecutor: ExecutorService
     private val handled = AtomicBoolean(false)
 
@@ -55,12 +62,11 @@ class QrScanActivity : AppCompatActivity() {
         setContentView(R.layout.activity_qr_scan)
         cameraExecutor = Executors.newSingleThreadExecutor()
 
-        // Thu nho cua so quet: chi cao bang 1/5 chieu cao man hinh, rong het
-        // chieu ngang (nam ngang), va ghim xuong day man hinh - dung vao vung
-        // ma ban phim ao van thuong chiem giu. Phai goi SAU setContentView() de
-        // decor view cua Activity da duoc tao, neu khong window.setLayout() se
-        // khong co tac dung.
-        resizeScanWindow()
+        // Dat cua so quet thanh mot khung noi, nam ngang, cao 1/5 man hinh,
+        // dinh ngay phia tren ban phim ao - KHONG cuop focus cua o nhap lieu
+        // dang mo, de ban phim (QrKeyboardService) van tiep tuc hien thi
+        // binh thuong phia duoi trong luc quet.
+        floatAboveKeyboard()
 
         findViewById<android.widget.Button>(R.id.btnCancel).setOnClickListener { finish() }
 
@@ -73,24 +79,41 @@ class QrScanActivity : AppCompatActivity() {
         }
     }
 
-    /** Dat kich thuoc + vi tri cho cua so trong suot cua Activity nay:
-     *  - Chieu cao = 1/5 chieu cao man hinh (khung nam ngang, thap va dai).
-     *  - Chieu rong = het chieu ngang man hinh.
-     *  - Gravity.BOTTOM: ghim khung quet xuong day man hinh, dung vao vi tri
-     *    ma ban phim ao (QrKeyboardService) van thuong nam, de nguoi dung co
-     *    cam giac khung quet "thay the" ban phim tam thoi thay vi chiem het
-     *    man hinh nhu truoc.
+    /** Bien cua so cua Activity nay thanh mot khung noi (khong chiem toan man
+     *  hinh) va KHONG cuop focus/ban phim cua o nhap lieu goc:
      *
-     *  Luu y: activity_qr_scan.xml can co PreviewView/nut Huy dung
-     *  match_parent cho chieu rong/cao de tu dong co giau theo kich thuoc
-     *  cua so moi nay; neu layout dang dung gia tri co dinh (fixed dp/height)
-     *  thi can sua lai layout do cho khop. */
-    private fun resizeScanWindow() {
+     *  - FLAG_NOT_FOCUSABLE: cua so nay se khong bao gio nhan key/IME focus.
+     *    Theo tai lieu Android, dat co nay dong nghia cua so duoc coi la
+     *    "doc lap voi ban phim ao dang hien" (tuong duong tu dong co them
+     *    FLAG_ALT_FOCUSABLE_IM) -> o nhap lieu o cua so ben duoi VAN GIU
+     *    focus, nen he thong KHONG tu dong an ban phim ao khi Activity nay
+     *    mo len. Cac nut/camera preview ben trong Activity nay van nhan
+     *    duoc cham (touch) binh thuong, chi rieng key/IME focus la khong co.
+     *  - Chieu cao = 1/5 chieu cao man hinh, chieu rong = het man hinh
+     *    (khung nam ngang).
+     *  - Gravity.BOTTOM + offset y = chieu cao ban phim (nhan tu Intent extra,
+     *    do QrKeyboardService do va gui kem) -> khung quet duoc "dat" ngay
+     *    sat phia tren ban phim, khong de bi ban phim che mat.
+     *
+     *  Luu y: day la ky thuat khong chinh thong (Activity thuong khong dung
+     *  de lam overlay), nen hanh vi co the khac nhau giua cac dong may/ban
+     *  Android (mot so ROM nhu MIUI, One UI co the van tu an ban phim trong
+     *  vai truong hop). Neu can do tin cay cao hon o moi thiet bi, phuong an
+     *  chac chan hon la dung mot cua so he thong that (WindowManager +
+     *  quyen SYSTEM_ALERT_WINDOW) thay vi Activity.
+     */
+    private fun floatAboveKeyboard() {
         val metrics = resources.displayMetrics
         val windowHeightPx = metrics.heightPixels / 5
+        val keyboardHeightPx = intent.getIntExtra(EXTRA_KEYBOARD_HEIGHT_PX, 0)
 
+        window.addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
         window.setGravity(Gravity.BOTTOM)
         window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, windowHeightPx)
+
+        val params = window.attributes
+        params.y = keyboardHeightPx
+        window.attributes = params
     }
 
     @OptIn(androidx.camera.core.ExperimentalGetImage::class)
