@@ -1,0 +1,9 @@
+<resources>
+    <string name="app_name">QR Keyboard</string>
+    <string name="intro_title">QR Keyboard</string>
+    <string name="intro_step1">Bước 1: Vào Cài đặt hệ thống và bật "QR Keyboard" trong danh sách bàn phím (Settings → System → Languages &amp; input → On-screen keyboard → Manage keyboards).</string>
+    <string name="intro_step2">Bước 2: Khi soạn tin nhắn, chạm giữ biểu tượng bàn phím ở thanh điều hướng (hoặc icon quả địa cầu) rồi chọn "QR Keyboard" để chuyển sang.</string>
+    <string name="intro_step3">Bước 3: Trên bàn phím, chạm nút [QR] để mở camera quét mã. Nội dung quét được sẽ tự động chèn vào ô nhập liệu.</string>
+    <string name="open_settings">Mở cài đặt bàn phím</string>
+    <string name="scan_hint">Đưa mã QR vào khung hình</string>
+</resources>
