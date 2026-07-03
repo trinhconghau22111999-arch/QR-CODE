@@ -1,712 +1,261 @@
 package com.example.qrkeyboard
 
-import android.content.Intent
+import android.Manifest
+import android.content.pm.PackageManager
 import android.graphics.Color
-import android.graphics.Typeface
-import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.StateListDrawable
-import android.inputmethodservice.InputMethodService
-import android.util.Log
+import android.media.AudioManager
+import android.media.ToneGenerator
+import android.os.Bundle
 import android.util.TypedValue
 import android.view.Gravity
-import android.view.HapticFeedbackConstants
-import android.view.KeyEvent
-import android.view.MotionEvent
 import android.view.View
-import android.view.inputmethod.EditorInfo
-import android.view.inputmethod.InputMethodManager
+import android.view.WindowManager
 import android.widget.Button
 import android.widget.FrameLayout
-import android.widget.LinearLayout
-import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AppCompatActivity
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageProxy
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.core.content.ContextCompat
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.common.InputImage
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
-class QrKeyboardService : InputMethodService() {
-
-    private var isShifted = false
-    private var isSymbols = false
-    private val letterButtons = mutableListOf<Button>()
-
-    // Lop phu (noi) de hien thi bong bong "noi phim" phia tren phim dang nhan
-    private lateinit var overlayContainer: FrameLayout
-    private val locAnchor = IntArray(2)
-    private val locOverlay = IntArray(2)
-
-    // Giu tham chieu toi root view cua ban phim de co the do chieu cao THAT SU
-    // dang hien thi tren man hinh (dung de dat khung quet QR nam dung ngay
-    // phia tren ban phim, xem openQrScanner()).
-    private var keyboardRootView: FrameLayout? = null
-
-    // ----- Trang thai bo go Telex (tieng Viet co dau) -----
-    private val currentWordRaw = mutableListOf<Char>()
-    private var currentRenderedLength = 0
-
-    // ----- Bang mau giao dien toi (Gboard-style) -----
-    private val colorBg = Color.parseColor("#202124")
-    private val colorKeyNormal = Color.parseColor("#303134")
-    private val colorKeyPressed = Color.parseColor("#48494D")
-    private val colorKeySpecial = Color.parseColor("#2B2C2F")
-    private val colorKeySpecialPressed = Color.parseColor("#3E3F43")
-    private val colorAccent = Color.parseColor("#4C8DF6")
-    private val colorAccentPressed = Color.parseColor("#6FA3FF")
-    private val colorTextPrimary = Color.parseColor("#E8EAED")
-    private val colorPopupBg = Color.parseColor("#46474B")
+/**
+ * Activity trong suot, duoc QrKeyboardService mo len khi nguoi dung
+ * nham nut [QR] tren ban phim. Sau khi quet duoc ma, ket qua duoc
+ * gui thang ve QrKeyboardService (qua callback tinh) de chen vao
+ * o nhap lieu dang mo, roi Activity tu dong dong lai.
+ */
+class QrScanActivity : AppCompatActivity() {
 
     companion object {
-        private var activeService: QrKeyboardService? = null
-        private var pendingScanResult: String? = null
+        /** Key cua Intent extra chua chieu cao (px) cua ban phim dang hien thi,
+         *  do QrKeyboardService gui qua khi mo Activity nay, dung de dat khung
+         *  quet nam dung ngay phia tren ban phim. */
+        const val EXTRA_KEYBOARD_HEIGHT_PX = "extra_keyboard_height_px"
+    }
 
-        /** QrScanActivity goi ham nay khi quet duoc ma. Ket qua duoc luu tam,
-         *  se duoc dien vao o nhap lieu ngay khi ban phim ket noi lai (onStartInputView). */
-        private const val TAG = "QRKB_DEBUG"
+    private lateinit var cameraExecutor: ExecutorService
+    private lateinit var previewView: PreviewView
+    private val handled = AtomicBoolean(false)
 
-        fun deliverScanResult(text: String) {
-            Log.d(TAG, "deliverScanResult() nhan duoc text='$text', activeService=${activeService != null}")
-            // QUAN TRONG: KHONG duoc commitText() ngay tai day.
-            // Ly do: luc ham nay chay, QrScanActivity dang che man hinh nen o nhap lieu
-            // goc DA MAT FOCUS -> InputConnection cu (svc.currentInputConnection) tren
-            // thuc te da "chet" (finished), nhung no van tra ve mot object KHAC null.
-            // => neu kiem tra "ic != null" roi goi commitText(), lenh nay se am tham
-            // khong co tac dung gi (khong loi, khong insert duoc chu), va vi ic != null
-            // nen nhanh du phong luu pendingScanResult cung khong duoc chay -> mat chu.
-            //
-            // Giai phap: luon luu ket qua vao pendingScanResult, roi de onStartInputView()
-            // (chay khi ban phim THAT SU ket noi lai voi o nhap sau khi Activity dong)
-            // dam nhan viec dien chu. Cach nay dam bao chu luon duoc dien dung luc.
-            pendingScanResult = text
+    // ToneGenerator dung de phat tieng "bip" ngay khi quet duoc ma QR
+    private val toneGenerator: ToneGenerator by lazy {
+        ToneGenerator(AudioManager.STREAM_NOTIFICATION, 90)
+    }
 
-            val svc = activeService
-            if (svc != null) {
-                android.os.Handler(android.os.Looper.getMainLooper()).post {
-                    Log.d(TAG, "goi requestShowSelf(0)")
-                    svc.requestShowSelf(0)
-                }
+    private val requestPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) {
+                startCamera()
             } else {
-                Log.d(TAG, "activeService dang NULL luc deliverScanResult() chay -> chi con cach cho onStartInputView/onWindowShown cua instance moi")
+                Toast.makeText(this, "C\u1ea7n quy\u1ec1n camera \u0111\u1ec3 qu\u00e9t QR", Toast.LENGTH_SHORT).show()
+                finish()
             }
         }
-    }
 
-    override fun onCreate() {
-        super.onCreate()
-        activeService = this
-    }
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        // Khong con dung setContentView(R.layout.activity_qr_scan) nua: layout XML
+        // do khong co san trong du an duoc chia se, nen dung code de dung toan bo
+        // giao dien (giong phong cach QrKeyboardService), giup kiem soat chinh xac
+        // vi tri tung phan tu (vd nut Huy o goc phai duoi) ma khong phu thuoc file
+        // XML nao khac.
+        setContentView(buildScanContentView())
+        cameraExecutor = Executors.newSingleThreadExecutor()
 
-    override fun onDestroy() {
-        super.onDestroy()
-        if (activeService === this) activeService = null
-    }
+        // Dat cua so quet thanh mot khung noi, nam ngang, cao 1/5 man hinh,
+        // dinh ngay phia tren ban phim ao - KHONG cuop focus cua o nhap lieu
+        // dang mo, de ban phim (QrKeyboardService) van tiep tuc hien thi
+        // binh thuong phia duoi trong luc quet.
+        floatAboveKeyboard()
 
-    override fun onCreateInputView(): View {
-        return buildKeyboardView()
-    }
-
-    override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
-        super.onStartInputView(info, restarting)
-        Log.d(TAG, "onStartInputView(restarting=$restarting), pendingScanResult=$pendingScanResult, ic=${currentInputConnection != null}")
-        // Moi lan chuyen sang o nhap khac, reset bo dem tu dang go
-        resetTelexWord()
-        flushPendingScanResult()
-    }
-
-    // onStartInputView() khong phai luc nao cung duoc goi lai sau khi QrScanActivity
-    // dong (neu Android khong coi input session la bi ngat, chi la bi che tam thoi).
-    // onWindowShown() thi dang tin cay hon: no duoc goi MOI LAN cua so ban phim
-    // thuc su hien thi tro lai, nen dung no lam "luoi an toan" thu hai de dam bao
-    // ket qua quet QR luon duoc dien vao, khong bi ket dinh (stuck) trong bo nho.
-    override fun onWindowShown() {
-        super.onWindowShown()
-        Log.d(TAG, "onWindowShown(), pendingScanResult=$pendingScanResult, ic=${currentInputConnection != null}")
-        flushPendingScanResult()
-    }
-
-    /** Dien pendingScanResult vao o nhap lieu neu co, va chi xoa no SAU KHI
-     *  chac chan da commit duoc (currentInputConnection != null). Neu chua co
-     *  InputConnection hop le luc nay, giu nguyen pendingScanResult de lan
-     *  goi tiep theo (onStartInputView hoac onWindowShown) thu lai, tranh
-     *  mat du lieu da quet duoc.
-     *
-     *  QUAN TRONG: KHONG duoc goi sendEnter() sau khi commitText() o day.
-     *  Rat nhieu app (Zalo, Messenger, Telegram, form web, o tim kiem...)
-     *  khong kiem tra co giu Alt hay khong ma cu thay KEYCODE_ENTER la
-     *  hieu la "Gui/Submit" ngay lap tuc. Hau qua: chu vua quet duoc bi
-     *  "gui di" hoac o nhap bi xoa/mat focus chi trong tich tac, nguoi
-     *  dung chi kip thay Toast "Da quet: ..." ma khong thay chu nam trong
-     *  o nhap. Vi vay o day CHI commitText, khong tu dong xuong dong/gui. */
-    private fun flushPendingScanResult() {
-        val result = pendingScanResult ?: return
-        val ic = currentInputConnection
-        if (ic == null) {
-            Log.d(TAG, "flushPendingScanResult(): ic=NULL -> lich retry (lan thu ${retryAttempt + 1}/$maxRetryAttempts)")
-            scheduleFlushRetry()
-            return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            == PackageManager.PERMISSION_GRANTED
+        ) {
+            startCamera()
+        } else {
+            requestPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
-        pendingScanResult = null
-        val ok = ic.commitText(result, 1)
-        Log.d(TAG, "flushPendingScanResult(): DA GOI commitText('$result') -> ket qua commitText tra ve=$ok")
     }
-
-    /** InputConnection doi khi chua kip gan lai ngay tai thoi diem
-     *  onStartInputView/onWindowShown duoc goi (do do tre vai chuc ms cua
-     *  he thong). Thu lai vai lan trong thoi gian ngan de tang do chac chan
-     *  chen duoc chu, thay vi de pendingScanResult bi "ket" cho den lan
-     *  chuyen o nhap tiep theo (co the khong bao gio xay ra). */
-    private val retryHandler = android.os.Handler(android.os.Looper.getMainLooper())
-    private var retryAttempt = 0
-    private val maxRetryAttempts = 4
-    private val retryDelaysMs = longArrayOf(100L, 250L, 500L, 900L)
-
-    private fun scheduleFlushRetry() {
-        if (retryAttempt >= maxRetryAttempts) {
-            Log.d(TAG, "scheduleFlushRetry(): HET SO LAN THU, BO CUOC. pendingScanResult van con='$pendingScanResult' -> DAY LA DAU HIEU MAT CHU")
-            retryAttempt = 0
-            return
-        }
-        val delay = retryDelaysMs[retryAttempt]
-        retryAttempt++
-        retryHandler.postDelayed({
-            if (pendingScanResult != null) {
-                flushPendingScanResult()
-            } else {
-                retryAttempt = 0
-            }
-        }, delay)
-    }
-
-    /** Cho phep goi requestShowSelf (protected) tu companion object. */
-    fun triggerShowKeyboard() {
-        requestShowSelf(0)
-    }
-
-    // ----------------- Xu ly ket qua quet QR -----------------
-
-    private fun openQrScanner() {
-        val intent = Intent(this, QrScanActivity::class.java)
-        // FLAG_ACTIVITY_MULTIPLE_TASK + taskAffinity="" (trong manifest) dam bao
-        // QrScanActivity luon mo trong 1 task rieng, tam thoi. Neu thieu 2 thu nay,
-        // Android co the gop QrScanActivity vao task cua chinh app QrKeyboard (vi
-        // trung taskAffinity mac dinh), khien sau khi finish() man hinh quay ve
-        // MainActivity/task cu cua app nay thay vi quay dung ve o nhap lieu goc
-        // -> chu quet duoc se KHONG duoc dien vao dau ca.
-        // KHONG dung chung FLAG_ACTIVITY_CLEAR_TOP voi FLAG_ACTIVITY_MULTIPLE_TASK:
-        // CLEAR_TOP nghia la "don cac activity phia tren, dung lai instance task cu",
-        // con MULTIPLE_TASK nghia la "luon tao task moi tinh". Dung ca 2 cung luc de
-        // lai hanh vi task/back-stack khong nhat quan tren mot so thiet bi/OS.
-        intent.addFlags(
-            Intent.FLAG_ACTIVITY_NEW_TASK or
-                Intent.FLAG_ACTIVITY_MULTIPLE_TASK
-        )
-
-        // Do chieu cao THAT SU dang hien thi cua ban phim (root.height, tinh bang px)
-        // de QrScanActivity biet can chiem khoang khong gian nao va dat khung quet
-        // nam dung SAT PHIA TREN ban phim, khong che mat ban phim. Neu vi ly do nao
-        // do chua do duoc (vd: ban phim vua duoc tao, chua kip layout xong -> height
-        // con = 0), dung tam mot gia tri du phong hop ly (250dp) de tranh khung quet
-        // bi dat sai vi tri.
-        val measuredHeight = keyboardRootView?.height ?: 0
-        val fallbackHeightPx = dp(250)
-        val keyboardHeightPx = if (measuredHeight > 0) measuredHeight else fallbackHeightPx
-
-        intent.putExtra(QrScanActivity.EXTRA_KEYBOARD_HEIGHT_PX, keyboardHeightPx)
-
-        startActivity(intent)
-    }
-
-    // ----------------- Dung ban phim bang code -----------------
 
     private fun dp(value: Int): Int =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics).toInt()
 
-    private fun dpF(value: Int): Float =
-        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics)
+    /** Dung toan bo giao dien cua man hinh quet bang code: lop preview camera
+     *  chiem het cua so, va nut Huy noi o GOC PHAI DUOI cua khung quet (thay
+     *  vi o giua nhu truoc), de khong che khung QR o giua va de bam bang
+     *  ngon tay cai khi dang cam may 1 tay. */
+    private fun buildScanContentView(): View {
+        val root = FrameLayout(this)
 
-    private fun buildKeyboardView(): View {
-        val content = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(4), dp(8), dp(4), dp(8))
+        previewView = PreviewView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
+            )
         }
+        root.addView(previewView)
 
-        content.addView(buildTopRow())
-
-        letterButtons.clear()
-        content.addView(buildRow(currentRow1()))
-        content.addView(buildRow(currentRow2(), sideMargin = dp(16)))
-        content.addView(buildRow3())
-
-        content.addView(buildBottomRow())
-
-        val root = FrameLayout(this).apply {
-            setBackgroundColor(colorBg)
-            clipChildren = false
-            clipToPadding = false
+        val cancelBg = GradientDrawable().apply {
+            cornerRadius = dp(8).toFloat()
+            setColor(Color.parseColor("#CC202124"))
         }
-        root.addView(
-            content,
-            FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT)
-        )
-
-        overlayContainer = FrameLayout(this).apply {
-            clipChildren = false
-            clipToPadding = false
+        val cancelBtn = Button(this).apply {
+            text = "Hu\u1ef7"
+            isAllCaps = false
+            setTextColor(Color.WHITE)
+            background = cancelBg
+            setPadding(dp(16), dp(8), dp(16), dp(8))
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM or Gravity.END
+            ).apply {
+                setMargins(0, 0, dp(12), dp(12))
+            }
+            setOnClickListener { finish() }
         }
-        root.addView(
-            overlayContainer,
-            FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
-        )
+        root.addView(cancelBtn)
 
-        keyboardRootView = root
         return root
     }
 
-    private fun currentRow1(): List<String> =
-        if (isSymbols) listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
-        else "qwertyuiop".map { it.toString() }
+    /** Bien cua so cua Activity nay thanh mot khung noi (khong chiem toan man
+     *  hinh) va KHONG cuop focus/ban phim cua o nhap lieu goc:
+     *
+     *  - FLAG_NOT_FOCUSABLE: cua so nay se khong bao gio nhan key/IME focus.
+     *    Theo tai lieu Android, dat co nay dong nghia cua so duoc coi la
+     *    "doc lap voi ban phim ao dang hien" (tuong duong tu dong co them
+     *    FLAG_ALT_FOCUSABLE_IM) -> o nhap lieu o cua so ben duoi VAN GIU
+     *    focus, nen he thong KHONG tu dong an ban phim ao khi Activity nay
+     *    mo len. Cac nut/camera preview ben trong Activity nay van nhan
+     *    duoc cham (touch) binh thuong, chi rieng key/IME focus la khong co.
+     *  - Chieu cao = 1/5 chieu cao man hinh, chieu rong = het man hinh
+     *    (khung nam ngang).
+     *  - Gravity.BOTTOM + offset y = chieu cao ban phim (nhan tu Intent extra,
+     *    do QrKeyboardService do va gui kem) -> khung quet duoc "dat" ngay
+     *    sat phia tren ban phim, khong de bi ban phim che mat.
+     *
+     *  Luu y: day la ky thuat khong chinh thong (Activity thuong khong dung
+     *  de lam overlay), nen hanh vi co the khac nhau giua cac dong may/ban
+     *  Android (mot so ROM nhu MIUI, One UI co the van tu an ban phim trong
+     *  vai truong hop). Neu can do tin cay cao hon o moi thiet bi, phuong an
+     *  chac chan hon la dung mot cua so he thong that (WindowManager +
+     *  quyen SYSTEM_ALERT_WINDOW) thay vi Activity.
+     */
+    private fun floatAboveKeyboard() {
+        val metrics = resources.displayMetrics
+        val windowHeightPx = metrics.heightPixels / 5
+        val keyboardHeightPx = intent.getIntExtra(EXTRA_KEYBOARD_HEIGHT_PX, 0)
 
-    private fun currentRow2(): List<String> =
-        if (isSymbols) listOf("@", "#", "$", "_", "&", "-", "+", "(", ")", "/")
-        else "asdfghjkl".map { it.toString() }
+        // Tru them mot khoang nho (overlapPx) khoi offset, de canh duoi cua
+        // khung quet KHONG chi cham dung diem tren cung cua ban phim ma con
+        // lan xuong phu them mot chut - dam bao khong bao gio ho mot khe ho
+        // (do sai so lam tron px) va che luon phan "dong dang nhap" (o nhap
+        // lieu/thanh soan tin) thuong nam sat ngay phia tren ban phim trong
+        // hau het cac app (Zalo, Messenger, form web...).
+        val overlapPx = dp(24)
+        val yOffset = (keyboardHeightPx - overlapPx).coerceAtLeast(0)
 
-    private fun currentRow3Letters(): List<String> =
-        if (isSymbols) listOf("*", "\"", "'", ":", ";", "!", "?")
-        else "zxcvbnm".map { it.toString() }
+        window.addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
+        window.setGravity(Gravity.BOTTOM)
+        window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, windowHeightPx)
 
-    private fun buildTopRow(): LinearLayout {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-            setPadding(0, 0, 0, dp(8))
-        }
-
-        val qrBtn = makeKey("[QR] Qu\u00e9t m\u00e3", weight = 2f, isSpecial = true, enablePopup = false)
-        qrBtn.background = roundedDrawable(colorAccent, colorAccentPressed, dpF(8))
-        qrBtn.setTextColor(Color.WHITE)
-        qrBtn.setOnClickListener { openQrScanner() }
-
-        val globeBtn = makeKey("\ud83c\udf10", weight = 1f, isSpecial = true, enablePopup = false)
-        globeBtn.setOnClickListener {
-            val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
-            imm.showInputMethodPicker()
-        }
-
-        row.addView(qrBtn)
-        row.addView(globeBtn)
-        return row
+        val params = window.attributes
+        params.y = yOffset
+        window.attributes = params
     }
 
-    private fun buildRow(keys: List<String>, sideMargin: Int = 0): LinearLayout {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(sideMargin, 0, sideMargin, dp(6)) }
-        }
-        keys.forEach { label ->
-            val btn = makeKey(displayLabel(label))
-            btn.setOnClickListener { onKeyPressed(label) }
-            if (!isSymbols) letterButtons.add(btn)
-            row.addView(btn)
-        }
-        return row
-    }
+    @OptIn(androidx.camera.core.ExperimentalGetImage::class)
+    private fun startCamera() {
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
 
-    private fun buildRow3(): LinearLayout {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 0, 0, dp(6)) }
-        }
+        cameraProviderFuture.addListener({
+            val cameraProvider = cameraProviderFuture.get()
 
-        val shiftBtn = makeKey("\u21e7", weight = 1.5f, isSpecial = true, enablePopup = false)
-        shiftBtn.setOnClickListener {
-            if (!isSymbols) {
-                isShifted = !isShifted
-                refreshLetterCase()
+            val preview = Preview.Builder().build().also {
+                it.setSurfaceProvider(previewView.surfaceProvider)
             }
-        }
-        row.addView(shiftBtn)
 
-        currentRow3Letters().forEach { label ->
-            val btn = makeKey(displayLabel(label))
-            btn.setOnClickListener { onKeyPressed(label) }
-            if (!isSymbols) letterButtons.add(btn)
-            row.addView(btn)
-        }
+            val scanner = BarcodeScanning.getClient()
 
-        val backspaceBtn = makeKey("\u232b", weight = 1.5f, isSpecial = true, enablePopup = false)
-        backspaceBtn.setOnClickListener { onBackspacePressed() }
-        row.addView(backspaceBtn)
+            val imageAnalysis = ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build()
 
-        return row
-    }
-
-    private fun buildBottomRow(): LinearLayout {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            )
-        }
-
-        val symBtn = makeKey(if (isSymbols) "ABC" else "123", weight = 1.5f, isSpecial = true, enablePopup = false)
-        symBtn.setOnClickListener {
-            resetTelexWord()
-            isSymbols = !isSymbols
-            setInputView(buildKeyboardView())
-        }
-        row.addView(symBtn)
-
-        val commaBtn = makeKey(",", weight = 1f)
-        commaBtn.setOnClickListener {
-            resetTelexWord()
-            currentInputConnection?.commitText(",", 1)
-        }
-        row.addView(commaBtn)
-
-        val spaceBtn = makeKey("kho\u1ea3ng c\u00e1ch", weight = 4f, enablePopup = false)
-        spaceBtn.setOnClickListener {
-            resetTelexWord()
-            currentInputConnection?.commitText(" ", 1)
-        }
-        row.addView(spaceBtn)
-
-        val periodBtn = makeKey(".", weight = 1f)
-        periodBtn.setOnClickListener {
-            resetTelexWord()
-            currentInputConnection?.commitText(".", 1)
-        }
-        row.addView(periodBtn)
-
-        val enterBtn = makeKey("\u23ce", weight = 1.5f, isSpecial = true, enablePopup = false)
-        enterBtn.background = roundedDrawable(colorAccent, colorAccentPressed, dpF(8))
-        enterBtn.setTextColor(Color.WHITE)
-        enterBtn.setOnClickListener {
-            resetTelexWord()
-            sendEnter()
-        }
-        row.addView(enterBtn)
-
-        return row
-    }
-
-    private fun makeKey(
-        label: String,
-        weight: Float = 1f,
-        isSpecial: Boolean = false,
-        enablePopup: Boolean = true
-    ): Button {
-        return Button(this).apply {
-            text = label
-            isAllCaps = false
-            textSize = if (isSpecial) 15f else 18f
-            setTypeface(typeface, if (isSpecial) Typeface.BOLD else Typeface.NORMAL)
-            setTextColor(colorTextPrimary)
-            background = if (isSpecial) {
-                roundedDrawable(colorKeySpecial, colorKeySpecialPressed, dpF(8))
-            } else {
-                roundedDrawable(colorKeyNormal, colorKeyPressed, dpF(8))
+            imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
+                processFrame(imageProxy, scanner)
             }
-            stateListAnimator = null
-            gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(0, dp(48), weight).apply {
-                setMargins(dp(3), dp(2), dp(3), dp(2))
+
+            val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+
+            try {
+                cameraProvider.unbindAll()
+                cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalysis)
+            } catch (e: Exception) {
+                Toast.makeText(this, "Kh\u00f4ng m\u1edf \u0111\u01b0\u1ee3c camera: ${e.message}", Toast.LENGTH_SHORT).show()
+                finish()
             }
-            attachPressEffect(this, enablePopup)
-        }
+        }, ContextCompat.getMainExecutor(this))
     }
 
-    /** Bo goc mem + doi mau khi nhan, dung chung cho moi phim. */
-    private fun roundedDrawable(colorNormal: Int, colorPressed: Int, radius: Float): Drawable {
-        val normal = GradientDrawable().apply {
-            cornerRadius = radius
-            setColor(colorNormal)
-        }
-        val pressed = GradientDrawable().apply {
-            cornerRadius = radius
-            setColor(colorPressed)
-        }
-        return StateListDrawable().apply {
-            addState(intArrayOf(android.R.attr.state_pressed), pressed)
-            addState(intArrayOf(), normal)
-        }
-    }
-
-    /** Them rung nhe (haptic) + hieu ung "noi phim" (phong to + nhac len) khi nhan giu,
-     *  va bong bong xem truoc ky tu phia tren phim (kieu Gboard). */
-    private fun attachPressEffect(button: Button, enablePopup: Boolean) {
-        button.isHapticFeedbackEnabled = true
-        button.setOnTouchListener { v, event ->
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> {
-                    v.performHapticFeedback(
-                        HapticFeedbackConstants.KEYBOARD_TAP,
-                        HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
-                    )
-                    v.animate()
-                        .scaleX(1.12f)
-                        .scaleY(1.12f)
-                        .translationY(-dpF(2))
-                        .setDuration(45)
-                        .start()
-                    if (enablePopup) showKeyPopup(v as Button)
-                }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    v.animate()
-                        .scaleX(1f)
-                        .scaleY(1f)
-                        .translationY(0f)
-                        .setDuration(90)
-                        .start()
-                    if (enablePopup) hideKeyPopup(v)
-                }
-            }
-            false // khong tieu thu su kien -> onClickListener van hoat dong binh thuong
-        }
-    }
-
-    /** Hien bong bong ky tu phong to ngay phia tren phim dang duoc nhan. */
-    private fun showKeyPopup(anchor: Button) {
-        if (!::overlayContainer.isInitialized) return
-
-        anchor.getLocationOnScreen(locAnchor)
-        overlayContainer.getLocationOnScreen(locOverlay)
-        val relX = locAnchor[0] - locOverlay[0]
-        val relY = locAnchor[1] - locOverlay[1]
-
-        val keyW = anchor.width
-        val keyH = anchor.height
-        val popupW = keyW.coerceAtLeast(dp(40))
-        val popupH = (keyH * 1.9f).toInt()
-
-        val popup = TextView(this).apply {
-            text = anchor.text
-            isAllCaps = false
-            textSize = 22f
-            setTextColor(Color.WHITE)
-            gravity = Gravity.CENTER
-            background = roundedDrawable(colorPopupBg, colorPopupBg, dpF(10))
-            elevation = dpF(6)
-            alpha = 0f
-            scaleX = 0.7f
-            scaleY = 0.7f
-        }
-        val lp = FrameLayout.LayoutParams(popupW, popupH).apply {
-            leftMargin = relX - (popupW - keyW) / 2
-            topMargin = relY - popupH + keyH - dp(2)
-        }
-        overlayContainer.addView(popup, lp)
-        popup.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(60).start()
-
-        anchor.tag = popup
-    }
-
-    private fun hideKeyPopup(anchor: View) {
-        val popup = anchor.tag as? View ?: return
-        anchor.tag = null
-        popup.animate()
-            .alpha(0f)
-            .scaleX(0.75f)
-            .scaleY(0.75f)
-            .setDuration(80)
-            .withEndAction { overlayContainer.removeView(popup) }
-            .start()
-    }
-
-    private fun displayLabel(label: String): String =
-        if (!isSymbols && isShifted) label.uppercase() else label
-
-    private fun refreshLetterCase() {
-        letterButtons.forEach { btn ->
-            val current = btn.text.toString()
-            btn.text = if (isShifted) current.uppercase() else current.lowercase()
-        }
-    }
-
-    // ----------------- Xu ly phim bam (co ho tro Telex) -----------------
-
-    private fun onKeyPressed(label: String) {
-        if (isSymbols) {
-            // Hang so/ky tu: go thang, khong qua bo go Telex
-            resetTelexWord()
-            currentInputConnection?.commitText(label, 1)
+    @androidx.camera.core.ExperimentalGetImage
+    private fun processFrame(imageProxy: ImageProxy, scanner: com.google.mlkit.vision.barcode.BarcodeScanner) {
+        val mediaImage = imageProxy.image
+        if (mediaImage == null) {
+            imageProxy.close()
             return
         }
+        val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
 
-        val typedChar = if (isShifted) label.uppercase()[0] else label.lowercase()[0]
-        currentWordRaw.add(typedChar)
-
-        val newRendered = telexTransform(currentWordRaw)
-        if (currentRenderedLength > 0) {
-            currentInputConnection?.deleteSurroundingText(currentRenderedLength, 0)
-        }
-        currentInputConnection?.commitText(newRendered, 1)
-        currentRenderedLength = newRendered.length
-
-        if (isShifted) {
-            isShifted = false
-            refreshLetterCase()
-        }
-    }
-
-    private fun onBackspacePressed() {
-        if (currentWordRaw.isNotEmpty()) {
-            currentWordRaw.removeAt(currentWordRaw.size - 1)
-            val newRendered = telexTransform(currentWordRaw)
-            if (currentRenderedLength > 0) {
-                currentInputConnection?.deleteSurroundingText(currentRenderedLength, 0)
-            }
-            if (newRendered.isNotEmpty()) {
-                currentInputConnection?.commitText(newRendered, 1)
-            }
-            currentRenderedLength = newRendered.length
-        } else {
-            currentInputConnection?.deleteSurroundingText(1, 0)
-        }
-    }
-
-    private fun resetTelexWord() {
-        currentWordRaw.clear()
-        currentRenderedLength = 0
-    }
-
-    /** Gui to hop Alt+Enter (xuong dong) thay vi Enter thuong (hay bi app hieu la "gui/submit").
-     *  KHONG dung performEditorAction() vi no bo qua trang thai Alt va luon submit form
-     *  bat ke co giu Alt hay khong. */
-    private fun sendEnter() {
-        val ic = currentInputConnection ?: return
-        val now = android.os.SystemClock.uptimeMillis()
-        val altMeta = KeyEvent.META_ALT_ON or KeyEvent.META_ALT_LEFT_ON
-
-        ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ALT_LEFT, 0, 0))
-        ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER, 0, altMeta))
-        ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER, 0, altMeta))
-        ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ALT_LEFT, 0, 0))
-    }
-
-    // ----------------- Dong co bo go Telex tieng Viet -----------------
-
-    private data class CChar(val ch: Char, val upper: Boolean)
-
-    private val vowelTable: Map<Char, CharArray> = mapOf(
-        'a' to charArrayOf('a', '\u00e1', '\u00e0', '\u1ea3', '\u00e3', '\u1ea1'),
-        '\u0103' to charArrayOf('\u0103', '\u1eaf', '\u1eb1', '\u1eb3', '\u1eb5', '\u1eb7'),
-        '\u00e2' to charArrayOf('\u00e2', '\u1ea5', '\u1ea7', '\u1ea9', '\u1eab', '\u1ead'),
-        'e' to charArrayOf('e', '\u00e9', '\u00e8', '\u1ebb', '\u1ebd', '\u1eb9'),
-        '\u00ea' to charArrayOf('\u00ea', '\u1ebf', '\u1ec1', '\u1ec3', '\u1ec5', '\u1ec7'),
-        'i' to charArrayOf('i', '\u00ed', '\u00ec', '\u1ec9', '\u0129', '\u1ecb'),
-        'o' to charArrayOf('o', '\u00f3', '\u00f2', '\u1ecf', '\u00f5', '\u1ecd'),
-        '\u00f4' to charArrayOf('\u00f4', '\u1ed1', '\u1ed3', '\u1ed5', '\u1ed7', '\u1ed9'),
-        '\u01a1' to charArrayOf('\u01a1', '\u1edb', '\u1edd', '\u1edf', '\u1ee1', '\u1ee3'),
-        'u' to charArrayOf('u', '\u00fa', '\u00f9', '\u1ee7', '\u0169', '\u1ee5'),
-        '\u01b0' to charArrayOf('\u01b0', '\u1ee9', '\u1eeb', '\u1eed', '\u1eef', '\u1ef1'),
-        'y' to charArrayOf('y', '\u00fd', '\u1ef3', '\u1ef7', '\u1ef9', '\u1ef5')
-    )
-
-    private val charToVowelInfo: Map<Char, Pair<Char, Int>> by lazy {
-        val map = mutableMapOf<Char, Pair<Char, Int>>()
-        vowelTable.forEach { (base, arr) ->
-            arr.forEachIndexed { idx, c -> map[c] = base to idx }
-        }
-        map
-    }
-
-    private fun isVowelChar(c: Char): Boolean = charToVowelInfo.containsKey(c)
-
-    /** Chuyen 1 chuoi phim tho (raw keystrokes) thanh chu tieng Viet theo kieu go Telex. */
-    private fun telexTransform(rawKeys: List<Char>): String {
-        if (rawKeys.isEmpty()) return ""
-
-        val lower = rawKeys.map { it.lowercaseChar() }
-        val upperFlags = rawKeys.map { it.isUpperCase() }
-
-        // Buoc 1: ghep cap ky tu dac biet (aa->\u00e2, aw->\u0103, ee->\u00ea, oo->\u00f4, ow->\u01a1, uw/w->\u01b0, dd->\u0111)
-        val stage1 = mutableListOf<CChar>()
-        var i = 0
-        while (i < lower.size) {
-            if (i + 1 < lower.size) {
-                val pair = "" + lower[i] + lower[i + 1]
-                val replacement = when (pair) {
-                    "aa" -> '\u00e2'
-                    "aw" -> '\u0103'
-                    "ee" -> '\u00ea'
-                    "oo" -> '\u00f4'
-                    "ow" -> '\u01a1'
-                    "uw" -> '\u01b0'
-                    "dd" -> '\u0111'
-                    else -> null
-                }
-                if (replacement != null) {
-                    stage1.add(CChar(replacement, upperFlags[i] || upperFlags[i + 1]))
-                    i += 2
-                    continue
-                }
-            }
-            if (lower[i] == 'w') {
-                stage1.add(CChar('\u01b0', upperFlags[i]))
-            } else {
-                stage1.add(CChar(lower[i], upperFlags[i]))
-            }
-            i++
-        }
-
-        // Buoc 2: ap dau thanh dua vao ky tu kich hoat cuoi cung (s/f/r/x/j, z de xoa dau)
-        if (stage1.isNotEmpty()) {
-            val last = stage1.last()
-            val toneLevel = when (last.ch) {
-                's' -> 1
-                'f' -> 2
-                'r' -> 3
-                'x' -> 4
-                'j' -> 5
-                'z' -> 0
-                else -> -1
-            }
-            if (toneLevel >= 0) {
-                // Phai copy ra list moi (toList), khong duoc giu nguyen subList:
-                // subList() tra ve MOT VIEW gan voi stage1, neu sau do goi
-                // stage1.removeAt(...) thi view nay se bi "hong" (ConcurrentModificationException)
-                // ngay khi pickToneTargetIndex() truy cap lai body ben duoi.
-                val body = stage1.subList(0, stage1.size - 1).toList()
-                val vowelIdxs = body.indices.filter { isVowelChar(body[it].ch) }
-                if (vowelIdxs.isNotEmpty()) {
-                    stage1.removeAt(stage1.size - 1)
-                    val targetIdx = pickToneTargetIndex(body, vowelIdxs)
-                    if (targetIdx != null) {
-                        val cc = stage1[targetIdx]
-                        val base = charToVowelInfo[cc.ch]?.first ?: cc.ch
-                        val newChar = vowelTable[base]?.getOrNull(toneLevel) ?: cc.ch
-                        stage1[targetIdx] = CChar(newChar, cc.upper)
+        scanner.process(image)
+            .addOnSuccessListener { barcodes ->
+                if (!handled.get()) {
+                    val value = barcodes.firstOrNull { it.valueType != Barcode.TYPE_UNKNOWN || it.rawValue != null }
+                        ?.rawValue
+                    if (!value.isNullOrEmpty() && handled.compareAndSet(false, true)) {
+                        onQrFound(value)
                     }
                 }
             }
-        }
-
-        val sb = StringBuilder()
-        for (cc in stage1) {
-            sb.append(if (cc.upper) cc.ch.uppercaseChar() else cc.ch)
-        }
-        return sb.toString()
+            .addOnCompleteListener {
+                imageProxy.close()
+            }
     }
 
-    /** Chon vi tri nguyen am se mang dau thanh, theo quy tac don gian hoa. */
-    private fun pickToneTargetIndex(body: List<CChar>, vowelIdxs: List<Int>): Int? {
-        // Uu tien nguyen am co dau mu/moc (\u0103,\u00e2,\u00ea,\u00f4,\u01a1,\u01b0) - lay lan xuat hien cuoi
-        val modified = vowelIdxs.filter { idx ->
-            val base = charToVowelInfo[body[idx].ch]?.first
-            base != null && base in listOf('\u0103', '\u00e2', '\u00ea', '\u00f4', '\u01a1', '\u01b0')
-        }
-        if (modified.isNotEmpty()) return modified.last()
+    private fun onQrFound(text: String) {
+        // Phat tieng "bip" ngay lap tuc (co the goi tu bat ky thread nao),
+        // truoc khi chen du lieu vao o nhap
+        val beepDurationMs = 150
+        toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, beepDurationMs)
 
-        if (vowelIdxs.size == 1) return vowelIdxs[0]
+        runOnUiThread {
+            // Luu ket qua lai, ban phim se tu dien vao o nhap lieu khi ket noi lai
+            QrKeyboardService.deliverScanResult(text)
+            Toast.makeText(this, "\u0110\u00e3 qu\u00e9t: $text", Toast.LENGTH_SHORT).show()
 
-        val lastVowelIdx = vowelIdxs.last()
-        val hasTrailingConsonant = lastVowelIdx != body.size - 1
-        return if (hasTrailingConsonant) {
-            lastVowelIdx
-        } else {
-            vowelIdxs[vowelIdxs.size - 2]
+            // QUAN TRONG: khong goi finish() ngay lap tuc. startTone() phat am thanh
+            // BAT DONG BO trong nen; neu Activity dong ngay, onDestroy() se goi
+            // toneGenerator.release() va cat ngang tieng bip truoc khi no kip phat het.
+            // Doi them mot chut (dai hon thoi luong tieng bip) roi moi dong Activity.
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                finish()
+            }, (beepDurationMs + 100).toLong())
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        cameraExecutor.shutdown()
+        toneGenerator.release()
     }
 }
