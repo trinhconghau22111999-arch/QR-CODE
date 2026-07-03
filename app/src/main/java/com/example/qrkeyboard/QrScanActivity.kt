@@ -36,7 +36,7 @@ class QrScanActivity : AppCompatActivity() {
             if (granted) {
                 startCamera()
             } else {
-                Toast.makeText(this, "Cần quyền camera để quét QR", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "C\u1ea7n quy\u1ec1n camera \u0111\u1ec3 qu\u00e9t QR", Toast.LENGTH_SHORT).show()
                 finish()
             }
         }
@@ -85,7 +85,7 @@ class QrScanActivity : AppCompatActivity() {
                 cameraProvider.unbindAll()
                 cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalysis)
             } catch (e: Exception) {
-                Toast.makeText(this, "Không mở được camera: ${e.message}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Kh\u00f4ng m\u1edf \u0111\u01b0\u1ee3c camera: ${e.message}", Toast.LENGTH_SHORT).show()
                 finish()
             }
         }, ContextCompat.getMainExecutor(this))
@@ -119,7 +119,7 @@ class QrScanActivity : AppCompatActivity() {
         runOnUiThread {
             // Luu ket qua lai, ban phim se tu dien vao o nhap lieu khi ket noi lai
             QrKeyboardService.deliverScanResult(text)
-            Toast.makeText(this, "Đã quét: $text", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "\u0110\u00e3 qu\u00e9t: $text", Toast.LENGTH_SHORT).show()
             finish()
         }
     }
