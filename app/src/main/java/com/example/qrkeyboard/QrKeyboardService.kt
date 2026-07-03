@@ -110,13 +110,50 @@ class QrKeyboardService : InputMethodService() {
      *  chac chan da commit duoc (currentInputConnection != null). Neu chua co
      *  InputConnection hop le luc nay, giu nguyen pendingScanResult de lan
      *  goi tiep theo (onStartInputView hoac onWindowShown) thu lai, tranh
-     *  mat du lieu da quet duoc. */
+     *  mat du lieu da quet duoc.
+     *
+     *  QUAN TRONG: KHONG duoc goi sendEnter() sau khi commitText() o day.
+     *  Rat nhieu app (Zalo, Messenger, Telegram, form web, o tim kiem...)
+     *  khong kiem tra co giu Alt hay khong ma cu thay KEYCODE_ENTER la
+     *  hieu la "Gui/Submit" ngay lap tuc. Hau qua: chu vua quet duoc bi
+     *  "gui di" hoac o nhap bi xoa/mat focus chi trong tich tac, nguoi
+     *  dung chi kip thay Toast "Da quet: ..." ma khong thay chu nam trong
+     *  o nhap. Vi vay o day CHI commitText, khong tu dong xuong dong/gui. */
     private fun flushPendingScanResult() {
         val result = pendingScanResult ?: return
-        val ic = currentInputConnection ?: return
+        val ic = currentInputConnection
+        if (ic == null) {
+            scheduleFlushRetry()
+            return
+        }
         pendingScanResult = null
         ic.commitText(result, 1)
-        sendEnter()
+    }
+
+    /** InputConnection doi khi chua kip gan lai ngay tai thoi diem
+     *  onStartInputView/onWindowShown duoc goi (do do tre vai chuc ms cua
+     *  he thong). Thu lai vai lan trong thoi gian ngan de tang do chac chan
+     *  chen duoc chu, thay vi de pendingScanResult bi "ket" cho den lan
+     *  chuyen o nhap tiep theo (co the khong bao gio xay ra). */
+    private val retryHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var retryAttempt = 0
+    private val maxRetryAttempts = 4
+    private val retryDelaysMs = longArrayOf(100L, 250L, 500L, 900L)
+
+    private fun scheduleFlushRetry() {
+        if (retryAttempt >= maxRetryAttempts) {
+            retryAttempt = 0
+            return
+        }
+        val delay = retryDelaysMs[retryAttempt]
+        retryAttempt++
+        retryHandler.postDelayed({
+            if (pendingScanResult != null) {
+                flushPendingScanResult()
+            } else {
+                retryAttempt = 0
+            }
+        }, delay)
     }
 
     /** Cho phep goi requestShowSelf (protected) tu companion object. */
@@ -134,9 +171,12 @@ class QrKeyboardService : InputMethodService() {
         // trung taskAffinity mac dinh), khien sau khi finish() man hinh quay ve
         // MainActivity/task cu cua app nay thay vi quay dung ve o nhap lieu goc
         // -> chu quet duoc se KHONG duoc dien vao dau ca.
+        // KHONG dung chung FLAG_ACTIVITY_CLEAR_TOP voi FLAG_ACTIVITY_MULTIPLE_TASK:
+        // CLEAR_TOP nghia la "don cac activity phia tren, dung lai instance task cu",
+        // con MULTIPLE_TASK nghia la "luon tao task moi tinh". Dung ca 2 cung luc de
+        // lai hanh vi task/back-stack khong nhat quan tren mot so thiet bi/OS.
         intent.addFlags(
             Intent.FLAG_ACTIVITY_NEW_TASK or
-                Intent.FLAG_ACTIVITY_CLEAR_TOP or
                 Intent.FLAG_ACTIVITY_MULTIPLE_TASK
         )
         startActivity(intent)
