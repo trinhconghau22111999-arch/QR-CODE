@@ -57,6 +57,7 @@ class QrScanActivity : AppCompatActivity() {
         }
     }
 
+    @OptIn(androidx.camera.core.ExperimentalGetImage::class)
     private fun startCamera() {
         val previewView = findViewById<PreviewView>(R.id.previewView)
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
