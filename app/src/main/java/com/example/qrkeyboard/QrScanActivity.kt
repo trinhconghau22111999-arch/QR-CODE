@@ -2,6 +2,8 @@ package com.example.qrkeyboard
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -30,6 +32,11 @@ class QrScanActivity : AppCompatActivity() {
 
     private lateinit var cameraExecutor: ExecutorService
     private val handled = AtomicBoolean(false)
+
+    // ToneGenerator dung de phat tieng "bip" ngay khi quet duoc ma QR
+    private val toneGenerator: ToneGenerator by lazy {
+        ToneGenerator(AudioManager.STREAM_NOTIFICATION, 90)
+    }
 
     private val requestPermissionLauncher =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -116,6 +123,10 @@ class QrScanActivity : AppCompatActivity() {
     }
 
     private fun onQrFound(text: String) {
+        // Phat tieng "bip" ngay lap tuc (co the goi tu bat ky thread nao),
+        // truoc khi chen du lieu vao o nhap
+        toneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, 150)
+
         runOnUiThread {
             // Luu ket qua lai, ban phim se tu dien vao o nhap lieu khi ket noi lai
             QrKeyboardService.deliverScanResult(text)
@@ -127,5 +138,6 @@ class QrScanActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         cameraExecutor.shutdown()
+        toneGenerator.release()
     }
 }
