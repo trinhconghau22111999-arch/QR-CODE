@@ -31,22 +31,35 @@ class QrKeyboardService : InputMethodService() {
         }
     }
 
-    /** Hai "trang" ban phim: chu cai (mac dinh) va ky hieu (\"?123\"). */
-    private enum class KeyboardMode { LETTERS, SYMBOLS }
+    /** Ba "trang" ban phim, dung trinh tu quen thuoc cua cac ban phim khac:
+     *  chu cai (mac dinh) <-> so & ky hieu co ban (nut "?123") <-> ky hieu
+     *  mo rong (nut "=\<" tren trang so, quay lai bang nut "?123"). */
+    private enum class KeyboardMode { LETTERS, NUMBERS, SYMBOLS }
 
     private var mode = KeyboardMode.LETTERS
     private var isShiftOn = false
-    private val rows = listOf(
+
+    private val letterRows = listOf(
         "qwertyuiop",
         "asdfghjkl",
         "zxcvbnm"
     )
 
-    /** Trang ky hieu, dung dung cac ky tu nguoi dung yeu cau them vao ban phim. */
-    private val symbolRows = listOf(
+    /** Trang so & ky hieu co ban (nut "?123"). Hang 3 duoc dung rieng
+     *  (buildNumbersRow3) vi phim dau tien la nut chuyen sang trang ky hieu
+     *  mo rong, khong phai mot ky tu de chen. */
+    private val numberRows = listOf(
+        "1234567890",
+        "@#\u0111_&-+()/"
+    )
+    private val numberRow3Symbols = "*\"':;!?"
+
+    /** Trang ky hieu mo rong (nut "=\<"). */
+    private val extendedSymbolRows = listOf(
         "~`|\u2022\u221a\u03c0\u00f7\u00d7\u00b6\u0394",
         "\u00a3\u20ac$\u00a2^\u00b0={}\\"
     )
+    private val extendedSymbolRow3 = "%\u00a9\u00ae\u2122\u2105[]"
 
     private fun dp(value: Int): Int =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics).toInt()
@@ -63,12 +76,20 @@ class QrKeyboardService : InputMethodService() {
 
         when (mode) {
             KeyboardMode.LETTERS -> {
-                rows.forEach { row -> root.addView(buildLetterRow(row)) }
-                root.addView(buildBottomRow())
+                // Hang so (1234567890) luon hien thi co dinh phia tren cac hang
+                // chu cai, khong can chuyen trang moi go duoc so.
+                root.addView(buildCharRow(numberRows[0]))
+                letterRows.forEach { row -> root.addView(buildCharRow(row)) }
+                root.addView(buildLettersBottomRow())
+            }
+            KeyboardMode.NUMBERS -> {
+                numberRows.forEach { row -> root.addView(buildCharRow(row)) }
+                root.addView(buildNumbersRow3())
+                root.addView(buildNumbersBottomRow())
             }
             KeyboardMode.SYMBOLS -> {
-                symbolRows.forEach { row -> root.addView(buildSymbolRow(row)) }
-                root.addView(buildSymbolBottomRow())
+                extendedSymbolRows.forEach { row -> root.addView(buildCharRow(row)) }
+                root.addView(buildExtendedSymbolsBottomRow())
             }
         }
 
@@ -83,7 +104,7 @@ class QrKeyboardService : InputMethodService() {
 
     /** Moi lan mo lai ban phim o mot o nhap moi, luon quay ve trang chu cai,
      *  giong hanh vi quen thuoc cua cac ban phim khac (khong "ket dinh" o
-     *  trang ky hieu tu lan truoc). */
+     *  trang so/ky hieu tu lan truoc). */
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         if (mode != KeyboardMode.LETTERS) {
@@ -91,20 +112,23 @@ class QrKeyboardService : InputMethodService() {
         }
     }
 
-    private fun buildLetterRow(letters: String): LinearLayout {
+    /** Mot hang phim don gian: moi ky tu trong chuoi la mot nut cung do rong
+     *  bang nhau (weight 1), chen nguyen van ky tu do khi bam. Dung chung cho
+     *  ca hang chu cai (co ap dung Shift) lan hang so/ky hieu. */
+    private fun buildCharRow(chars: String): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             )
         }
-        letters.forEach { ch ->
+        chars.forEach { ch ->
             row.addView(buildKey(ch.toString()) { insertChar(ch) })
         }
         return row
     }
 
-    private fun buildBottomRow(): LinearLayout {
+    private fun buildLettersBottomRow(): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
@@ -112,10 +136,8 @@ class QrKeyboardService : InputMethodService() {
             )
         }
 
-        row.addView(buildKey("?123", weight = 1.3f) { switchMode(KeyboardMode.SYMBOLS) })
-        row.addView(buildKey("\u21e7", weight = 1.3f) {
-            isShiftOn = !isShiftOn
-        })
+        row.addView(buildKey("?123", weight = 1.3f) { switchMode(KeyboardMode.NUMBERS) })
+        row.addView(buildKey("\u21e7", weight = 1.3f) { isShiftOn = !isShiftOn })
         row.addView(buildKey("QR", weight = 1.1f, highlight = true) { openQrScanner() })
         row.addView(buildKey("\u2423", weight = 3.4f) { insertChar(' ') })
         row.addView(buildKey("\u232b", weight = 1.3f) { deleteChar() })
@@ -124,24 +146,27 @@ class QrKeyboardService : InputMethodService() {
         return row
     }
 
-    /** Hang ky hieu don gian: moi ky tu trong chuoi la mot nut, chen nguyen
-     *  van (khong ap dung Shift nhu chu cai). */
-    private fun buildSymbolRow(symbols: String): LinearLayout {
+    /** Hang 3 cua trang so: nut "=\<" chuyen sang trang ky hieu mo rong, roi
+     *  toi cac ky hieu co ban, va nut xoa o cuoi - tat ca cung do rong nhu
+     *  nhau, dong bo voi cach cac hang khac phan bo phim. */
+    private fun buildNumbersRow3(): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             )
         }
-        symbols.forEach { ch ->
+
+        row.addView(buildKey("=\\<") { switchMode(KeyboardMode.SYMBOLS) })
+        numberRow3Symbols.forEach { ch ->
             row.addView(buildKey(ch.toString()) { insertText(ch.toString()) })
         }
+        row.addView(buildKey("\u232b") { deleteChar() })
+
         return row
     }
 
-    /** Hang duoi cung cua trang ky hieu: nut "ABC" de quay lai ban phim chu,
-     *  cac ky hieu %, ©, ®, ™, ℅, [, ] va nut xoa. */
-    private fun buildSymbolBottomRow(): LinearLayout {
+    private fun buildNumbersBottomRow(): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
@@ -150,14 +175,32 @@ class QrKeyboardService : InputMethodService() {
         }
 
         row.addView(buildKey("ABC", weight = 1.4f) { switchMode(KeyboardMode.LETTERS) })
-        row.addView(buildKey("%") { insertText("%") })
-        row.addView(buildKey("\u00a9") { insertText("\u00a9") })
-        row.addView(buildKey("\u00ae") { insertText("\u00ae") })
-        row.addView(buildKey("\u2122") { insertText("\u2122") })
-        row.addView(buildKey("\u2105") { insertText("\u2105") })
-        row.addView(buildKey("[") { insertText("[") })
-        row.addView(buildKey("]") { insertText("]") })
-        row.addView(buildKey("\u232b", weight = 1.4f) { deleteChar() })
+        row.addView(buildKey("123", weight = 1.1f) { switchMode(KeyboardMode.NUMBERS) })
+        row.addView(buildKey(",", weight = 1f) { insertText(",") })
+        row.addView(buildKey("\u2423", weight = 4.2f) { insertChar(' ') })
+        row.addView(buildKey(".", weight = 1f) { insertText(".") })
+        row.addView(buildKey("\u23ce", weight = 1.4f, highlight = true) { sendEnter() })
+
+        return row
+    }
+
+    /** Hang duoi cung cua trang ky hieu mo rong: nut "?123" de quay lai trang
+     *  so (thay vi thang ve trang chu cai), cac ky hieu %, ©, ®, ™, ℅, [, ]
+     *  va nut xoa - cung do rong nhu nhau, doi xung hai dau giong hang duoi
+     *  cua trang chu cai / trang so. */
+    private fun buildExtendedSymbolsBottomRow(): LinearLayout {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        row.addView(buildKey("?123", weight = 1.3f) { switchMode(KeyboardMode.NUMBERS) })
+        extendedSymbolRow3.forEach { ch ->
+            row.addView(buildKey(ch.toString(), weight = 1f) { insertText(ch.toString()) })
+        }
+        row.addView(buildKey("\u232b", weight = 1.3f) { deleteChar() })
 
         return row
     }
