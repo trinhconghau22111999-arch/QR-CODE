@@ -3,15 +3,22 @@ package com.example.qrkeyboard
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.Drawable
+import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.StateListDrawable
 import android.inputmethodservice.InputMethodService
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.KeyEvent
+import android.view.MotionEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.LinearLayout
+import android.widget.TextView
 
 class QrKeyboardService : InputMethodService() {
 
@@ -19,9 +26,25 @@ class QrKeyboardService : InputMethodService() {
     private var isSymbols = false
     private val letterButtons = mutableListOf<Button>()
 
+    // Lop phu (noi) de hien thi bong bong "noi phim" phia tren phim dang nhan
+    private lateinit var overlayContainer: FrameLayout
+    private val locAnchor = IntArray(2)
+    private val locOverlay = IntArray(2)
+
     // ----- Trang thai bo go Telex (tieng Viet co dau) -----
     private val currentWordRaw = mutableListOf<Char>()
     private var currentRenderedLength = 0
+
+    // ----- Bang mau giao dien toi (Gboard-style) -----
+    private val colorBg = Color.parseColor("#202124")
+    private val colorKeyNormal = Color.parseColor("#303134")
+    private val colorKeyPressed = Color.parseColor("#48494D")
+    private val colorKeySpecial = Color.parseColor("#2B2C2F")
+    private val colorKeySpecialPressed = Color.parseColor("#3E3F43")
+    private val colorAccent = Color.parseColor("#4C8DF6")
+    private val colorAccentPressed = Color.parseColor("#6FA3FF")
+    private val colorTextPrimary = Color.parseColor("#E8EAED")
+    private val colorPopupBg = Color.parseColor("#46474B")
 
     companion object {
         private var activeService: QrKeyboardService? = null
@@ -95,21 +118,42 @@ class QrKeyboardService : InputMethodService() {
     private fun dp(value: Int): Int =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics).toInt()
 
+    private fun dpF(value: Int): Float =
+        TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics)
+
     private fun buildKeyboardView(): View {
-        val root = LinearLayout(this).apply {
+        val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#DADCE0"))
-            setPadding(dp(4), dp(6), dp(4), dp(6))
+            setPadding(dp(4), dp(8), dp(4), dp(8))
         }
 
-        root.addView(buildTopRow())
+        content.addView(buildTopRow())
 
         letterButtons.clear()
-        root.addView(buildRow(currentRow1()))
-        root.addView(buildRow(currentRow2(), sideMargin = dp(16)))
-        root.addView(buildRow3())
+        content.addView(buildRow(currentRow1()))
+        content.addView(buildRow(currentRow2(), sideMargin = dp(16)))
+        content.addView(buildRow3())
 
-        root.addView(buildBottomRow())
+        content.addView(buildBottomRow())
+
+        val root = FrameLayout(this).apply {
+            setBackgroundColor(colorBg)
+            clipChildren = false
+            clipToPadding = false
+        }
+        root.addView(
+            content,
+            FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT)
+        )
+
+        overlayContainer = FrameLayout(this).apply {
+            clipChildren = false
+            clipToPadding = false
+        }
+        root.addView(
+            overlayContainer,
+            FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT)
+        )
 
         return root
     }
@@ -132,15 +176,15 @@ class QrKeyboardService : InputMethodService() {
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
             )
-            setPadding(0, 0, 0, dp(6))
+            setPadding(0, 0, 0, dp(8))
         }
 
-        val qrBtn = makeKey("[QR] Qu\u00e9t m\u00e3", weight = 2f, isSpecial = true)
-        qrBtn.setBackgroundColor(Color.parseColor("#1A73E8"))
+        val qrBtn = makeKey("[QR] Qu\u00e9t m\u00e3", weight = 2f, isSpecial = true, enablePopup = false)
+        qrBtn.background = roundedDrawable(colorAccent, colorAccentPressed, dpF(8))
         qrBtn.setTextColor(Color.WHITE)
         qrBtn.setOnClickListener { openQrScanner() }
 
-        val globeBtn = makeKey("\ud83c\udf10", weight = 1f, isSpecial = true)
+        val globeBtn = makeKey("\ud83c\udf10", weight = 1f, isSpecial = true, enablePopup = false)
         globeBtn.setOnClickListener {
             val imm = getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager
             imm.showInputMethodPicker()
@@ -156,7 +200,7 @@ class QrKeyboardService : InputMethodService() {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(sideMargin, 0, sideMargin, dp(4)) }
+            ).apply { setMargins(sideMargin, 0, sideMargin, dp(6)) }
         }
         keys.forEach { label ->
             val btn = makeKey(displayLabel(label))
@@ -172,10 +216,10 @@ class QrKeyboardService : InputMethodService() {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { setMargins(0, 0, 0, dp(4)) }
+            ).apply { setMargins(0, 0, 0, dp(6)) }
         }
 
-        val shiftBtn = makeKey("\u21e7", weight = 1.5f, isSpecial = true)
+        val shiftBtn = makeKey("\u21e7", weight = 1.5f, isSpecial = true, enablePopup = false)
         shiftBtn.setOnClickListener {
             if (!isSymbols) {
                 isShifted = !isShifted
@@ -191,7 +235,7 @@ class QrKeyboardService : InputMethodService() {
             row.addView(btn)
         }
 
-        val backspaceBtn = makeKey("\u232b", weight = 1.5f, isSpecial = true)
+        val backspaceBtn = makeKey("\u232b", weight = 1.5f, isSpecial = true, enablePopup = false)
         backspaceBtn.setOnClickListener { onBackspacePressed() }
         row.addView(backspaceBtn)
 
@@ -206,7 +250,7 @@ class QrKeyboardService : InputMethodService() {
             )
         }
 
-        val symBtn = makeKey(if (isSymbols) "ABC" else "123", weight = 1.5f, isSpecial = true)
+        val symBtn = makeKey(if (isSymbols) "ABC" else "123", weight = 1.5f, isSpecial = true, enablePopup = false)
         symBtn.setOnClickListener {
             resetTelexWord()
             isSymbols = !isSymbols
@@ -221,7 +265,7 @@ class QrKeyboardService : InputMethodService() {
         }
         row.addView(commaBtn)
 
-        val spaceBtn = makeKey("kho\u1ea3ng c\u00e1ch", weight = 4f)
+        val spaceBtn = makeKey("kho\u1ea3ng c\u00e1ch", weight = 4f, enablePopup = false)
         spaceBtn.setOnClickListener {
             resetTelexWord()
             currentInputConnection?.commitText(" ", 1)
@@ -235,7 +279,9 @@ class QrKeyboardService : InputMethodService() {
         }
         row.addView(periodBtn)
 
-        val enterBtn = makeKey("\u23ce", weight = 1.5f, isSpecial = true)
+        val enterBtn = makeKey("\u23ce", weight = 1.5f, isSpecial = true, enablePopup = false)
+        enterBtn.background = roundedDrawable(colorAccent, colorAccentPressed, dpF(8))
+        enterBtn.setTextColor(Color.WHITE)
         enterBtn.setOnClickListener {
             resetTelexWord()
             sendEnter()
@@ -245,19 +291,127 @@ class QrKeyboardService : InputMethodService() {
         return row
     }
 
-    private fun makeKey(label: String, weight: Float = 1f, isSpecial: Boolean = false): Button {
+    private fun makeKey(
+        label: String,
+        weight: Float = 1f,
+        isSpecial: Boolean = false,
+        enablePopup: Boolean = true
+    ): Button {
         return Button(this).apply {
             text = label
             isAllCaps = false
-            textSize = 16f
+            textSize = if (isSpecial) 15f else 18f
             setTypeface(typeface, if (isSpecial) Typeface.BOLD else Typeface.NORMAL)
-            setTextColor(Color.parseColor("#1A1A1A"))
-            setBackgroundColor(if (isSpecial) Color.parseColor("#C3C6CB") else Color.WHITE)
-            gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(0, dp(46), weight).apply {
-                setMargins(dp(2), 0, dp(2), 0)
+            setTextColor(colorTextPrimary)
+            background = if (isSpecial) {
+                roundedDrawable(colorKeySpecial, colorKeySpecialPressed, dpF(8))
+            } else {
+                roundedDrawable(colorKeyNormal, colorKeyPressed, dpF(8))
             }
+            stateListAnimator = null
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(0, dp(48), weight).apply {
+                setMargins(dp(3), dp(2), dp(3), dp(2))
+            }
+            attachPressEffect(this, enablePopup)
         }
+    }
+
+    /** Bo goc mem + doi mau khi nhan, dung chung cho moi phim. */
+    private fun roundedDrawable(colorNormal: Int, colorPressed: Int, radius: Float): Drawable {
+        val normal = GradientDrawable().apply {
+            cornerRadius = radius
+            setColor(colorNormal)
+        }
+        val pressed = GradientDrawable().apply {
+            cornerRadius = radius
+            setColor(colorPressed)
+        }
+        return StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_pressed), pressed)
+            addState(intArrayOf(), normal)
+        }
+    }
+
+    /** Them rung nhe (haptic) + hieu ung "noi phim" (phong to + nhac len) khi nhan giu,
+     *  va bong bong xem truoc ky tu phia tren phim (kieu Gboard). */
+    private fun attachPressEffect(button: Button, enablePopup: Boolean) {
+        button.isHapticFeedbackEnabled = true
+        button.setOnTouchListener { v, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    v.performHapticFeedback(
+                        HapticFeedbackConstants.KEYBOARD_TAP,
+                        HapticFeedbackConstants.FLAG_IGNORE_GLOBAL_SETTING
+                    )
+                    v.animate()
+                        .scaleX(1.12f)
+                        .scaleY(1.12f)
+                        .translationY(-dpF(2))
+                        .setDuration(45)
+                        .start()
+                    if (enablePopup) showKeyPopup(v as Button)
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    v.animate()
+                        .scaleX(1f)
+                        .scaleY(1f)
+                        .translationY(0f)
+                        .setDuration(90)
+                        .start()
+                    if (enablePopup) hideKeyPopup(v)
+                }
+            }
+            false // khong tieu thu su kien -> onClickListener van hoat dong binh thuong
+        }
+    }
+
+    /** Hien bong bong ky tu phong to ngay phia tren phim dang duoc nhan. */
+    private fun showKeyPopup(anchor: Button) {
+        if (!::overlayContainer.isInitialized) return
+
+        anchor.getLocationOnScreen(locAnchor)
+        overlayContainer.getLocationOnScreen(locOverlay)
+        val relX = locAnchor[0] - locOverlay[0]
+        val relY = locAnchor[1] - locOverlay[1]
+
+        val keyW = anchor.width
+        val keyH = anchor.height
+        val popupW = keyW.coerceAtLeast(dp(40))
+        val popupH = (keyH * 1.9f).toInt()
+
+        val popup = TextView(this).apply {
+            text = anchor.text
+            isAllCaps = false
+            textSize = 22f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            background = roundedDrawable(colorPopupBg, colorPopupBg, dpF(10))
+            elevation = dpF(6)
+            alpha = 0f
+            scaleX = 0.7f
+            scaleY = 0.7f
+        }
+        val lp = FrameLayout.LayoutParams(popupW, popupH).apply {
+            leftMargin = relX - (popupW - keyW) / 2
+            topMargin = relY - popupH + keyH - dp(2)
+        }
+        overlayContainer.addView(popup, lp)
+        popup.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(60).start()
+
+        anchor.tag = popup
+    }
+
+    private fun hideKeyPopup(anchor: View) {
+        val popup = anchor.tag as? View ?: return
+        anchor.tag = null
+        popup.animate()
+            .alpha(0f)
+            .scaleX(0.75f)
+            .scaleY(0.75f)
+            .setDuration(80)
+            .withEndAction { overlayContainer.removeView(popup) }
+            .start()
     }
 
     private fun displayLabel(label: String): String =
@@ -317,15 +471,18 @@ class QrKeyboardService : InputMethodService() {
         currentRenderedLength = 0
     }
 
+    /** Gui to hop Alt+Enter (xuong dong) thay vi Enter thuong (hay bi app hieu la "gui/submit").
+     *  KHONG dung performEditorAction() vi no bo qua trang thai Alt va luon submit form
+     *  bat ke co giu Alt hay khong. */
     private fun sendEnter() {
-        val editorInfo: EditorInfo? = currentInputEditorInfo
-        val action = editorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION)
-        if (action != null && action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
-            currentInputConnection?.performEditorAction(action)
-        } else {
-            currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
-            currentInputConnection?.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
-        }
+        val ic = currentInputConnection ?: return
+        val now = android.os.SystemClock.uptimeMillis()
+        val altMeta = KeyEvent.META_ALT_ON or KeyEvent.META_ALT_LEFT_ON
+
+        ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ALT_LEFT, 0, 0))
+        ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER, 0, altMeta))
+        ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER, 0, altMeta))
+        ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ALT_LEFT, 0, 0))
     }
 
     // ----------------- Dong co bo go Telex tieng Viet -----------------
@@ -407,7 +564,11 @@ class QrKeyboardService : InputMethodService() {
                 else -> -1
             }
             if (toneLevel >= 0) {
-                val body = stage1.subList(0, stage1.size - 1)
+                // Phai copy ra list moi (toList), khong duoc giu nguyen subList:
+                // subList() tra ve MOT VIEW gan voi stage1, neu sau do goi
+                // stage1.removeAt(...) thi view nay se bi "hong" (ConcurrentModificationException)
+                // ngay khi pickToneTargetIndex() truy cap lai body ben duoi.
+                val body = stage1.subList(0, stage1.size - 1).toList()
                 val vowelIdxs = body.indices.filter { isVowelChar(body[it].ch) }
                 if (vowelIdxs.isNotEmpty()) {
                     stage1.removeAt(stage1.size - 1)
