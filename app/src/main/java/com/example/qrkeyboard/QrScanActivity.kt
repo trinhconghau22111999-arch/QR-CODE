@@ -55,6 +55,18 @@ class QrScanActivity : AppCompatActivity() {
     private lateinit var previewView: PreviewView
     private val handled = AtomicBoolean(false)
 
+    /** Noi dung ma QR VUA duoc xuat ra o nhap gan nhat (null neu chua xuat
+     *  ma nao trong session hien tai). Dung de chan viec xuat 2 LAN LIEN TIEP
+     *  cung mot noi dung: khi may quet dang thay MOT ma QR trong thoi gian
+     *  dai (vd camera dung yen, hoac dang o CHE DO QUET LIEN TUC ma nguoi
+     *  dung chua kip di chuyen sang ma khac), moi frame camera deu "tim thay"
+     *  lai chinh ma do - neu khong chan, se xuat ra o nhap NHIEU LAN lien
+     *  tiep cung 1 noi dung (rat kho chiu, vd go trang giay 1 chu lap lai
+     *  nhieu lan). Chi CHO PHEP xuat lai dung noi dung nay khi da co MOT ma
+     *  KHAC duoc xuat o giua (luc do [lastDeliveredText] da doi sang gia tri
+     *  khac), tuc la chi chan lap LIEN TIEP/LIEN KE, khong chan lap ve sau. */
+    private var lastDeliveredText: String? = null
+
     /** True neu Activity duoc mo bang DUP-TAP nut QR: sau khi quet duoc 1 ma,
      *  KHONG tu dong dong man hinh nua, ma tiep tuc quet ma tiep theo, cho
      *  den khi nguoi dung tu bam nut "Huy". False (mac dinh, cham 1 lan) giu
@@ -131,6 +143,7 @@ class QrScanActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handled.set(false)
+        lastDeliveredText = null
         continuousMode = intent.getBooleanExtra(EXTRA_CONTINUOUS_MODE, false)
         floatAboveKeyboard()
     }
@@ -326,9 +339,21 @@ class QrScanActivity : AppCompatActivity() {
                     // xuat ket qua ra o nhap (xem [containsSpecialCharacter]) -
                     // tiep tuc quet frame ke tiep nhu chua tim thay gi ca, thay
                     // vi chen no vao ban phim.
+                    //
+                    // YEU CAU: neu noi dung nay TRUNG VOI ket qua da xuat GAN
+                    // NHAT ([lastDeliveredText]), CUNG bo qua - tranh truong
+                    // hop may quet "thay" cung mot ma QR o nhieu frame lien
+                    // tiep (vi camera dung yen tren 1 ma, hoac dang o CHE DO
+                    // QUET LIEN TUC va nguoi dung chua kip di chuyen sang ma
+                    // khac) roi xuat lap lai cung 1 noi dung nhieu lan. Chi
+                    // can MOT ma KHAC duoc xuat o giua la [lastDeliveredText]
+                    // doi khac, luc do quet lai dung ma nay se duoc cho phep
+                    // xuat lai binh thuong (chi chan lap LIEN TIEP/LIEN KE).
                     if (!value.isNullOrEmpty() && !containsSpecialCharacter(value) &&
+                        value != lastDeliveredText &&
                         handled.compareAndSet(false, true)
                     ) {
+                        lastDeliveredText = value
                         onQrFound(value)
                     }
                 }
