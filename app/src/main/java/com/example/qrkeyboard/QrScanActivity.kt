@@ -75,11 +75,10 @@ class QrScanActivity : AppCompatActivity() {
         setContentView(buildScanContentView())
         cameraExecutor = Executors.newSingleThreadExecutor()
 
-        // Dat cua so quet thanh mot khung noi, nam ngang, cao vua du de PHU LEN
-        // toan bo ban phim ao ben duoi (thay vi chi nam vua khit phia tren no
-        // nhu truoc) - KHONG cuop focus cua o nhap lieu dang mo, ban phim
-        // (QrKeyboardService) van "song" binh thuong o duoi, chi la bi khung
-        // quet nay che mat trong luc quet.
+        // Dat cua so quet thanh mot khung noi, nam ngang, cao BANG DUNG chieu cao
+        // ban phim ao ben duoi (khong con cong them phan du) - KHONG cuop focus
+        // cua o nhap lieu dang mo, ban phim (QrKeyboardService) van "song" binh
+        // thuong o duoi, chi la bi khung quet nay che mat trong luc quet.
         floatAboveKeyboard()
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
@@ -157,11 +156,10 @@ class QrScanActivity : AppCompatActivity() {
      *    focus, nen he thong KHONG tu dong an ban phim ao khi Activity nay
      *    mo len. Cac nut/camera preview ben trong Activity nay van nhan
      *    duoc cham (touch) binh thuong, chi rieng key/IME focus la khong co.
-     *  - Chieu rong = het man hinh (khung nam ngang). Chieu cao = chieu cao
-     *    ban phim (nhan tu Intent extra, do QrKeyboardService do va gui kem)
-     *    CONG THEM mot khoang du (extraAbovePx) nhoi len phia tren -> khung
-     *    quet khong chi vua khit ban phim ma con PHU KIN toan bo no, dong
-     *    thoi to hon ro ret so ban dau de de dua ma QR vao quet hon.
+     *  - Chieu rong = het man hinh (khung nam ngang). Chieu cao = BANG DUNG
+     *    chieu cao ban phim (nhan tu Intent extra, do QrKeyboardService do va
+     *    gui kem) - khong cong them khoang du nao, de khung quet vua khit
+     *    dung phan dien tich ma ban phim dang chiem.
      *  - Gravity.BOTTOM + y = 0: canh duoi khung quet luon trung voi canh
      *    duoi man hinh, dam bao khong ho mot khe ho nao o duoi cung, noi
      *    ban phim dang "an" ben duoi lop preview camera.
@@ -177,16 +175,12 @@ class QrScanActivity : AppCompatActivity() {
         val metrics = resources.displayMetrics
         val keyboardHeightPx = intent.getIntExtra(EXTRA_KEYBOARD_HEIGHT_PX, 0)
 
-        // Phan them vao PHIA TREN chieu cao ban phim, de khung quet khong chi
-        // vua du che ban phim ma con to hon han mot doan (co the chinh so nay
-        // de tang/giam do "bu" tuy y).
-        val extraAbovePx = dp(160)
-
         // Phong khi keyboardHeightPx = 0 (vd do doc chua kip xong luc gui
         // Intent), dat mot muc san toi thieu = 1/3 man hinh de khung quet
-        // khong bi qua nho.
+        // khong bi qua nho. Binh thuong (co gia tri hop le) thi cao DUNG
+        // BANG chieu cao ban phim, khong cong them phan du nao.
         val minHeightPx = metrics.heightPixels / 3
-        val windowHeightPx = (keyboardHeightPx + extraAbovePx).coerceAtLeast(minHeightPx)
+        val windowHeightPx = if (keyboardHeightPx > 0) keyboardHeightPx else minHeightPx
 
         window.addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
         window.setGravity(Gravity.BOTTOM)
