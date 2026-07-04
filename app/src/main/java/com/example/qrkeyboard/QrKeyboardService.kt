@@ -4,8 +4,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.inputmethodservice.InputMethodService
-import android.os.Handler
-import android.os.Looper
+import android.os.SystemClock
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
@@ -61,7 +60,6 @@ class QrKeyboardService : InputMethodService() {
      *  Enter, hoac chuyen o nhap. */
     private var currentWord = StringBuilder()
 
-    private val handler = Handler(Looper.getMainLooper())
     private var previewPopup: PopupWindow? = null
 
     private val letterRows = listOf(
@@ -107,9 +105,17 @@ class QrKeyboardService : InputMethodService() {
                 letterRows.forEachIndexed { index, row ->
                     val rowView = buildCharRow(row, applyShiftCase = true)
                     if (index == letterRows.lastIndex) {
-                        // Nut xoa (鈱�) nam o CUOI hang chu cai cuoi cung (ben
-                        // phai), giong vi tri quen thuoc tren da so ban phim
-                        // khac, thay vi nam o hang duoi cung nhu truoc.
+                        // Hang chu cai cuoi cung (zxcvbnm): nut Shift (鈬�) o
+                        // DAU hang (ben trai), nut xoa (鈱�) o CUOI hang (ben
+                        // phai) - giong vi tri quen thuoc tren da so ban phim
+                        // khac, thay vi nam ca hai o hang duoi cung nhu truoc.
+                        rowView.addView(
+                            buildKey("\u21e7", weight = 1.5f, highlight = isShiftOn) {
+                                isShiftOn = !isShiftOn
+                                redrawKeyboard()
+                            },
+                            0
+                        )
                         rowView.addView(buildKey("\u232b", weight = 1.5f) { deleteChar() })
                     }
                     root.addView(rowView)
@@ -180,14 +186,10 @@ class QrKeyboardService : InputMethodService() {
             )
         }
 
-        row.addView(buildKey("?123", weight = 1.3f) { switchMode(KeyboardMode.NUMBERS) })
-        row.addView(buildKey("\u21e7", weight = 1.3f, highlight = isShiftOn) {
-            isShiftOn = !isShiftOn
-            redrawKeyboard()
-        })
-        row.addView(buildKey("QR", weight = 1.1f, highlight = true) { openQrScanner() })
-        row.addView(buildSpaceKey(weight = 4.0f))
-        row.addView(buildKey("\u23ce", weight = 1.3f, highlight = true) { sendEnter() })
+        row.addView(buildKey("?123", weight = 1.4f) { switchMode(KeyboardMode.NUMBERS) })
+        row.addView(buildKey("QR", weight = 1.2f, highlight = true) { openQrScanner() })
+        row.addView(buildSpaceKey(weight = 5.0f))
+        row.addView(buildKey("\u23ce", weight = 1.4f, highlight = true) { sendEnter() })
 
         return row
     }
@@ -339,33 +341,38 @@ class QrKeyboardService : InputMethodService() {
             isHapticFeedbackEnabled = true
         }
 
-        var longPressFired = false
+        // Do THOI GIAN nham xuong (tinh luc nha ra) thay vi hen gio giua chung
+        // bang Handler.postDelayed: cach nay on dinh hon nhieu, vi ban truoc
+        // kich hoat NGAY TRONG luc ngon tay con dang cham se ve lai toan bo
+        // ban phim giua chung mot cu cham, co the lam roi/mat su kien cham
+        // dang xu ly khien "giu 2s" khong bao gio co tac dung. Voi cach do
+        // thoi gian luc tha ra, viec ve lai ban phim chi xay ra SAU KHI ngon
+        // tay da roi khoi man hinh, hoan toan an toan.
+        var pressStartTime = 0L
         button.setOnTouchListener { v, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                     if (label.length == 1) showKeyPreview(v, label)
-                    if (onLongPress2s != null) {
-                        longPressFired = false
-                        handler.postDelayed({
-                            longPressFired = true
-                            v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                            hideKeyPreview()
-                            onLongPress2s.invoke()
-                        }, LANGUAGE_TOGGLE_HOLD_MS)
-                    }
+                    pressStartTime = SystemClock.elapsedRealtime()
                     false
                 }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                MotionEvent.ACTION_UP -> {
                     hideKeyPreview()
                     if (onLongPress2s != null) {
-                        handler.removeCallbacksAndMessages(null)
-                        if (longPressFired) {
-                            // Da kich hoat giu-2s roi: nuot su kien nay de
-                            // KHONG chen dau cach nua.
+                        val heldMs = SystemClock.elapsedRealtime() - pressStartTime
+                        if (heldMs >= LANGUAGE_TOGGLE_HOLD_MS) {
+                            v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                            onLongPress2s.invoke()
+                            // Da xu ly nhu giu-2s: nuot su kien de KHONG chen
+                            // dau cach (onClick) ngay sau do nua.
                             return@setOnTouchListener true
                         }
                     }
+                    false
+                }
+                MotionEvent.ACTION_CANCEL -> {
+                    hideKeyPreview()
                     false
                 }
                 else -> false
