@@ -91,10 +91,12 @@ class QrKeyboardService : InputMethodService() {
     )
     private val numberRow3Symbols = "*\"':;!?"
 
-    /** Trang ky hieu mo rong (nut "=\<"). */
+    /** Trang ky hieu mo rong (nut "=\<"). Truoc day 2 phim dau hang thu 2 la
+     *  £, 鈧 (ky hieu tien te it dung) - doi thanh <, > (dau ngoac nhon) de
+     *  huu ich hon cho viec go code/van ban ky thuat. */
     private val extendedSymbolRows = listOf(
         "~`|\u2022\u221a\u03c0\u00f7\u00d7\u00b6\u0394",
-        "\u00a3\u20ac$\u00a2^\u00b0={}\\"
+        "<>$\u00a2^\u00b0={}\\"
     )
     private val extendedSymbolRow3 = "%\u00a9\u00ae\u2122\u2105[]"
 
@@ -192,6 +194,10 @@ class QrKeyboardService : InputMethodService() {
         return row
     }
 
+    /** Hang duoi cung trang chu cai: nut "," (thay cho nut QR truoc day -
+     *  QR da chuyen sang trang so, doi cho voi dau ",") va dau "." moi CHUYEN
+     *  TU trang so SANG day, dat ngay ben phai phim cach (giua phim cach va
+     *  Enter) de go cau nhanh hon ma khong can chuyen trang. */
     private fun buildLettersBottomRow(): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -201,8 +207,9 @@ class QrKeyboardService : InputMethodService() {
         }
 
         row.addView(buildKey("?123", weight = 1.4f) { switchMode(KeyboardMode.NUMBERS) })
-        row.addView(buildKey("QR", weight = 1.2f, highlight = true) { openQrScanner() })
-        row.addView(buildSpaceKey(weight = 5.0f))
+        row.addView(buildKey(",", weight = 1f) { insertText(",") })
+        row.addView(buildSpaceKey(weight = 4.2f))
+        row.addView(buildKey(".", weight = 1f) { insertText(".") })
         row.addView(buildKey("\u23ce", weight = 1.4f, highlight = true) { sendEnter() })
 
         return row
@@ -228,9 +235,10 @@ class QrKeyboardService : InputMethodService() {
         return row
     }
 
-    /** Hang duoi cung cua trang so: bo nut "123" thua (vi dang o san trang
-     *  so roi, khong can nut chuyen ve chinh trang hien tai nua) - chi con
-     *  "ABC" de quay lai trang chu cai, dau phay, dau cach, dau cham va Enter. */
+    /** Hang duoi cung cua trang so: nut "QR" (thay cho dau "," truoc day -
+     *  da doi cho sang trang chu cai) de mo may quet QR ngay tu trang so ma
+     *  khong can chuyen ve trang chu cai truoc. Dau "." da CHUYEN SANG trang
+     *  chu cai (canh phim cach) nen khong con o day nua. */
     private fun buildNumbersBottomRow(): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -240,9 +248,8 @@ class QrKeyboardService : InputMethodService() {
         }
 
         row.addView(buildKey("ABC", weight = 1.6f) { switchMode(KeyboardMode.LETTERS) })
-        row.addView(buildKey(",", weight = 1f) { insertText(",") })
-        row.addView(buildSpaceKey(weight = 4.6f))
-        row.addView(buildKey(".", weight = 1f) { insertText(".") })
+        row.addView(buildKey("QR", weight = 1.2f, highlight = true) { openQrScanner() })
+        row.addView(buildSpaceKey(weight = 5.4f))
         row.addView(buildKey("\u23ce", weight = 1.6f, highlight = true) { sendEnter() })
 
         return row
