@@ -44,15 +44,42 @@ class QrScanActivity : AppCompatActivity() {
          *  do QrKeyboardService gui qua khi mo Activity nay, dung de dat khung
          *  quet nam dung ngay phia tren ban phim. */
         const val EXTRA_KEYBOARD_HEIGHT_PX = "extra_keyboard_height_px"
+
+        /** Key cua Intent extra (Boolean) bao Activity nay dang duoc mo o CHE
+         *  DO QUET LIEN TUC (nguoi dung dup-tap nut QR tren ban phim) hay CHAM
+         *  1 LAN binh thuong. Xem [continuousMode] va [onQrFound]. */
+        const val EXTRA_CONTINUOUS_MODE = "extra_continuous_mode"
     }
 
     private lateinit var cameraExecutor: ExecutorService
     private lateinit var previewView: PreviewView
     private val handled = AtomicBoolean(false)
 
-    // ToneGenerator dung de phat tieng "bip" ngay khi quet duoc ma QR
+    /** True neu Activity duoc mo bang DUP-TAP nut QR: sau khi quet duoc 1 ma,
+     *  KHONG tu dong dong man hinh nua, ma tiep tuc quet ma tiep theo, cho
+     *  den khi nguoi dung tu bam nut "Huy". False (mac dinh, cham 1 lan) giu
+     *  hanh vi cu: quet duoc 1 ma la tu dong dong ngay. */
+    private var continuousMode = false
+
+    /** Tham chieu Camera dang duoc gan (tra ve tu bindToLifecycle), dung de
+     *  dieu khien den flash/pin (torch) qua [toggleFlash]. Null cho toi khi
+     *  camera duoc khoi dong xong trong [startCamera]. */
+    private var camera: androidx.camera.core.Camera? = null
+
+    /** Trang thai dang bat/tat cua den flash, dung de cap nhat giao dien nut
+     *  bat/tat flash ([updateFlashButtonAppearance]) va truyen vao
+     *  [androidx.camera.core.CameraControl.enableTorch]. */
+    private var flashOn = false
+
+    /** Nut bat/tat flash o goc phai tren man hinh quet - giu tham chieu de
+     *  co the doi mau/nhan khi trang thai flash thay doi. */
+    private var flashButton: Button? = null
+
+    // ToneGenerator dung de phat tieng "bip" ngay khi quet duoc ma QR.
+    // Muc am luong dat TOI DA (100/100 - thang do cua ToneGenerator) theo
+    // yeu cau: nghe "bip" thiet lon, ro rang, khong con bi nho nhu truoc.
     private val toneGenerator: ToneGenerator by lazy {
-        ToneGenerator(AudioManager.STREAM_NOTIFICATION, 90)
+        ToneGenerator(AudioManager.STREAM_NOTIFICATION, 100)
     }
 
     private val requestPermissionLauncher =
@@ -67,6 +94,7 @@ class QrScanActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        continuousMode = intent.getBooleanExtra(EXTRA_CONTINUOUS_MODE, false)
         // Khong con dung setContentView(R.layout.activity_qr_scan) nua: layout XML
         // do khong co san trong du an duoc chia se, nen dung code de dung toan bo
         // giao dien (giong phong cach QrKeyboardService), giup kiem soat chinh xac
@@ -103,6 +131,7 @@ class QrScanActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handled.set(false)
+        continuousMode = intent.getBooleanExtra(EXTRA_CONTINUOUS_MODE, false)
         floatAboveKeyboard()
     }
 
@@ -110,9 +139,11 @@ class QrScanActivity : AppCompatActivity() {
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics).toInt()
 
     /** Dung toan bo giao dien cua man hinh quet bang code: lop preview camera
-     *  chiem het cua so, va nut Huy noi o GOC PHAI DUOI cua khung quet (thay
+     *  chiem het cua so, nut Huy noi o GOC PHAI DUOI cua khung quet (thay
      *  vi o giua nhu truoc), de khong che khung QR o giua va de bam bang
-     *  ngon tay cai khi dang cam may 1 tay. */
+     *  ngon tay cai khi dang cam may 1 tay, va nut bat/tat DEN FLASH o GOC
+     *  PHAI TREN (xem [toggleFlash]) de quet duoc ma QR trong dieu kien thieu
+     *  sang ma khong can roi khoi man hinh quet. */
     private fun buildScanContentView(): View {
         val root = FrameLayout(this)
 
@@ -143,7 +174,53 @@ class QrScanActivity : AppCompatActivity() {
         }
         root.addView(cancelBtn)
 
+        val flashBtn = Button(this).apply {
+            text = "\u26a1"
+            isAllCaps = false
+            setTextColor(Color.WHITE)
+            textSize = 18f
+            includeFontPadding = true
+            background = buildFlashButtonBackground(active = false)
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP or Gravity.END
+            ).apply {
+                setMargins(0, dp(12), dp(12), 0)
+            }
+            setOnClickListener { toggleFlash() }
+        }
+        flashButton = flashBtn
+        root.addView(flashBtn)
+
         return root
+    }
+
+    /** Nen tron cho nut flash - doi mau khi BAT (xanh, giong mau highlight
+     *  cua nut QR tren ban phim) de nguoi dung biet ngay flash dang mo, hay
+     *  TAT (xam trong suot, dong bo mau voi nut Huy). */
+    private fun buildFlashButtonBackground(active: Boolean): GradientDrawable = GradientDrawable().apply {
+        cornerRadius = dp(8).toFloat()
+        setColor(if (active) Color.parseColor("#1A73E8") else Color.parseColor("#CC202124"))
+    }
+
+    /** Bat/tat den flash (torch) cua camera dang quet. Chi hoat dong khi
+     *  [camera] da san sang (sau khi [startCamera] bind xong) VA thiet bi co
+     *  don vi flash (hasFlashUnit()) - neu khong, bao cho nguoi dung biet
+     *  bang Toast thay vi im lang khong lam gi. */
+    private fun toggleFlash() {
+        val cam = camera
+        if (cam == null || !cam.cameraInfo.hasFlashUnit()) {
+            Toast.makeText(this, "Thi\u1ebft b\u1ecb kh\u00f4ng c\u00f3 \u0111\u00e8n flash", Toast.LENGTH_SHORT).show()
+            return
+        }
+        flashOn = !flashOn
+        cam.cameraControl.enableTorch(flashOn)
+        updateFlashButtonAppearance()
+    }
+
+    private fun updateFlashButtonAppearance() {
+        flashButton?.background = buildFlashButtonBackground(active = flashOn)
     }
 
     /** Bien cua so cua Activity nay thanh mot khung noi (khong chiem toan man
@@ -221,7 +298,7 @@ class QrScanActivity : AppCompatActivity() {
 
             try {
                 cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalysis)
+                camera = cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalysis)
             } catch (e: Exception) {
                 Toast.makeText(this, "Kh\u00f4ng m\u1edf \u0111\u01b0\u1ee3c camera: ${e.message}", Toast.LENGTH_SHORT).show()
                 finish()
@@ -312,9 +389,18 @@ class QrScanActivity : AppCompatActivity() {
             // QUAN TRONG: khong goi finish() ngay lap tuc. startTone() phat am thanh
             // BAT DONG BO trong nen; neu Activity dong ngay, onDestroy() se goi
             // toneGenerator.release() va cat ngang tieng bip truoc khi no kip phat het.
-            // Doi them mot chut (dai hon thoi luong tieng bip) roi moi dong Activity.
+            // Doi them mot chut (dai hon thoi luong tieng bip) roi moi dong Activity
+            // (hoac, neu dang o CHE DO QUET LIEN TUC, chi mo lai co [handled] de
+            // tiep tuc quet ma tiep theo, KHONG dong Activity).
             android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                finish()
+                if (continuousMode) {
+                    // Che do quet lien tuc (mo bang dup-tap nut QR): khong dong
+                    // man hinh, chi cho phep quet tiep ma QR ke tiep. Man hinh
+                    // chi dong khi nguoi dung tu bam nut "Huy".
+                    handled.set(false)
+                } else {
+                    finish()
+                }
             }, (beepDurationMs + 100).toLong())
         }
     }
