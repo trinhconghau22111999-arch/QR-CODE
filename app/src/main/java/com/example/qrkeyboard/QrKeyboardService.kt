@@ -1390,9 +1390,20 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
-        // Neu nguoi dung roi khoi o nhap lieu ma dang quet do, dong khung
-        // quet lai luon - tranh camera chay ngam khi khong con dung den.
-        hideQrOverlay()
+        // QUAN TRONG: chi dong khung quet khi [finishingInput] = true, tuc la
+        // phien nhap THAT SU ket thuc (nguoi dung chuyen sang app khac, dong
+        // han ban phim...). Mot so trang/app (dac biet WebView, hoac field co
+        // validate/refresh lien tuc) khien he thong goi onFinishInputView()
+        // ROI onStartInputView() lai NGAY SAU DO voi finishingInput = false -
+        // day chi la tai tao lai view tam thoi, nguoi dung VAN DANG o nguyen
+        // trong o nhap do, khong he roi di. TRUOC DAY ham nay dong khung quet
+        // VO DIEU KIEN, nen tren cac trang loai nay, khung quet (ke ca dang o
+        // CHE DO QUET LIEN TUC/dup-tap) bi tu dong tat ngay sau khi quet duoc
+        // 1 ma, dung y het hien tuong nguoi dung phan anh. Gio chi dong that
+        // su khi finishingInput = true.
+        if (finishingInput) {
+            hideQrOverlay()
+        }
         hideKeyPreview()
         // Huy moi vong lap xoa-lien-tuc dang cho (phong truong hop nguoi
         // dung roi o nhap trong luc van con dang giu phim xoa).
