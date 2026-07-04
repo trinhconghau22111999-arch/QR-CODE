@@ -608,31 +608,63 @@ private object VietnameseTelex {
         return word + keyLower
     }
 
-    /** Xu ly cac cap chuyen doi: aa->芒, aw->膬, ee->锚, oo->么, ow->啤, uw->瓢,
-     *  dd->膽. Chi ap dung khi ky tu ngay truoc do khop dung quy tac. */
+    /** Xu ly cac cap chuyen doi: aa->â, aw->ă, ee->ê, oo->ô, ow->ơ, uw->ư,
+     *  dd->đ. TRUOC DAY chi ap dung khi ky tu ngay LIEN TRUOC do khop dung
+     *  quy tac (vd phai go "tiee" thi "e" thu 2 moi bien "e" thanh "ê"), nen
+     *  neu nguoi dung lo go het phu am cuoi tu roi ("tiep") moi quay lai them
+     *  "e" thi se KHONG nhan (chi chen them chu "e" moi, sai chinh ta).
+     *  GIO DAY: tim NGUYEN AM GOC (chua bien doi) GAN CUOI NHAT trong CA TU
+     *  (khong bat buoc phai dung sat cuoi), roi bien doi ngay tai vi tri do,
+     *  giu nguyen moi ky tu dung sau no (vd phu am cuoi). Nho vay go "tiep"
+     *  roi go them "e" van ra "tiêp" dung nhu go "tiee" tu dau. */
     private fun applyDoubleModifier(word: String, key: Char): String? {
         if (word.isEmpty()) return null
-        val last = word.last()
+
+        fun replaceLastOccurrence(target: Char, replacement: Char): String? {
+            val idx = word.lastIndexOf(target)
+            if (idx < 0) return null
+            return word.substring(0, idx) + replacement + word.substring(idx + 1)
+        }
+
         return when (key) {
-            'a' -> if (last == 'a') word.dropLast(1) + '\u00e2' else null
-            'e' -> if (last == 'e') word.dropLast(1) + '\u00ea' else null
-            'o' -> if (last == 'o') word.dropLast(1) + '\u00f4' else null
-            'w' -> when (last) {
-                'a' -> word.dropLast(1) + '\u0103'
-                'o' -> word.dropLast(1) + '\u01a1'
-                'u' -> word.dropLast(1) + '\u01b0'
-                else -> null
+            'a' -> replaceLastOccurrence('a', '\u00e2')
+            'e' -> replaceLastOccurrence('e', '\u00ea')
+            'o' -> replaceLastOccurrence('o', '\u00f4')
+            'w' -> {
+                // Trong 3 nguyen am co the bien doi boi "w" (a->ă, o->ơ,
+                // u->ư), chon nguyen am GAN CUOI TU NHAT (vi tri lon nhat)
+                // - vd tu co ca "o" lan "u" thi uu tien nguyen am nam sau.
+                val idxA = word.lastIndexOf('a')
+                val idxO = word.lastIndexOf('o')
+                val idxU = word.lastIndexOf('u')
+                val bestIdx = maxOf(idxA, idxO, idxU)
+                if (bestIdx < 0) {
+                    null
+                } else {
+                    val replacement = when (word[bestIdx]) {
+                        'a' -> '\u0103'
+                        'o' -> '\u01a1'
+                        'u' -> '\u01b0'
+                        else -> null
+                    }
+                    replacement?.let { word.substring(0, bestIdx) + it + word.substring(bestIdx + 1) }
+                }
             }
-            'd' -> if (last == 'd') word.dropLast(1) + '\u0111' else null
+            'd' -> replaceLastOccurrence('d', '\u0111')
             else -> null
         }
     }
 
     /** Xu ly cac phim dat dau thanh: s (sac), f (huyen), r (hoi), x (nga),
-     *  j (nang), z (bo dau). Tim cum nguyen am o cuoi tu, uu tien nguyen am
-     *  "co mu/moc" (芒, 锚, 么, 啤, 瓢, 膬) neu co, neu khong lay nguyen am cuoi
-     *  cung trong cum. Neu khong tim thay nguyen am nao, tra ve null de ky
-     *  tu duoc chen nhu binh thuong (vd "s", "r", "x" o dau tu la phu am). */
+     *  j (nang), z (bo dau). TRUOC DAY chi tim cum nguyen am NEU no nam dung
+     *  o CUOI TU - nen neu nguoi dung da go xong phu am cuoi ("tiep") roi
+     *  moi go dau thanh ("s") thi se KHONG nhan (chi chen them chu "s" moi).
+     *  GIO DAY: bo qua moi phu am cuoi (khong phai nguyen am) o cuoi tu
+     *  truoc, tim ra cum nguyen am GAN CUOI NHAT trong tu (du no khong con
+     *  nam o vi tri cuoi cung nua), uu tien nguyen am "co mu/moc" (â, ê, ô,
+     *  ơ, ư, ă) neu co, neu khong lay nguyen am cuoi cung trong cum. Neu
+     *  khong tim thay nguyen am nao trong ca tu, tra ve null de ky tu duoc
+     *  chen nhu binh thuong (vd "s", "r", "x" o dau tu la phu am). */
     private fun applyTone(word: String, key: Char): String? {
         val toneIdx = when (key) {
             's' -> 1
@@ -644,13 +676,17 @@ private object VietnameseTelex {
             else -> return null
         }
 
+        // Bo qua phu am cuoi (neu co) de tim ve nguyen am gan cuoi nhat.
+        var end = word.length - 1
+        while (end >= 0 && !charToGroupTone.containsKey(word[end])) end--
+        if (end < 0) return null
+
         val clusterIndices = mutableListOf<Int>()
-        var i = word.length - 1
+        var i = end
         while (i >= 0 && charToGroupTone.containsKey(word[i])) {
             clusterIndices.add(0, i)
             i--
         }
-        if (clusterIndices.isEmpty()) return null
 
         val preferred = clusterIndices.lastOrNull { pos ->
             charToGroupTone[word[pos]]!!.first in modifiedGroupIndices
