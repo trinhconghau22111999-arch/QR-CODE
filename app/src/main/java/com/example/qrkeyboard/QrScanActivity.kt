@@ -158,11 +158,14 @@ class QrScanActivity : AppCompatActivity() {
      *    duoc cham (touch) binh thuong, chi rieng key/IME focus la khong co.
      *  - Chieu rong = het man hinh (khung nam ngang). Chieu cao = BANG DUNG
      *    chieu cao ban phim (nhan tu Intent extra, do QrKeyboardService do va
-     *    gui kem) - khong cong them khoang du nao, de khung quet vua khit
-     *    dung phan dien tich ma ban phim dang chiem.
-     *  - Gravity.BOTTOM + y = 0: canh duoi khung quet luon trung voi canh
-     *    duoi man hinh, dam bao khong ho mot khe ho nao o duoi cung, noi
-     *    ban phim dang "an" ben duoi lop preview camera.
+     *    gui kem).
+     *  - Gravity.BOTTOM + y = keyboardHeightPx: day la thay doi quan trong -
+     *    truoc day y = 0 khien khung quet nam DE LEN dung vi tri cua ban
+     *    phim (che mat ban phim). Gio day, dat y BANG chieu cao ban phim se
+     *    NHAC khung quet len cao hon dung MOT khoang bang chieu cao ban
+     *    phim, tuc la khung quet nam HAN o phia TREN ban phim, KHONG con
+     *    de/che len ban phim nua (ban phim van hien ro o duoi, tuy khong
+     *    nhan duoc touch trong luc dang quet vi la lop duoi).
      *
      *  Luu y: day la ky thuat khong chinh thong (Activity thuong khong dung
      *  de lam overlay), nen hanh vi co the khac nhau giua cac dong may/ban
@@ -177,17 +180,19 @@ class QrScanActivity : AppCompatActivity() {
 
         // Phong khi keyboardHeightPx = 0 (vd do doc chua kip xong luc gui
         // Intent), dat mot muc san toi thieu = 1/3 man hinh de khung quet
-        // khong bi qua nho. Binh thuong (co gia tri hop le) thi cao DUNG
-        // BANG chieu cao ban phim, khong cong them phan du nao.
+        // khong bi qua nho.
         val minHeightPx = metrics.heightPixels / 3
-        val windowHeightPx = if (keyboardHeightPx > 0) keyboardHeightPx else minHeightPx
+        val sizePx = if (keyboardHeightPx > 0) keyboardHeightPx else minHeightPx
 
         window.addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
         window.setGravity(Gravity.BOTTOM)
-        window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, windowHeightPx)
+        // Chieu cao khung quet = dung chieu cao ban phim.
+        window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, sizePx)
 
         val params = window.attributes
-        params.y = 0
+        // Nhac khung quet len KHOI vi tri ban phim mot khoang dung bang chieu
+        // cao ban phim, de no nam han o phia tren, khong con de len ban phim.
+        params.y = sizePx
         window.attributes = params
     }
 
