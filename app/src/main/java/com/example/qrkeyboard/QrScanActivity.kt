@@ -241,9 +241,17 @@ class QrScanActivity : AppCompatActivity() {
         scanner.process(image)
             .addOnSuccessListener { barcodes ->
                 if (!handled.get()) {
-                    val value = barcodes.firstOrNull { it.valueType != Barcode.TYPE_UNKNOWN || it.rawValue != null }
-                        ?.rawValue
-                    if (!value.isNullOrEmpty() && handled.compareAndSet(false, true)) {
+                    val barcode = barcodes.firstOrNull {
+                        it.valueType != Barcode.TYPE_UNKNOWN || it.rawValue != null || it.rawBytes != null
+                    }
+                    val value = barcode?.let { extractBarcodeText(it) }
+                    // YEU CAU: neu noi dung ma QR co CHUA KY TU DAC BIET, KHONG
+                    // xuat ket qua ra o nhap (xem [containsSpecialCharacter]) -
+                    // tiep tuc quet frame ke tiep nhu chua tim thay gi ca, thay
+                    // vi chen no vao ban phim.
+                    if (!value.isNullOrEmpty() && !containsSpecialCharacter(value) &&
+                        handled.compareAndSet(false, true)
+                    ) {
                         onQrFound(value)
                     }
                 }
@@ -251,6 +259,43 @@ class QrScanActivity : AppCompatActivity() {
             .addOnCompleteListener {
                 imageProxy.close()
             }
+    }
+
+    /** Tap ky tu duoc COI LA HOP LE (khong phai "dac biet"): chu cai (co dau
+     *  Tieng Viet), chu so, khoang trang, va mot so dau cau/ky hieu co ban
+     *  thuong gap trong van ban thong thuong. BAT KY ky tu nao KHONG nam
+     *  trong tap nay (vd @#$%^&*+={}[]|\~`<>, emoji, ky tu dieu khien...)
+     *  se khien ca ket qua bi coi la "chua ky tu dac biet" va bi TU CHOI,
+     *  khong xuat ra o nhap - dung theo yeu cau: khong muon ma QR chua ky
+     *  tu dac biet duoc chen vao van ban dang go. */
+    private val allowedCharacterRegex = Regex(
+        "^[\\p{L}\\p{N}\\s.,!?:;'\"()/@-]*$"
+    )
+
+    private fun containsSpecialCharacter(text: String): Boolean =
+        !allowedCharacterRegex.matches(text)
+
+    /** Lay noi dung van ban tu ma QR, uu tien [Barcode.rawValue] (thuong dung
+     *  nhat, du dieu kien cho hau het ma QR), roi [displayValue], roi cuoi
+     *  cung tu giai ma [rawBytes] (UTF-8, roi Latin-1 neu UTF-8 khong hop
+     *  le) - de LAY DUNG duoc noi dung thuc te cua ma QR (bao gom ca ma co
+     *  dau/Tieng Viet) truoc khi dem qua buoc kiem tra [containsSpecialCharacter]
+     *  ben tren. Lay dung noi dung truoc, roi moi quyet dinh co xuat ra hay
+     *  khong, chinh xac hon la doan bua khi con thieu du lieu. */
+    private fun extractBarcodeText(barcode: Barcode): String? {
+        barcode.rawValue?.let { if (it.isNotEmpty()) return it }
+        barcode.displayValue?.let { if (it.isNotEmpty()) return it }
+        val bytes = barcode.rawBytes ?: return null
+        if (bytes.isEmpty()) return null
+        return try {
+            val utf8 = String(bytes, Charsets.UTF_8)
+            // Neu giai ma UTF-8 sinh ra ky tu thay the "\uFFFD" (dau hieu
+            // byte khong hop le voi UTF-8), coi nhu giai ma sai bang ma,
+            // chuyen sang Latin-1 (luon hop le, khong bao gio ra "\uFFFD").
+            if (utf8.contains('\uFFFD')) String(bytes, Charsets.ISO_8859_1) else utf8
+        } catch (e: Exception) {
+            String(bytes, Charsets.ISO_8859_1)
+        }
     }
 
     private fun onQrFound(text: String) {
