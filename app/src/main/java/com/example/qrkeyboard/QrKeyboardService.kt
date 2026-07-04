@@ -38,9 +38,23 @@ class QrKeyboardService : InputMethodService() {
             pendingCallback?.invoke(text)
         }
 
-        /** Thoi gian (ms) phai nham giu phim cach de bat/tat che do Tieng Viet. */
-        private const val LANGUAGE_TOGGLE_HOLD_MS = 2000L
+        /** Khoang thoi gian toi da (ms) giua 2 lan cham phim cach de tinh la
+         *  "cham nhanh 2 lan" (double-tap), dung de bat/tat che do Tieng Viet.
+         *  Truoc day dung kieu nham GIU 2 giay - qua kho bam dung, nen doi
+         *  sang cham nhanh 2 lan cho de thao tac hon. */
+        private const val LANGUAGE_TOGGLE_DOUBLE_TAP_MS = 350L
+
+        /** Phim xoa (鈱�): thoi gian nham giu truoc khi bat dau tu dong xoa
+         *  LIEN TUC (ms), va khoang cach (ms) giua cac lan xoa lien tiep sau
+         *  do. Nham giu qua [DELETE_REPEAT_INITIAL_DELAY_MS] se kich hoat
+         *  xoa lap lai moi [DELETE_REPEAT_INTERVAL_MS] cho den khi tha tay,
+         *  thay vi truoc day moi lan bam chi xoa dung 1 ky tu. */
+        private const val DELETE_REPEAT_INITIAL_DELAY_MS = 400L
+        private const val DELETE_REPEAT_INTERVAL_MS = 50L
     }
+
+    /** Handler dung rieng cho vong lap xoa lien tuc khi giu phim 鈱�. */
+    private val deleteRepeatHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     /** Ba "trang" ban phim, dung trinh tu quen thuoc cua cac ban phim khac:
      *  chu cai (mac dinh) <-> so & ky hieu co ban (nut "?123") <-> ky hieu
@@ -51,7 +65,7 @@ class QrKeyboardService : InputMethodService() {
     private var isShiftOn = false
 
     /** Bat/tat go Tieng Viet kieu Telex, chuyen doi bang cach nham giu phim
-     *  cach trong [LANGUAGE_TOGGLE_HOLD_MS] mili giay. */
+     *  cach bang cach cham nhanh 2 lan lien tiep (xem [LANGUAGE_TOGGLE_DOUBLE_TAP_MS]). */
     private var isVietnameseMode = false
 
     /** Bo dem chua cac ky tu (thuong, chua dau) cua "tu" dang go trong che do
@@ -116,7 +130,7 @@ class QrKeyboardService : InputMethodService() {
                             },
                             0
                         )
-                        rowView.addView(buildKey("\u232b", weight = 1.5f) { deleteChar() })
+                        rowView.addView(buildKey("\u232b", weight = 1.5f, onRepeat = { deleteChar() }) { deleteChar() })
                     }
                     root.addView(rowView)
                 }
@@ -209,7 +223,7 @@ class QrKeyboardService : InputMethodService() {
         numberRow3Symbols.forEach { ch ->
             row.addView(buildKey(ch.toString()) { insertText(ch.toString()) })
         }
-        row.addView(buildKey("\u232b") { deleteChar() })
+        row.addView(buildKey("\u232b", onRepeat = { deleteChar() }) { deleteChar() })
 
         return row
     }
@@ -248,7 +262,7 @@ class QrKeyboardService : InputMethodService() {
         extendedSymbolRow3.forEach { ch ->
             row.addView(buildKey(ch.toString(), weight = 1f) { insertText(ch.toString()) })
         }
-        row.addView(buildKey("\u232b", weight = 1.3f) { deleteChar() })
+        row.addView(buildKey("\u232b", weight = 1.3f, onRepeat = { deleteChar() }) { deleteChar() })
 
         return row
     }
@@ -271,17 +285,29 @@ class QrKeyboardService : InputMethodService() {
         return row
     }
 
-    /** Phim cach: chuc nang chinh la chen dau cach; nham GIU trong 2 giay se
-     *  chuyen doi giua go Tieng Viet (Telex) va Tieng Anh. Nhan giua chua du
-     *  2 giay van chi chen dau cach binh thuong. Nhan chu vao trang thai
-     *  hien tai (EN/VI) de nguoi dung biet dang o che do nao. */
+    /** Phim cach: chuc nang chinh la chen dau cach; cham NHANH 2 lan lien
+     *  tiep (trong vong LANGUAGE_TOGGLE_DOUBLE_TAP_MS) se chuyen doi giua go
+     *  Tieng Viet (Telex) va Tieng Anh - giong kieu "double-tap space" quen
+     *  thuoc, de bam hon nhieu so voi kieu nham giu 2 giay truoc day. Vi lan
+     *  cham dau tien da chen 1 dau cach roi, khi phat hien la lan cham thu 2
+     *  (tuc double-tap), ham nay se XOA lai dau cach vua chen do truoc khi
+     *  doi ngon ngu, de khong bi thua dau cach ngoai y muon. Nhan chu vao
+     *  trang thai hien tai (EN/VI) de nguoi dung biet dang o che do nao. */
     private fun buildSpaceKey(weight: Float): Button {
         val label = "\u2423 " + if (isVietnameseMode) "VI" else "EN"
-        return buildKey(
-            label = label,
-            weight = weight,
-            onLongPress2s = { toggleVietnameseMode() }
-        ) { insertChar(' ') }
+        var lastTapTime = 0L
+        return buildKey(label = label, weight = weight) {
+            val now = SystemClock.elapsedRealtime()
+            if (lastTapTime != 0L && now - lastTapTime <= LANGUAGE_TOGGLE_DOUBLE_TAP_MS) {
+                lastTapTime = 0L
+                // Xoa dau cach vua chen o lan cham dau tien, roi doi ngon ngu.
+                currentInputConnection?.deleteSurroundingText(1, 0)
+                toggleVietnameseMode()
+            } else {
+                lastTapTime = now
+                insertChar(' ')
+            }
+        }
     }
 
     private fun toggleVietnameseMode() {
@@ -299,14 +325,16 @@ class QrKeyboardService : InputMethodService() {
      *  - Rung nhe (haptic) khi nham xuong.
      *  - Neu la phim mot ky tu don, "noi" mot bong xem truoc phong to ngay
      *    phia tren phim trong luc dang nham.
-     *  - Neu co [onLongPress2s], se kich hoat sau khi giu du 2000ms va HUY
-     *    hanh dong click binh thuong (dung cho phim cach: giu 2s = doi ngon
-     *    ngu, tha ra som = chen dau cach). */
+     *  - Neu co [onRepeat], nham GIU phim se tu dong goi lai [onRepeat] lien
+     *    tuc (sau [DELETE_REPEAT_INITIAL_DELAY_MS] dau tien, roi lap lai moi
+     *    [DELETE_REPEAT_INTERVAL_MS]) cho den khi tha tay ra - dung cho phim
+     *    xoa (鈱�) de "giu la xoa hoai". Neu chi cham nhanh (tha ra truoc khi
+     *    kich hoat lap lai), van goi [onClick] binh thuong dung 1 lan. */
     private fun buildKey(
         label: String,
         weight: Float = 1f,
         highlight: Boolean = false,
-        onLongPress2s: (() -> Unit)? = null,
+        onRepeat: (() -> Unit)? = null,
         onClick: () -> Unit
     ): Button {
         val bg = GradientDrawable().apply {
@@ -341,38 +369,51 @@ class QrKeyboardService : InputMethodService() {
             isHapticFeedbackEnabled = true
         }
 
-        // Do THOI GIAN nham xuong (tinh luc nha ra) thay vi hen gio giua chung
-        // bang Handler.postDelayed: cach nay on dinh hon nhieu, vi ban truoc
-        // kich hoat NGAY TRONG luc ngon tay con dang cham se ve lai toan bo
-        // ban phim giua chung mot cu cham, co the lam roi/mat su kien cham
-        // dang xu ly khien "giu 2s" khong bao gio co tac dung. Voi cach do
-        // thoi gian luc tha ra, viec ve lai ban phim chi xay ra SAU KHI ngon
-        // tay da roi khoi man hinh, hoan toan an toan.
-        var pressStartTime = 0L
+        // Voi phim co [onRepeat] (vd phim xoa): dung mot Runnable tu lap lai
+        // qua deleteRepeatHandler. Bat dau dem gio tu luc ACTION_DOWN; neu
+        // ngon tay con giu qua DELETE_REPEAT_INITIAL_DELAY_MS, Runnable bat
+        // dau chay lien tuc moi DELETE_REPEAT_INTERVAL_MS (goi onRepeat moi
+        // lan) cho toi khi ACTION_UP/ACTION_CANCEL huy no di. Neu ngon tay
+        // tha ra TRUOC khi kich hoat lap lai (cham binh thuong), Runnable
+        // chua kip chay lan nao thi da bi huy - luc do de framework tu goi
+        // onClick() nhu mot phim thuong (xoa dung 1 ky tu).
+        var repeatRunnable: Runnable? = null
+        var repeatTriggered = false
         button.setOnTouchListener { v, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                     if (label.length == 1) showKeyPreview(v, label)
-                    pressStartTime = SystemClock.elapsedRealtime()
+                    repeatTriggered = false
+                    if (onRepeat != null) {
+                        val runnable = object : Runnable {
+                            override fun run() {
+                                repeatTriggered = true
+                                onRepeat.invoke()
+                                deleteRepeatHandler.postDelayed(this, DELETE_REPEAT_INTERVAL_MS)
+                            }
+                        }
+                        repeatRunnable = runnable
+                        deleteRepeatHandler.postDelayed(runnable, DELETE_REPEAT_INITIAL_DELAY_MS)
+                    }
                     false
                 }
                 MotionEvent.ACTION_UP -> {
                     hideKeyPreview()
-                    if (onLongPress2s != null) {
-                        val heldMs = SystemClock.elapsedRealtime() - pressStartTime
-                        if (heldMs >= LANGUAGE_TOGGLE_HOLD_MS) {
-                            v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                            onLongPress2s.invoke()
-                            // Da xu ly nhu giu-2s: nuot su kien de KHONG chen
-                            // dau cach (onClick) ngay sau do nua.
-                            return@setOnTouchListener true
-                        }
+                    repeatRunnable?.let { deleteRepeatHandler.removeCallbacks(it) }
+                    repeatRunnable = null
+                    if (repeatTriggered) {
+                        // Da xoa lien tuc trong luc giu: nuot su kien de
+                        // KHONG kich hoat them onClick() (tranh xoa du 1 ky
+                        // tu nua ngay khi vua tha tay).
+                        return@setOnTouchListener true
                     }
                     false
                 }
                 MotionEvent.ACTION_CANCEL -> {
                     hideKeyPreview()
+                    repeatRunnable?.let { deleteRepeatHandler.removeCallbacks(it) }
+                    repeatRunnable = null
                     false
                 }
                 else -> false
@@ -505,6 +546,9 @@ class QrKeyboardService : InputMethodService() {
         // cho de tranh chen nham du lieu vao o khac sau nay.
         pendingCallback = null
         hideKeyPreview()
+        // Huy moi vong lap xoa-lien-tuc dang cho (phong truong hop nguoi
+        // dung roi o nhap trong luc van con dang giu phim xoa).
+        deleteRepeatHandler.removeCallbacksAndMessages(null)
     }
 }
 
