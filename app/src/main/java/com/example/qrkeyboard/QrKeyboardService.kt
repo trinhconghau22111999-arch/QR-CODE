@@ -5,7 +5,6 @@ import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.inputmethodservice.InputMethodService
 import android.media.AudioManager
-import android.media.ToneGenerator
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
@@ -116,27 +115,29 @@ class QrKeyboardService : InputMethodService() {
      *  loi kieu chen lai/nhac lai chu vua go truoc do. */
     private var selfInitiatedChange = false
 
-    /** ToneGenerator rieng de phat tieng "tick" moi khi nham phim (xem
-     *  [playKeyClickTone]), tach biet voi toneGenerator "bip" quet QR o
-     *  QrScanActivity. Dung STREAM_SYSTEM (muc 0-100 cua startTone).
-     *  TRUOC DAY muc am luong la 35 (kha nho, nguoi dung phan anh kho nghe) -
-     *  gio tang len 80 de tieng "tick" ro rang, de nghe hon khi go, nhung
-     *  van chua toi muc toi da (100) de tranh qua chua/gay khoc chiu. */
-    private val keyClickToneGenerator: ToneGenerator by lazy {
-        ToneGenerator(AudioManager.STREAM_SYSTEM, 80)
+    /** AudioManager dung de phat am thanh gõ phim (xem [playKeyClickTone]).
+     *  TRUOC DAY dung ToneGenerator phat mot tieng "tin" (beep dien tu tong
+     *  hop) - nguoi dung phan anh nghe khong hay VA moi lan goi startTone()
+     *  la mot lenh dong bo toi audio HAL, lam CHAM luc go nhanh (tich luy dan
+     *  qua tung phim, gay cam giac "khong theo kip"/mat chu). GIO DAY doi
+     *  sang AudioManager.playSoundEffect(FX_KEYPRESS_STANDARD) - day CHINH LA
+     *  am thanh "tach" nhe chuan he thong Android dung cho ban phim (khac
+     *  han tieng "tin" truoc do), va ban than API nay duoc thiet ke de goi
+     *  LIEN TUC, TAN SO CAO (moi lan go phim) ma khong lam nghen luong UI. */
+    private val audioManager: AudioManager by lazy {
+        getSystemService(AUDIO_SERVICE) as AudioManager
     }
 
     private fun playKeyClickTone() {
         try {
-            // Thoi luong ngan (25ms, tang nhe tu 20ms) de tieng "tick" van
-            // gon, khong bi ngat quang hay chong tieng nhau khi go nhanh
-            // nhieu phim lien tiep, nhung du dai de nghe ro hon voi muc am
-            // luong moi.
-            keyClickToneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP2, 25)
+            audioManager.playSoundEffect(AudioManager.FX_KEYPRESS_STANDARD)
         } catch (e: Exception) {
-            // Bo qua neu audio chua san sang (hiem gap).
+            // Bo qua neu audio chua san sang (hiem gap), hoac nguoi dung da
+            // tat "am thanh cham" trong Settings he thong (khi do API nay se
+            // tu im lang, khong throw, nhung bat try/catch de an toan).
         }
     }
+
 
     private val letterRows = listOf(
         "qwertyuiop",
@@ -832,16 +833,57 @@ class QrKeyboardService : InputMethodService() {
 
     /** Xu ly mot ky tu go theo kieu Telex: doi chieu voi phan "tu" da go tu
      *  truoc (currentWord) de biet co can xoa/thay the ky tu truoc do hay
-     *  khong (vd go "a" roi "a" -> "â", go nguyen am roi "s" -> them dau sac). */
+     *  khong (vd go "a" roi "a" -> "â", go nguyen am roi "s" -> them dau sac).
+     *
+     *  TRUOC DAY: moi lan go 1 ky tu, ham nay LUON xoa TOAN BO tu dang go
+     *  (deleteSurroundingText(oldLen,0)) roi CHEN LAI TOAN BO tu moi - vd go
+     *  ky tu thu 8 cua mot tu 8 ky tu se xoa+chen lai ca 8 ky tu, du 7 ky tu
+     *  dau khong doi gi ca. Voi tu dai, moi keystroke la 2 IPC round-trip
+     *  ngay cang nang (ti le voi do dai tu), day chinh la NGUYEN NHAN CHINH
+     *  khien ban phim "khong theo kip" (giat, mat/thieu chu) khi go nhanh -
+     *  vi thoi gian xu ly 1 phim tang dan theo do dai tu dang go.
+     *
+     *  GIO DAY: tim DO DAI TIEN TO CHUNG giua tu cu va tu moi (vd go them 1
+     *  ky tu binh thuong, khong kich hoat bien doi Telex nao ca, thi toan bo
+     *  tu cu la tien to chung, CHI CAN commit dung 1 ky tu moi, KHONG can xoa
+     *  gi ca). Chi khi mot phep bien doi Telex THUC SU thay doi mot ky tu o
+     *  giua/gan cuoi tu (vd "tiep"+"e" -> "tiêp") thi moi can xoa+chen phan
+     *  DUOI KHAC NHAU ke tu diem do - van dung, nhung nho hon nhieu so voi
+     *  xoa+chen ca tu. */
     private fun insertVietnameseChar(ch: Char) {
         val ic = currentInputConnection ?: return
         val hadPendingSuggestion = pendingSuggestion != null
         clearAutocorrectSuggestion()
         val lower = ch.lowercaseChar()
-        val oldLen = currentWord.length
-        val newWordLower = VietnameseTelex.processKey(currentWord.toString(), lower)
+
+        // LOI TRUOC DAY: go xong 1 tu (vd "hau") + dau cach se lam currentWord
+        // bi XOA TRANG (xem [insertText] - dung de danh dau tu da "chot").
+        // Neu sau do nguoi dung XOA dau cach do di (bang phim ⌫) de noi lai
+        // vao cuoi tu ("hau"), currentWord VAN DANG TRONG (khong tu dong
+        // "khoi phuc" lai thanh "hau"), nen go them ky tu Telex tiep theo
+        // (vd "a" de "hau"+"a" -> "hâu") se bi hieu la BAT DAU MOT TU MOI, ra
+        // ket qua sai (vd "haua" thay vi "hâu" dung mong doi).
+        // KHAC PHUC: neu currentWord dang TRONG, dong bo lai tu NOI DUNG THUC
+        // TE truoc con tro (doc qua InputConnection) - lay chuoi CHU CAI lien
+        // tuc gan con tro nhat (dung [Char.isLetter], bao gom ca chu Tieng
+        // Viet co dau) lam currentWord moi, GIONG NHU tu do van dang duoc go
+        // tiep, thay vi coi la tu moi hoan toan.
+        if (currentWord.isEmpty()) {
+            resyncCurrentWordFromInputConnection(ic)
+        }
+
+        val oldWordLower = currentWord.toString()
+        val newWordLower = VietnameseTelex.processKey(oldWordLower, lower)
         currentWord = StringBuilder(newWordLower)
-        val display = if (isShiftOn) newWordLower.uppercase() else newWordLower
+
+        var commonPrefixLen = 0
+        val minLen = minOf(oldWordLower.length, newWordLower.length)
+        while (commonPrefixLen < minLen && oldWordLower[commonPrefixLen] == newWordLower[commonPrefixLen]) {
+            commonPrefixLen++
+        }
+        val deleteCount = oldWordLower.length - commonPrefixLen
+        val newSuffixLower = newWordLower.substring(commonPrefixLen)
+        val newSuffixDisplay = if (isShiftOn) newSuffixLower.uppercase() else newSuffixLower
 
         selfInitiatedChange = true
         // Goi xoa + chen trong CUNG mot batch edit: bao dam ung dung dich
@@ -849,16 +891,39 @@ class QrKeyboardService : InputMethodService() {
         // thay vi 2 thao tac rieng le - vua tranh viec ung dung ve lai giao
         // dien 2 lan (do trung gian) gay giat/cham khi go nhanh, vua tranh
         // truong hop hiem gap 2 IPC rieng le bi xu ly khong dung thu tu.
-        ic.beginBatchEdit()
-        try {
-            if (oldLen > 0) {
-                ic.deleteSurroundingText(oldLen, 0)
+        if (deleteCount > 0) {
+            ic.beginBatchEdit()
+            try {
+                ic.deleteSurroundingText(deleteCount, 0)
+                ic.commitText(newSuffixDisplay, 1)
+            } finally {
+                ic.endBatchEdit()
             }
-            ic.commitText(display, 1)
-        } finally {
-            ic.endBatchEdit()
+        } else {
+            // Truong hop pho bien nhat (go them ky tu moi, khong bien doi gi
+            // ky tu cu): khong can xoa gi ca, chi 1 lenh commit duy nhat.
+            ic.commitText(newSuffixDisplay, 1)
         }
         if (hadPendingSuggestion) redrawKeyboard()
+    }
+
+    /** Doc mot doan van ban truoc con tro (qua InputConnection) va, neu doan
+     *  ngay truoc con tro la mot day CHU CAI lien tuc (khong bi ngat boi dau
+     *  cach/dau cau/ky tu khac), dat day chu cai do (ve chu thuong) lam
+     *  [currentWord] moi - de cac phep bien doi Telex tiep theo (aa->â, dau
+     *  thanh s/f/r/x/j...) ap dung DUNG vao tu dang go, thay vi nham la dang
+     *  bat dau mot tu hoan toan moi. Neu ky tu ngay truoc con tro KHONG phai
+     *  chu cai (vd dang thuc su dung sau dau cach/dau cau, hoac dau dong van
+     *  ban), khong lam gi ca - [currentWord] tiep tuc trong, dung nhu mong
+     *  doi cho mot tu moi thuc su. */
+    private fun resyncCurrentWordFromInputConnection(ic: android.view.inputmethod.InputConnection) {
+        val before = ic.getTextBeforeCursor(40, 0)?.toString() ?: return
+        var i = before.length
+        while (i > 0 && before[i - 1].isLetter()) i--
+        val recovered = before.substring(i)
+        if (recovered.isNotEmpty()) {
+            currentWord = StringBuilder(recovered.lowercase())
+        }
     }
 
     /** Chen dau cach/dau cau/ky hieu - luon ket thuc "tu" hien tai. Neu vua
@@ -997,7 +1062,6 @@ class QrKeyboardService : InputMethodService() {
         previewPopup?.let { if (it.isShowing) it.dismiss() }
         previewPopup = null
         previewBubble = null
-        keyClickToneGenerator.release()
     }
 }
 
