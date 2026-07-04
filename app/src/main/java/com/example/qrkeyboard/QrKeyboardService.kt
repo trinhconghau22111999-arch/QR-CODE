@@ -57,7 +57,19 @@ class QrKeyboardService : InputMethodService() {
          *  thay vi truoc day moi lan bam chi xoa dung 1 ky tu. */
         private const val DELETE_REPEAT_INITIAL_DELAY_MS = 400L
         private const val DELETE_REPEAT_INTERVAL_MS = 50L
+
+        /** Khoang thoi gian toi da (ms) giua 2 lan cham nut [QR] de tinh la
+         *  mot cu DUP-TAP (cham dup 2 lan) - mo che do QUET LIEN TUC (quet
+         *  hoai, khong tu dong dong, cho den khi nguoi dung tu bam "Huy").
+         *  Cham 1 lan binh thuong (qua khoang thoi gian nay moi cham lan 2,
+         *  hoac chi cham 1 lan) van giu hanh vi cu: quet duoc 1 ma la tu dong
+         *  dong man hinh quet ngay. */
+        private const val QR_DOUBLE_TAP_MAX_INTERVAL_MS = 350L
     }
+
+    /** Thoi diem (uptimeMillis) cua lan cham nut [QR] gan nhat, dung de phat
+     *  hien cu dup-tap (xem [QR_DOUBLE_TAP_MAX_INTERVAL_MS]) o [buildNumbersBottomRow]. */
+    private var lastQrKeyTapTime = 0L
 
     /** Handler dung rieng cho vong lap xoa lien tuc khi giu phim ⌫. */
     private val deleteRepeatHandler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -458,7 +470,15 @@ class QrKeyboardService : InputMethodService() {
     /** Hang duoi cung cua trang so: nut "QR" (thay cho dau "," truoc day -
      *  da doi cho sang trang chu cai) de mo may quet QR ngay tu trang so ma
      *  khong can chuyen ve trang chu cai truoc. Dau "." da CHUYEN SANG trang
-     *  chu cai (canh phim cach) nen khong con o day nua. */
+     *  chu cai (canh phim cach) nen khong con o day nua.
+     *
+     *  Nut QR gio phan biet CHAM 1 LAN va DUP-TAP (cham 2 lan lien tiep,
+     *  trong vong [QR_DOUBLE_TAP_MAX_INTERVAL_MS]):
+     *   - Cham 1 lan: mo man hinh quet o che do BINH THUONG - quet duoc 1 ma
+     *     la tu dong dong lai ngay (hanh vi cu, khong doi).
+     *   - Dup-tap: mo man hinh quet o che do LIEN TUC - sau khi quet duoc 1
+     *     ma, KHONG tu dong dong, ma tiep tuc quet ma tiep theo, cho den khi
+     *     nguoi dung tu bam nut "Huy" tren man hinh quet. */
     private fun buildNumbersBottomRow(): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -468,7 +488,14 @@ class QrKeyboardService : InputMethodService() {
         }
 
         row.addView(buildKey("ABC", weight = 1.6f) { switchMode(KeyboardMode.LETTERS) })
-        row.addView(buildKey("QR", weight = 1.2f, highlight = true) { openQrScanner() })
+        row.addView(buildKey("QR", weight = 1.2f, highlight = true) {
+            val now = android.os.SystemClock.uptimeMillis()
+            val isDoubleTap = now - lastQrKeyTapTime <= QR_DOUBLE_TAP_MAX_INTERVAL_MS
+            // Dat lai ve 0 sau khi da tinh la dup-tap, de mot cham thu 3 lien
+            // ngay sau do khong bi hieu nham la dup-tap cua cap tiep theo.
+            lastQrKeyTapTime = if (isDoubleTap) 0L else now
+            openQrScanner(continuous = isDoubleTap)
+        })
         row.addView(buildSpaceKey(weight = 5.4f))
         row.addView(buildKey("\u23ce", weight = 1.6f, highlight = true) { sendEnter() })
 
@@ -852,13 +879,29 @@ class QrKeyboardService : InputMethodService() {
         }
     }
 
+    /** Xoa 1 ky tu truoc con tro - HOAC neu nguoi dung dang co mot vung van
+     *  ban duoc BOI DEN (chon khoi) trong o nhap lieu, xoa NGUYEN CA khoi do
+     *  bang mot lan bam duy nhat, thay vi im lang chi xoa 1 ky tu ngay truoc/
+     *  sau vung chon (hanh vi cu, gay cam giac nut xoa "khong an gi" voi khoi
+     *  van ban dai). Dung [InputConnection.getSelectedText] de kiem tra co
+     *  vung chon khong: neu co (khac null va khong rong), goi commitText("")
+     *  - theo dung tai lieu Android, commitText se THAY THE vung dang duoc
+     *  chon bang chuoi truyen vao, nen truyen chuoi rong tuong duong voi xoa
+     *  toan bo vung chon do. */
     private fun deleteChar() {
         val hadPendingSuggestion = pendingSuggestion != null
         clearAutocorrectSuggestion()
         selfInitiatedChange = true
-        currentInputConnection?.deleteSurroundingText(1, 0)
-        if (currentWord.isNotEmpty()) {
-            currentWord.deleteCharAt(currentWord.length - 1)
+        val ic = currentInputConnection
+        val selectedText = ic?.getSelectedText(0)
+        if (!selectedText.isNullOrEmpty()) {
+            ic.commitText("", 1)
+            currentWord.clear()
+        } else {
+            ic?.deleteSurroundingText(1, 0)
+            if (currentWord.isNotEmpty()) {
+                currentWord.deleteCharAt(currentWord.length - 1)
+            }
         }
         if (hadPendingSuggestion) redrawKeyboard()
     }
@@ -904,8 +947,16 @@ class QrKeyboardService : InputMethodService() {
      *  khung quet dung ngay phia tren. Ket qua quet se duoc tra ve qua
      *  companion callback [deliverScanResult]. Sau khi chen xong noi dung,
      *  tu dong xuong dong (chen ky tu "\n") de con tro nam san o dong moi,
-     *  san sang cho lan quet/nhap tiep theo. */
-    private fun openQrScanner() {
+     *  san sang cho lan quet/nhap tiep theo.
+     *
+     *  [continuous]: neu true (mo bang dup-tap nut QR, xem [buildNumbersBottomRow]),
+     *  KHONG go bo [pendingCallback] sau khi nhan duoc 1 ket qua - de callback
+     *  van con hieu luc, san sang nhan tiep cac ket qua quet KE TIEP tu cung
+     *  QrScanActivity (ben do se tu quet lien tuc, khong tu dong dong man
+     *  hinh, cho den khi nguoi dung tu bam "Huy"). Neu false (cham 1 lan,
+     *  hanh vi cu): go bo callback ngay sau ket qua dau tien, vi man hinh
+     *  quet se tu dong dong lai, khong con ket qua nao khac gui ve nua. */
+    private fun openQrScanner(continuous: Boolean = false) {
         pendingCallback = { text ->
             val ic = currentInputConnection
             selfInitiatedChange = true
@@ -915,7 +966,9 @@ class QrKeyboardService : InputMethodService() {
             val hadPendingSuggestion = pendingSuggestion != null
             clearAutocorrectSuggestion()
             if (hadPendingSuggestion) redrawKeyboard()
-            pendingCallback = null
+            if (!continuous) {
+                pendingCallback = null
+            }
         }
 
         val keyboardHeightPx = window?.window?.decorView?.height ?: 0
@@ -923,6 +976,7 @@ class QrKeyboardService : InputMethodService() {
         val intent = Intent(this, QrScanActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             putExtra(QrScanActivity.EXTRA_KEYBOARD_HEIGHT_PX, keyboardHeightPx)
+            putExtra(QrScanActivity.EXTRA_CONTINUOUS_MODE, continuous)
         }
         startActivity(intent)
     }
