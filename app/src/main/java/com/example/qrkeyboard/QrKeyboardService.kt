@@ -1,16 +1,23 @@
 package com.example.qrkeyboard
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
+import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
 import android.inputmethodservice.InputMethodService
 import android.media.AudioManager
+import android.media.ToneGenerator
+import android.os.Handler
+import android.os.Looper
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.FrameLayout
@@ -19,29 +26,74 @@ import android.widget.LinearLayout
 import android.widget.PopupWindow
 import android.widget.TextView
 import android.widget.Toast
+import androidx.camera.core.Camera
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageProxy
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.LifecycleRegistry
+import com.google.mlkit.vision.barcode.BarcodeScanner
+import com.google.mlkit.vision.barcode.BarcodeScanning
+import com.google.mlkit.vision.barcode.common.Barcode
+import com.google.mlkit.vision.common.InputImage
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Dich vu ban phim ao (Input Method Service). Hien thi mot ban phim QWERTY
  * don gian dung code (khong phu thuoc file layout XML), kem nut [QR] de mo
- * QrScanActivity quet ma QR va chen ket qua thang vao o nhap lieu dang mo.
+ * khung quet QR noi (xem [showQrOverlay]) va chen ket qua thang vao o nhap
+ * lieu dang mo.
  * Ho tro go tieng Viet kieu Telex (chuyen doi tu ban phim QWERTY chuan). Bat/
  * tat che do Tieng Viet bang cach VUOT tren phim cach: vuot TU TRAI SANG PHAI
  * de chuyen ve Tieng Anh, vuot TU PHAI SANG TRAI de chuyen sang Tieng Viet
  * (xem [buildSpaceKey]) - thay cho kieu cham nhanh 2 lan (double-tap) truoc
  * day, vi double-tap de bi kich hoat nham khi go nhanh lien tuc 2 dau cach
  * gan nhau (vd giua 2 cau), gay doi ngon ngu ngoai y muon.
+ *
+ * KHUNG QUET QR: TRUOC DAY duoc thuc hien bang cach mo QrScanActivity nhu mot
+ * "cua so noi" (Activity trong suot, dat FLAG_NOT_FOCUSABLE) de co gang khong
+ * cuop focus ban phim. Cach do van la mot Activity that - ve ly thuyet he
+ * thong van co the coi day la chuyen "mat focus" trong mot so tinh huong/dong
+ * may (mot so ROM nhu MIUI, One UI), khien onFinishInputView() bi goi oan.
+ *
+ * GIO DAY: khung quet (preview camera + nut Huy/Flash) la MOT VIEW NOI duoc
+ * add thang vao cua so cua CHINH InputMethodService nay bang WindowManager
+ * (xem [showQrOverlay]), khong con Activity nao dung de quet nua. Vi cua so
+ * chu (cua so ban phim) khong doi, he thong khong bao gio coi la mat focus,
+ * nen ban phim va khung quet chac chan cung ton tai, InputConnection voi o
+ * nhap khong bi gian doan. CameraX can mot LifecycleOwner de bind/unbind camera
+ * dung luc, nen Service nay tu implement LifecycleOwner (xem [lifecycle]).
  */
-class QrKeyboardService : InputMethodService() {
+class QrKeyboardService : InputMethodService(), LifecycleOwner {
+
+    /** LifecycleRegistry rieng cho Service nay, dung CHI de cung cap cho
+     *  CameraX.bindToLifecycle() (CameraX bat buoc phai co mot LifecycleOwner).
+     *  Chuyen sang RESUMED khi khung quet dang mo ([showQrOverlay]), CREATED
+     *  khi dong lai ([hideQrOverlay]) - KHONG bao gio DESTROYED cho toi khi
+     *  chinh Service bi huy ([onDestroy]), de co the mo/dong khung quet nhieu
+     *  lan trong suot vong doi cua ban phim ma khong can tao lai registry. */
+    private val lifecycleRegistry = LifecycleRegistry(this)
+    override val lifecycle: Lifecycle get() = lifecycleRegistry
 
     companion object {
-        /** Cac callback dang cho ket qua quet QR, duoc QrScanActivity goi
-         *  khi quet thanh cong. Dung callback tinh (thay vi startActivityForResult)
-         *  vi QrScanActivity duoc mo nhu mot cua so noi khong chiem focus. */
-        private var pendingCallback: ((String) -> Unit)? = null
+        /** Callback tinh, duoc QrCameraPermissionActivity goi ngay sau khi
+         *  nguoi dung tra loi hop thoai xin quyen Camera he thong. Day la
+         *  Activity DUY NHAT con lai trong luong quet QR - no KHONG chua giao
+         *  dien quet nao ca, chi lam mot viec: hien ho thoai xin quyen (bat
+         *  buoc phai gan voi mot Activity, InputMethodService/Service khong
+         *  the tu hien hop thoai nay), roi bao ket qua ve day va tu dong. */
+        private var onCameraPermissionResult: ((granted: Boolean) -> Unit)? = null
 
-        /** Duoc QrScanActivity goi ngay khi quet duoc QR, tu bat ky thread nao. */
-        fun deliverScanResult(text: String) {
-            pendingCallback?.invoke(text)
+        fun notifyCameraPermissionResult(granted: Boolean) {
+            onCameraPermissionResult?.invoke(granted)
+            onCameraPermissionResult = null
         }
 
         /** Khoang cach toi thieu (dp) ngon tay phai di chuyen theo chieu
@@ -136,6 +188,42 @@ class QrKeyboardService : InputMethodService() {
             // tat "am thanh cham" trong Settings he thong (khi do API nay se
             // tu im lang, khong throw, nhung bat try/catch de an toan).
         }
+    }
+
+    // ---------------------------------------------------------------------
+    // KHUNG QUET QR NOI (View nong them qua WindowManager cua chinh Service)
+    // ---------------------------------------------------------------------
+
+    private val qrWindowManager: WindowManager by lazy {
+        getSystemService(WINDOW_SERVICE) as WindowManager
+    }
+
+    /** View goc (FrameLayout chua preview camera + nut Huy/Flash) dang duoc
+     *  add vao cua so he thong; null khi khung quet dang dong. Dung de biet
+     *  khung quet co dang mo hay khong, va de go (removeView) khi dong lai. */
+    private var qrOverlayView: View? = null
+    private var qrPreviewView: PreviewView? = null
+    private var qrCameraExecutor: ExecutorService? = null
+    private var qrCamera: Camera? = null
+    private var qrFlashOn = false
+    private var qrFlashButton: Button? = null
+
+    /** Tuong tu `handled` truoc day o QrScanActivity: chan viec xu ly nhieu
+     *  frame camera cung luc trong khoang thoi gian tu luc tim thay 1 ma QR
+     *  toi luc phat xong tieng bip/dong khung (xem [onQrFound]). */
+    private val qrFrameHandled = AtomicBoolean(false)
+
+    /** Ma QR VUA xuat ra o nhap gan nhat - chan xuat LAP LIEN TIEP cung mot
+     *  noi dung (xem giai thich chi tiet o [processQrFrame]). */
+    private var qrLastDeliveredText: String? = null
+
+    /** True neu khung quet dang o CHE DO QUET LIEN TUC (mo bang dup-tap nut
+     *  QR): quet duoc 1 ma xong KHONG tu dong dong, tiep tuc quet ma tiep
+     *  theo cho den khi nguoi dung tu bam "Huy". */
+    private var qrContinuousMode = false
+
+    private val qrToneGenerator: ToneGenerator by lazy {
+        ToneGenerator(AudioManager.STREAM_NOTIFICATION, 100)
     }
 
 
@@ -1009,22 +1097,274 @@ class QrKeyboardService : InputMethodService() {
         selfInitiatedChange = false
     }
 
-    /** Mo QrScanActivity nhu mot cua so noi, khong cuop focus ban phim,
-     *  truyen kem chieu cao hien tai cua ban phim de QrScanActivity dat
-     *  khung quet dung ngay phia tren. Ket qua quet se duoc tra ve qua
-     *  companion callback [deliverScanResult]. Sau khi chen xong noi dung,
-     *  tu dong xuong dong (chen ky tu "\n") de con tro nam san o dong moi,
-     *  san sang cho lan quet/nhap tiep theo.
+    override fun onCreate() {
+        super.onCreate()
+        lifecycleRegistry.currentState = Lifecycle.State.CREATED
+    }
+
+    /** Duoc goi khi nut [QR] duoc bam. Neu chua co quyen CAMERA, phai nho MOT
+     *  Activity toi gian ([QrCameraPermissionActivity]) hien ho thoai xin
+     *  quyen he thong (Service khong the tu hien hop thoai nay duoc) - sau
+     *  khi nguoi dung tra loi, [notifyCameraPermissionResult] se goi lai va
+     *  tu dong mo tiep khung quet neu duoc cap quyen. Neu da co quyen roi
+     *  (truong hop thuong gap sau lan dau), mo thang khung quet nong ma
+     *  khong can dung Activity nao ca.
      *
-     *  [continuous]: neu true (mo bang dup-tap nut QR, xem [buildNumbersBottomRow]),
-     *  KHONG go bo [pendingCallback] sau khi nhan duoc 1 ket qua - de callback
-     *  van con hieu luc, san sang nhan tiep cac ket qua quet KE TIEP tu cung
-     *  QrScanActivity (ben do se tu quet lien tuc, khong tu dong dong man
-     *  hinh, cho den khi nguoi dung tu bam "Huy"). Neu false (cham 1 lan,
-     *  hanh vi cu): go bo callback ngay sau ket qua dau tien, vi man hinh
-     *  quet se tu dong dong lai, khong con ket qua nao khac gui ve nua. */
+     *  [continuous]: xem giai thich o [buildNumbersBottomRow]. Neu khung
+     *  quet DANG mo san (nguoi dung bam nut QR lan nua trong luc dang quet),
+     *  chi cap nhat lai che do quet, KHONG mo lai camera tu dau. */
     private fun openQrScanner(continuous: Boolean = false) {
-        pendingCallback = { text ->
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            onCameraPermissionResult = { granted ->
+                if (granted) openQrScanner(continuous)
+            }
+            val intent = Intent(this, QrCameraPermissionActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(intent)
+            return
+        }
+
+        qrContinuousMode = continuous
+        qrLastDeliveredText = null
+        qrFrameHandled.set(false)
+
+        if (qrOverlayView != null) return // camera van dang chay, chi doi che do o tren
+        showQrOverlay()
+    }
+
+    /** Them View chua preview camera vao THANG cua so cua Service nay (khong
+     *  qua Activity nao) bang [qrWindowManager]. Vi day van la cua so ban
+     *  phim (chi la them mot lop con), he thong khong bao gio coi la mat
+     *  focus - onFinishInputView() chi con bi goi dung luc nguoi dung THAT
+     *  SU roi o nhap, khong con bi goi oan luc dang quet nua.
+     *
+     *  Chieu cao khung quet = dung chieu cao ban phim hien tai (giong logic
+     *  cu), va dat gravity BOTTOM + y = chieu cao do de khung quet nam HAN
+     *  o phia TREN ban phim (khong che ban phim, ban phim van hien ro va
+     *  van nhan duoc cham vao cac phim con lai trong luc quet). */
+    private fun showQrOverlay() {
+        val decorView = window?.window?.decorView ?: return
+        val heightPx = decorView.height.takeIf { it > 0 }
+            ?: (resources.displayMetrics.heightPixels / 3)
+
+        val view = buildQrOverlayContentView()
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            heightPx,
+            WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_IN_DECOR,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.BOTTOM
+            y = heightPx
+            token = decorView.windowToken
+        }
+
+        try {
+            qrWindowManager.addView(view, params)
+        } catch (e: Exception) {
+            // Mot so ROM/dong may co the tu choi kieu cua so nay trong vai
+            // tinh huong hiem - bao cho nguoi dung thay vi treo im lang.
+            Toast.makeText(this, "Kh\u00f4ng m\u1edf \u0111\u01b0\u1ee3c khung qu\u00e9t", Toast.LENGTH_SHORT).show()
+            return
+        }
+        qrOverlayView = view
+        lifecycleRegistry.currentState = Lifecycle.State.RESUMED
+        startQrCamera()
+    }
+
+    /** Dong khung quet: ngat camera, go View khoi cua so, va dua
+     *  [lifecycleRegistry] ve CREATED (khong DESTROYED, de con dung lai duoc
+     *  cho lan quet ke tiep - xem giai thich o khai bao [lifecycleRegistry]). */
+    private fun hideQrOverlay() {
+        stopQrCamera()
+        qrOverlayView?.let {
+            try { qrWindowManager.removeView(it) } catch (e: Exception) { /* da bi go truoc do */ }
+        }
+        qrOverlayView = null
+        qrPreviewView = null
+        qrFlashButton = null
+        qrFlashOn = false
+        lifecycleRegistry.currentState = Lifecycle.State.CREATED
+    }
+
+    /** Dung code de dung giao dien khung quet: lop preview camera chiem het
+     *  khung, nut Huy o GOC PHAI DUOI, nut bat/tat FLASH o GOC PHAI TREN -
+     *  y het bo cuc truoc day cua QrScanActivity, chi khac la gio day noi
+     *  chua no la mot View thuong, khong con la mot Activity/Window rieng. */
+    private fun buildQrOverlayContentView(): View {
+        val root = FrameLayout(this)
+
+        val preview = PreviewView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+        qrPreviewView = preview
+        root.addView(preview)
+
+        val cancelBg = GradientDrawable().apply {
+            cornerRadius = dp(8).toFloat()
+            setColor(Color.parseColor("#CC202124"))
+        }
+        val cancelBtn = Button(this).apply {
+            text = "Hu\u1ef7"
+            isAllCaps = false
+            setTextColor(Color.WHITE)
+            background = cancelBg
+            setPadding(dp(16), dp(8), dp(16), dp(8))
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM or Gravity.END
+            ).apply { setMargins(0, 0, dp(12), dp(12)) }
+            setOnClickListener { hideQrOverlay() }
+        }
+        root.addView(cancelBtn)
+
+        val flashBtn = Button(this).apply {
+            text = "\u26a1"
+            isAllCaps = false
+            setTextColor(Color.WHITE)
+            textSize = 18f
+            includeFontPadding = true
+            background = buildQrFlashButtonBackground(active = false)
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.TOP or Gravity.END
+            ).apply { setMargins(0, dp(12), dp(12), 0) }
+            setOnClickListener { toggleQrFlash() }
+        }
+        qrFlashButton = flashBtn
+        root.addView(flashBtn)
+
+        return root
+    }
+
+    private fun buildQrFlashButtonBackground(active: Boolean): GradientDrawable = GradientDrawable().apply {
+        cornerRadius = dp(8).toFloat()
+        setColor(if (active) Color.parseColor("#1A73E8") else Color.parseColor("#CC202124"))
+    }
+
+    private fun toggleQrFlash() {
+        val cam = qrCamera
+        if (cam == null || !cam.cameraInfo.hasFlashUnit()) {
+            Toast.makeText(this, "Thi\u1ebft b\u1ecb kh\u00f4ng c\u00f3 \u0111\u00e8n flash", Toast.LENGTH_SHORT).show()
+            return
+        }
+        qrFlashOn = !qrFlashOn
+        cam.cameraControl.enableTorch(qrFlashOn)
+        qrFlashButton?.background = buildQrFlashButtonBackground(active = qrFlashOn)
+    }
+
+    /** Khoi dong CameraX, bind vao [this] (Service nay tu implement
+     *  LifecycleOwner - xem [lifecycle]) thay vi vao mot Activity nhu truoc. */
+    @OptIn(androidx.camera.core.ExperimentalGetImage::class)
+    private fun startQrCamera() {
+        val preview = qrPreviewView ?: return
+        qrCameraExecutor = Executors.newSingleThreadExecutor()
+
+        val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
+        cameraProviderFuture.addListener({
+            val cameraProvider = cameraProviderFuture.get()
+
+            val previewUseCase = Preview.Builder().build().also {
+                it.setSurfaceProvider(preview.surfaceProvider)
+            }
+            val scanner = BarcodeScanning.getClient()
+            val imageAnalysis = ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build()
+            val executor = qrCameraExecutor ?: return@addListener
+            imageAnalysis.setAnalyzer(executor) { imageProxy ->
+                processQrFrame(imageProxy, scanner)
+            }
+
+            try {
+                cameraProvider.unbindAll()
+                qrCamera = cameraProvider.bindToLifecycle(
+                    this, CameraSelector.DEFAULT_BACK_CAMERA, previewUseCase, imageAnalysis
+                )
+            } catch (e: Exception) {
+                Toast.makeText(this, "Kh\u00f4ng m\u1edf \u0111\u01b0\u1ee3c camera: ${e.message}", Toast.LENGTH_SHORT).show()
+                hideQrOverlay()
+            }
+        }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun stopQrCamera() {
+        try {
+            ProcessCameraProvider.getInstance(this).get().unbindAll()
+        } catch (e: Exception) {
+            // Bo qua neu camera provider chua kip khoi tao xong (vd nguoi
+            // dung bam Huy rat nhanh ngay sau khi mo).
+        }
+        qrCameraExecutor?.shutdown()
+        qrCameraExecutor = null
+        qrCamera = null
+    }
+
+    /** Y het logic cu o QrScanActivity.processFrame(): chi nhan mot ma QR
+     *  hop le (khong ky tu dac biet, khac ma vua xuat gan nhat) trong luc
+     *  chua co ma nao dang cho xu ly ([qrFrameHandled]). */
+    private fun processQrFrame(imageProxy: ImageProxy, scanner: BarcodeScanner) {
+        val mediaImage = imageProxy.image
+        if (mediaImage == null) {
+            imageProxy.close()
+            return
+        }
+        val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+
+        scanner.process(image)
+            .addOnSuccessListener { barcodes ->
+                if (!qrFrameHandled.get()) {
+                    val barcode = barcodes.firstOrNull {
+                        it.valueType != Barcode.TYPE_UNKNOWN || it.rawValue != null || it.rawBytes != null
+                    }
+                    val value = barcode?.let { extractQrBarcodeText(it) }
+                    if (!value.isNullOrEmpty() && !containsQrSpecialCharacter(value) &&
+                        value != qrLastDeliveredText &&
+                        qrFrameHandled.compareAndSet(false, true)
+                    ) {
+                        qrLastDeliveredText = value
+                        onQrFound(value)
+                    }
+                }
+            }
+            .addOnCompleteListener { imageProxy.close() }
+    }
+
+    /** Tap ky tu duoc coi la hop le (khong phai "dac biet") - y het truoc day. */
+    private val qrAllowedCharacterRegex = Regex("^[\\p{L}\\p{N}\\s.,!?:;'\"()/@-]*$")
+
+    private fun containsQrSpecialCharacter(text: String): Boolean =
+        !qrAllowedCharacterRegex.matches(text)
+
+    private fun extractQrBarcodeText(barcode: Barcode): String? {
+        barcode.rawValue?.let { if (it.isNotEmpty()) return it }
+        barcode.displayValue?.let { if (it.isNotEmpty()) return it }
+        val bytes = barcode.rawBytes ?: return null
+        if (bytes.isEmpty()) return null
+        return try {
+            val utf8 = String(bytes, Charsets.UTF_8)
+            if (utf8.contains('\uFFFD')) String(bytes, Charsets.ISO_8859_1) else utf8
+        } catch (e: Exception) {
+            String(bytes, Charsets.ISO_8859_1)
+        }
+    }
+
+    /** Ma QR quet duoc: phat bip, chen thang vao o nhap dang mo (khong con
+     *  can qua companion callback nua vi tat ca dien ra trong CUNG mot doi
+     *  tuong Service), roi xuong dong san cho lan nhap/quet tiep theo. */
+    private fun onQrFound(text: String) {
+        val beepDurationMs = 150
+        qrToneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, beepDurationMs)
+
+        val mainHandler = Handler(Looper.getMainLooper())
+        mainHandler.post {
             val ic = currentInputConnection
             selfInitiatedChange = true
             ic?.commitText(text, 1)
@@ -1033,26 +1373,26 @@ class QrKeyboardService : InputMethodService() {
             val hadPendingSuggestion = pendingSuggestion != null
             clearAutocorrectSuggestion()
             if (hadPendingSuggestion) redrawKeyboard()
-            if (!continuous) {
-                pendingCallback = null
+            Toast.makeText(this, "\u0110\u00e3 qu\u00e9t: $text", Toast.LENGTH_SHORT).show()
+        }
+
+        // Doi het thoi luong tieng bip roi moi dong khung (hoac mo lai cho
+        // ma tiep theo neu dang o CHE DO QUET LIEN TUC) - tranh cat ngang am
+        // thanh dang phat bat dong bo.
+        mainHandler.postDelayed({
+            if (qrContinuousMode) {
+                qrFrameHandled.set(false)
+            } else {
+                hideQrOverlay()
             }
-        }
-
-        val keyboardHeightPx = window?.window?.decorView?.height ?: 0
-
-        val intent = Intent(this, QrScanActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            putExtra(QrScanActivity.EXTRA_KEYBOARD_HEIGHT_PX, keyboardHeightPx)
-            putExtra(QrScanActivity.EXTRA_CONTINUOUS_MODE, continuous)
-        }
-        startActivity(intent)
+        }, (beepDurationMs + 100).toLong())
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
-        // Neu nguoi dung roi khoi o nhap lieu ma khong quet, huy callback dang
-        // cho de tranh chen nham du lieu vao o khac sau nay.
-        pendingCallback = null
+        // Neu nguoi dung roi khoi o nhap lieu ma dang quet do, dong khung
+        // quet lai luon - tranh camera chay ngam khi khong con dung den.
+        hideQrOverlay()
         hideKeyPreview()
         // Huy moi vong lap xoa-lien-tuc dang cho (phong truong hop nguoi
         // dung roi o nhap trong luc van con dang giu phim xoa).
@@ -1061,6 +1401,9 @@ class QrKeyboardService : InputMethodService() {
 
     override fun onDestroy() {
         super.onDestroy()
+        hideQrOverlay()
+        qrToneGenerator.release()
+        lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
         previewPopup?.let { if (it.isShowing) it.dismiss() }
         previewPopup = null
         previewBubble = null
