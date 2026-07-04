@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="true" />
+
+    <application
+        android:allowBackup="true"
+        android:icon="@mipmap/ic_launcher"
+        android:label="Bàn phím của Hậu GHN-Hiệp Hưng"
+        android:theme="@style/Theme.QRKeyboard">
+
+        <!-- Activity chinh: huong dan nguoi dung bat ban phim -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Activity toi gian, CHI dung de hien hop thoai xin quyen Camera
+             he thong (Android bat buoc phai gan hop thoai nay voi mot
+             Activity). Khong con chua camera/preview/khung quet nao ca -
+             toan bo giao dien quet gio nam trong QrKeyboardService duoi dang
+             mot View noi (xem showQrOverlay() trong QrKeyboardService.kt). -->
+        <activity
+            android:name=".QrCameraPermissionActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Transparent"
+            android:excludeFromRecents="true"
+            android:taskAffinity="com.example.qrkeyboard.qrpermission" />
+
+        <!-- Dich vu ban phim (Input Method Service) -->
+        <service
+            android:name=".QrKeyboardService"
+            android:permission="android.permission.BIND_INPUT_METHOD"
+            android:exported="true"
+            android:label="Bàn phím của Hậu GHN-Hiệp Hưng">
+            <intent-filter>
+                <action android:name="android.view.InputMethod" />
+            </intent-filter>
+            <meta-data
+                android:name="android.view.im"
+                android:resource="@xml/method" />
+        </service>
+
+    </application>
+</manifest>
