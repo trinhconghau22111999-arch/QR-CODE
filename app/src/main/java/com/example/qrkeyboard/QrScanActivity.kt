@@ -49,6 +49,17 @@ class QrScanActivity : AppCompatActivity() {
          *  DO QUET LIEN TUC (nguoi dung dup-tap nut QR tren ban phim) hay CHAM
          *  1 LAN binh thuong. Xem [continuousMode] va [onQrFound]. */
         const val EXTRA_CONTINUOUS_MODE = "extra_continuous_mode"
+
+        /** Ty le chieu cao THUC TE cua khung quet so voi chieu cao ban phim
+         *  (xem [floatAboveKeyboard]). Truoc day khung quet cao DUNG BANG
+         *  chieu cao ban phim (ty le 1.0) - gio day LAM NHO LAI mot chut
+         *  (0.7 = 70%) theo yeu cau, trong khi VAN GIU canh duoi khung quet
+         *  gan CHAT vao canh tren ban phim (xem bien "attachOffsetPx" trong
+         *  [floatAboveKeyboard] - offset gan ban phim khong doi theo ty le
+         *  nay, chi co CHIEU CAO cua khung la nho lai). Muon khung to/nho
+         *  hon nua, chi can doi so nay (vd 0.6f cho nho hon, 0.85f cho to
+         *  hon), khong can dong gi khac. */
+        private const val SCAN_WINDOW_HEIGHT_RATIO = 0.7f
     }
 
     private lateinit var cameraExecutor: ExecutorService
@@ -263,26 +274,53 @@ class QrScanActivity : AppCompatActivity() {
      *  vai truong hop). Neu can do tin cay cao hon o moi thiet bi, phuong an
      *  chac chan hon la dung mot cua so he thong that (WindowManager +
      *  quyen SYSTEM_ALERT_WINDOW) thay vi Activity.
+     *
+     *  CAP NHAT: khung quet gio day NHO LAI mot chut (xem [SCAN_WINDOW_HEIGHT_RATIO])
+     *  so voi truoc (truoc day cao dung bang chieu cao ban phim). De khung
+     *  quet VAN "GAN CHAT" vao ban phim du da nho lai - tuc CANH DUOI cua
+     *  khung quet luon dinh sat CANH TREN ban phim, khong ho ra khoang trong
+     *  o giua - ta TACH RIENG hai gia tri:
+     *   - "attachOffsetPx": khoang cach tu DAY MAN HINH len den diem "gan"
+     *     (chinh la chieu cao ban phim) - dung de dat window.attributes.y,
+     *     GIU NGUYEN khong doi theo ty le thu nho, vi day chinh la vi tri
+     *     canh tren ban phim.
+     *   - "windowHeightPx": chieu cao THAT SU cua khung quet hien thi, BANG
+     *     attachOffsetPx nhan voi [SCAN_WINDOW_HEIGHT_RATIO] (< 1 nen nho
+     *     hon). Vi window duoc neo boi Gravity.BOTTOM + y = attachOffsetPx
+     *     (canh DUOI window nam dung tai canh tren ban phim), thu nho CHIEU
+     *     CAO window chi lam window "ngan lai" TU TREN XUONG - canh duoi
+     *     (noi gan vao ban phim) khong bi anh huong, nen khung quet van
+     *     dinh chat vao ban phim y nguyen nhu truoc, chi la THAP hon.
      */
     private fun floatAboveKeyboard() {
         val metrics = resources.displayMetrics
         val keyboardHeightPx = intent.getIntExtra(EXTRA_KEYBOARD_HEIGHT_PX, 0)
 
         // Phong khi keyboardHeightPx = 0 (vd do doc chua kip xong luc gui
-        // Intent), dat mot muc san toi thieu = 1/3 man hinh de khung quet
-        // khong bi qua nho.
+        // Intent), dat mot muc san toi thieu = 1/3 man hinh de diem gan
+        // (attachOffsetPx) khong bi qua thap.
         val minHeightPx = metrics.heightPixels / 3
-        val sizePx = if (keyboardHeightPx > 0) keyboardHeightPx else minHeightPx
+        val attachOffsetPx = if (keyboardHeightPx > 0) keyboardHeightPx else minHeightPx
+
+        // Chieu cao THAT SU cua khung quet - nho lai theo ty le, nhung toi
+        // thieu 1 dp de tranh truong hop ty le/gia tri dau vao bat thuong
+        // lam window cao 0 hoac am.
+        val windowHeightPx = (attachOffsetPx * SCAN_WINDOW_HEIGHT_RATIO)
+            .toInt()
+            .coerceAtLeast(dp(1))
 
         window.addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
         window.setGravity(Gravity.BOTTOM)
-        // Chieu cao khung quet = dung chieu cao ban phim.
-        window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, sizePx)
+        // Chieu cao khung quet = nho hon chieu cao ban phim (xem ghi chu o
+        // tren ham nay).
+        window.setLayout(WindowManager.LayoutParams.MATCH_PARENT, windowHeightPx)
 
         val params = window.attributes
-        // Nhac khung quet len KHOI vi tri ban phim mot khoang dung bang chieu
-        // cao ban phim, de no nam han o phia tren, khong con de len ban phim.
-        params.y = sizePx
+        // QUAN TRONG: offset nay LUON BANG dung chieu cao ban phim (KHONG
+        // nhan them ty le thu nho) - day la yeu to giu khung quet "gan chat"
+        // vao ban phim: canh duoi khung quet luon dung tai canh tren ban
+        // phim du chieu cao khung (windowHeightPx) co nho hon truoc.
+        params.y = attachOffsetPx
         window.attributes = params
     }
 
