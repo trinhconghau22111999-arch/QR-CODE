@@ -15,6 +15,7 @@ import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.PopupWindow
 import android.widget.TextView
@@ -49,7 +50,7 @@ class QrKeyboardService : InputMethodService() {
          *  thay vi mot cai CHAM (tap) chen dau cach binh thuong. */
         private const val SPACE_SWIPE_THRESHOLD_DP = 24
 
-        /** Phim xoa (鈱�): thoi gian nham giu truoc khi bat dau tu dong xoa
+        /** Phim xoa (⌫): thoi gian nham giu truoc khi bat dau tu dong xoa
          *  LIEN TUC (ms), va khoang cach (ms) giua cac lan xoa lien tiep sau
          *  do. Nham giu qua [DELETE_REPEAT_INITIAL_DELAY_MS] se kich hoat
          *  xoa lap lai moi [DELETE_REPEAT_INTERVAL_MS] cho den khi tha tay,
@@ -58,7 +59,7 @@ class QrKeyboardService : InputMethodService() {
         private const val DELETE_REPEAT_INTERVAL_MS = 50L
     }
 
-    /** Handler dung rieng cho vong lap xoa lien tuc khi giu phim 鈱�. */
+    /** Handler dung rieng cho vong lap xoa lien tuc khi giu phim ⌫. */
     private val deleteRepeatHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     /** Ba "trang" ban phim, dung trinh tu quen thuoc cua cac ban phim khac:
@@ -82,6 +83,16 @@ class QrKeyboardService : InputMethodService() {
     private var previewPopup: PopupWindow? = null
     private var previewBubble: TextView? = null
 
+    /** Goi y sua loi Tieng Viet (xem [VietnameseAutocorrect]): sau khi go
+     *  xong mot "tu" (bang dau cach) ma tu do KHONG co trong tu dien va tim
+     *  duoc mot tu rat gan (sai lech 1 ky tu) trong tu dien, hien mot thanh
+     *  goi y phia tren ban phim de nguoi dung cham vao sua nhanh, thay vi tu
+     *  dong sua (de tranh sua nham nhung tu dung nhung hiem/khong co trong
+     *  tu dien). [pendingSuggestionOriginalWord] la tu (chu thuong) NGUOI
+     *  DUNG DA GO (dung de biet xoa bao nhieu ky tu khi cham nhan goi y). */
+    private var pendingSuggestion: String? = null
+    private var pendingSuggestionOriginalWord: String? = null
+
     /** Danh dau lan thay doi selection/con tro SAP TOI trong o nhap lieu la
      *  do CHINH ban phim nay gay ra (qua commitText/deleteSurroundingText),
      *  duoc dat true ngay TRUOC moi lan ban phim tu goi cac ham do, roi
@@ -93,20 +104,23 @@ class QrKeyboardService : InputMethodService() {
      *  loi kieu chen lai/nhac lai chu vua go truoc do. */
     private var selfInitiatedChange = false
 
-    /** ToneGenerator rieng de phat tieng "tick" nho moi khi nham phim (xem
+    /** ToneGenerator rieng de phat tieng "tick" moi khi nham phim (xem
      *  [playKeyClickTone]), tach biet voi toneGenerator "bip" quet QR o
-     *  QrScanActivity. Dung STREAM_SYSTEM + muc am luong thap (khac voi muc
-     *  0-100 cua startTone) de tieng "tick" nay nho, khong gay khoc chiu khi
-     *  go nhieu phim lien tuc. */
+     *  QrScanActivity. Dung STREAM_SYSTEM (muc 0-100 cua startTone).
+     *  TRUOC DAY muc am luong la 35 (kha nho, nguoi dung phan anh kho nghe) -
+     *  gio tang len 80 de tieng "tick" ro rang, de nghe hon khi go, nhung
+     *  van chua toi muc toi da (100) de tranh qua chua/gay khoc chiu. */
     private val keyClickToneGenerator: ToneGenerator by lazy {
-        ToneGenerator(AudioManager.STREAM_SYSTEM, 35)
+        ToneGenerator(AudioManager.STREAM_SYSTEM, 80)
     }
 
     private fun playKeyClickTone() {
         try {
-            // Thoi luong RAT ngan (20ms) de tieng "tick" gon, khong bi ngat
-            // quang hay chong tieng nhau khi go nhanh nhieu phim lien tiep.
-            keyClickToneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP2, 20)
+            // Thoi luong ngan (25ms, tang nhe tu 20ms) de tieng "tick" van
+            // gon, khong bi ngat quang hay chong tieng nhau khi go nhanh
+            // nhieu phim lien tiep, nhung du dai de nghe ro hon voi muc am
+            // luong moi.
+            keyClickToneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP2, 25)
         } catch (e: Exception) {
             // Bo qua neu audio chua san sang (hiem gap).
         }
@@ -127,8 +141,25 @@ class QrKeyboardService : InputMethodService() {
     )
     private val numberRow3Symbols = "*\"':;!?"
 
+    /** Danh sach emoji cho hang emoji co the TRUOT NGANG (xem [buildEmojiRow]),
+     *  hien tren trang so (trang thu 2). Chi la mot tuyen chon nho cac emoji
+     *  thong dung (mat cuoi, tay, tim, do vat, thoi tiet...), khong phai toan
+     *  bo bang emoji Unicode - du dung cho nhu cau go chat thong thuong. */
+    private val emojiList = listOf(
+        "\ud83d\ude00", "\ud83d\ude02", "\ud83d\ude0d", "\ud83d\ude18", "\ud83d\ude0a",
+        "\ud83d\ude09", "\ud83d\ude0e", "\ud83e\udd23", "\ud83d\ude22", "\ud83d\ude2d",
+        "\ud83d\ude21", "\ud83d\ude33", "\ud83e\udd14", "\ud83d\ude0c", "\ud83d\ude34",
+        "\ud83d\udc4d", "\ud83d\udc4e", "\ud83d\udc4f", "\ud83d\ude4f", "\u270c\ufe0f",
+        "\ud83d\udcaa", "\u2764\ufe0f", "\ud83d\udc94", "\ud83d\udc96", "\u2b50",
+        "\ud83d\udd25", "\ud83c\udf89", "\ud83c\udf8a", "\ud83d\udc4c", "\ud83e\udd1d",
+        "\u2600\ufe0f", "\u2601\ufe0f", "\ud83c\udf27\ufe0f", "\u26a1", "\ud83c\udf08",
+        "\ud83d\udc36", "\ud83d\udc31", "\ud83d\udc2c", "\ud83c\udf38", "\ud83c\udf7d\ufe0f",
+        "\u2615", "\ud83c\udf82", "\ud83d\ude97", "\u2708\ufe0f", "\ud83c\udfe0",
+        "\ud83d\udcf1", "\ud83d\udcb0", "\u23f0", "\u2705", "\u274c"
+    )
+
     /** Trang ky hieu mo rong (nut "=\<"). Truoc day 2 phim dau hang thu 2 la
-     *  £, 鈧 (ky hieu tien te it dung) - doi thanh <, > (dau ngoac nhon) de
+     *  £, € (ky hieu tien te it dung) - doi thanh <, > (dau ngoac nhon) de
      *  huu ich hon cho viec go code/van ban ky thuat. */
     private val extendedSymbolRows = listOf(
         "~`|\u2022\u221a\u03c0\u00f7\u00d7\u00b6\u0394",
@@ -151,14 +182,20 @@ class QrKeyboardService : InputMethodService() {
 
         when (mode) {
             KeyboardMode.LETTERS -> {
+                // Neu dang co goi y sua loi Tieng Viet dang cho (xem
+                // [pendingSuggestion]), hien thanh goi y NGAY TREN CUNG,
+                // truoc ca hang so, de de thay va cham vao ngay.
+                if (pendingSuggestion != null) {
+                    root.addView(buildAutocorrectSuggestionRow())
+                }
                 // Hang so (1234567890) luon hien thi co dinh phia tren cac hang
                 // chu cai, khong can chuyen trang moi go duoc so.
                 root.addView(buildCharRow(numberRows[0]))
                 letterRows.forEachIndexed { index, row ->
                     val rowView = buildCharRow(row, applyShiftCase = true)
                     if (index == letterRows.lastIndex) {
-                        // Hang chu cai cuoi cung (zxcvbnm): nut Shift (鈬�) o
-                        // DAU hang (ben trai), nut xoa (鈱�) o CUOI hang (ben
+                        // Hang chu cai cuoi cung (zxcvbnm): nut Shift (⇧) o
+                        // DAU hang (ben trai), nut xoa (⌫) o CUOI hang (ben
                         // phai) - giong vi tri quen thuoc tren da so ban phim
                         // khac, thay vi nam ca hai o hang duoi cung nhu truoc.
                         rowView.addView(
@@ -175,6 +212,10 @@ class QrKeyboardService : InputMethodService() {
                 root.addView(buildLettersBottomRow())
             }
             KeyboardMode.NUMBERS -> {
+                // Hang emoji co the TRUOT NGANG, nam TREN CUNG trang so, de
+                // nguoi dung luot tim emoji mong muon ma khong can chuyen
+                // trang hay mo ban phim emoji rieng cua he thong.
+                root.addView(buildEmojiRow())
                 numberRows.forEach { row -> root.addView(buildCharRow(row)) }
                 root.addView(buildNumbersRow3())
                 root.addView(buildNumbersBottomRow())
@@ -207,8 +248,12 @@ class QrKeyboardService : InputMethodService() {
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         currentWord.clear()
+        val hadPendingSuggestion = pendingSuggestion != null
+        clearAutocorrectSuggestion()
         if (mode != KeyboardMode.LETTERS) {
             switchMode(KeyboardMode.LETTERS)
+        } else if (hadPendingSuggestion) {
+            redrawKeyboard()
         }
     }
 
@@ -228,6 +273,145 @@ class QrKeyboardService : InputMethodService() {
             row.addView(buildKey(label) { insertChar(ch) })
         }
         return row
+    }
+
+    /** Hang emoji co the TRUOT (vuot) NGANG bang tay de tim emoji mong muon,
+     *  hien o dau trang so (trang thu 2). Dung HorizontalScrollView boc
+     *  quanh mot LinearLayout ngang chua tung nut emoji co CHIEU RONG CO
+     *  DINH (khac voi cac hang phim khac dung "weight" chia deu, vi ben
+     *  trong ScrollView khong the dung weight - noi dung phai co chieu rong
+     *  that, TRAN ra ngoai man hinh, moi truot/vuot duoc). Cham vao emoji se
+     *  chen truc tiep emoji do vao o nhap lieu, giong nhu mot phim thuong. */
+    private fun buildEmojiRow(): View {
+        val inner = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        val emojiKeySizePx = dp(40)
+        emojiList.forEach { emoji ->
+            val bg = GradientDrawable().apply {
+                cornerRadius = dp(4).toFloat()
+                setColor(Color.parseColor("#303134"))
+            }
+            val btn = Button(this).apply {
+                text = emoji
+                isAllCaps = false
+                textSize = 20f
+                includeFontPadding = true
+                isSingleLine = true
+                setPadding(0, 0, 0, 0)
+                minWidth = 0
+                minimumWidth = 0
+                minHeight = 0
+                minimumHeight = 0
+                gravity = Gravity.CENTER
+                background = bg
+                isHapticFeedbackEnabled = true
+                layoutParams = LinearLayout.LayoutParams(emojiKeySizePx, emojiKeySizePx).apply {
+                    setMargins(dp(3), dp(3), dp(3), dp(3))
+                }
+                setOnClickListener { v ->
+                    v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    playKeyClickTone()
+                    insertText(emoji)
+                }
+            }
+            inner.addView(btn)
+        }
+
+        return HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(46)
+            )
+            addView(inner)
+        }
+    }
+
+    /** Thanh goi y sua loi Tieng Viet: mot nut lon hien "Sua thanh: ..."
+     *  (cham vao de ap dung goi y) va mot nut nho "\u2715" de bo qua goi y nay. */
+    private fun buildAutocorrectSuggestionRow(): LinearLayout {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        }
+        val suggestion = pendingSuggestion
+        if (suggestion == null) return row
+
+        val bg = GradientDrawable().apply {
+            cornerRadius = dp(4).toFloat()
+            setColor(Color.parseColor("#1A3A5C"))
+        }
+        val suggestionBtn = Button(this).apply {
+            text = "Sua th\u00e0nh: \u201c$suggestion\u201d"
+            isAllCaps = false
+            setTextColor(Color.parseColor("#8AB4F8"))
+            textSize = 13f
+            includeFontPadding = true
+            isSingleLine = true
+            background = bg
+            gravity = Gravity.CENTER
+            layoutParams = LinearLayout.LayoutParams(0, dp(40), 6f).apply {
+                setMargins(dp(2), dp(2), dp(2), dp(2))
+            }
+            setOnClickListener {
+                it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                playKeyClickTone()
+                acceptAutocorrectSuggestion()
+            }
+        }
+        row.addView(suggestionBtn)
+        row.addView(buildKey("\u2715", weight = 1.2f) {
+            clearAutocorrectSuggestion()
+            redrawKeyboard()
+        })
+        return row
+    }
+
+    /** Kiem tra "tu" [word] (chu thuong) nguoi dung vua go xong (ket thuc
+     *  bang dau cach) co trong tu dien khong; neu KHONG co va tim duoc mot
+     *  tu gan giong (xem [VietnameseAutocorrect.suggestFor]), luu lai thanh
+     *  [pendingSuggestion] de [buildAutocorrectSuggestionRow] hien ra. */
+    private fun checkAutocorrectSuggestion(word: String) {
+        val suggestion = VietnameseAutocorrect.suggestFor(applicationContext, word)
+        if (suggestion != null && suggestion != word) {
+            pendingSuggestion = suggestion
+            pendingSuggestionOriginalWord = word
+            redrawKeyboard()
+        } else {
+            clearAutocorrectSuggestion()
+        }
+    }
+
+    /** Ap dung goi y dang cho: XOA lai tu da go (cong them 1 ky tu cho dau
+     *  cach ket thuc tu do) roi CHEN tu goi y + dau cach vao thay the. */
+    private fun acceptAutocorrectSuggestion() {
+        val original = pendingSuggestionOriginalWord ?: return
+        val suggestion = pendingSuggestion ?: return
+        val ic = currentInputConnection
+        if (ic != null) {
+            selfInitiatedChange = true
+            ic.beginBatchEdit()
+            try {
+                // +1 vi tu do da co mot dau cach ngay sau khi duoc chen.
+                ic.deleteSurroundingText(original.length + 1, 0)
+                ic.commitText("$suggestion ", 1)
+            } finally {
+                ic.endBatchEdit()
+            }
+        }
+        clearAutocorrectSuggestion()
+        redrawKeyboard()
+    }
+
+    /** Bo goi y dang cho (khong ap dung) - goi khi nguoi dung go tiep, xoa,
+     *  Enter, chuyen o nhap, hoac tu cham nut "\u2715" bo qua. */
+    private fun clearAutocorrectSuggestion() {
+        if (pendingSuggestion != null || pendingSuggestionOriginalWord != null) {
+            pendingSuggestion = null
+            pendingSuggestionOriginalWord = null
+        }
     }
 
     /** Hang duoi cung trang chu cai: nut "," (thay cho nut QR truoc day -
@@ -292,7 +476,7 @@ class QrKeyboardService : InputMethodService() {
     }
 
     /** Hang 3 cua trang ky hieu mo rong: nut "?123" de quay lai trang so,
-     *  cac ky hieu %, 漏, 庐, 鈩�, 鈩�, [, ] va nut xoa - cung do rong nhu nhau. */
+     *  cac ky hieu %, ©, ®, ™, ℅, [, ] va nut xoa - cung do rong nhu nhau. */
     private fun buildExtendedSymbolsRow3(): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -347,7 +531,7 @@ class QrKeyboardService : InputMethodService() {
         }
         val container = FrameLayout(this).apply {
             background = bg
-            layoutParams = LinearLayout.LayoutParams(0, dp(44), weight).apply {
+            layoutParams = LinearLayout.LayoutParams(0, dp(48), weight).apply {
                 setMargins(dp(2), dp(2), dp(2), dp(2))
             }
             isHapticFeedbackEnabled = true
@@ -436,7 +620,7 @@ class QrKeyboardService : InputMethodService() {
      *  - Neu co [onRepeat], nham GIU phim se tu dong goi lai [onRepeat] lien
      *    tuc (sau [DELETE_REPEAT_INITIAL_DELAY_MS] dau tien, roi lap lai moi
      *    [DELETE_REPEAT_INTERVAL_MS]) cho den khi tha tay ra - dung cho phim
-     *    xoa (鈱�) de "giu la xoa hoai". Neu chi cham nhanh (tha ra truoc khi
+     *    xoa (⌫) de "giu la xoa hoai". Neu chi cham nhanh (tha ra truoc khi
      *    kich hoat lap lai), van goi [onClick] binh thuong dung 1 lan. */
     private fun buildKey(
         label: String,
@@ -462,6 +646,15 @@ class QrKeyboardService : InputMethodService() {
                 else -> 16f
             }
             isSingleLine = true
+            // QUAN TRONG: sua loi dau cau Tieng Viet chu HOA bi "thut xuong"/
+            // bi cat mat. Theme Button mac dinh cua Android dat
+            // includeFontPadding = false de chu gon hon, nhung dieu nay lam
+            // Android CAT MAT phan tren cua dau (dac biet dau sac/nga/hoi tren
+            // chu hoa co dau mu nhu "Ấ", "Ế", "Ổ"...), khien dau nhin nhu bi
+            // "thut" xuong de/nam len chu. Bat lai includeFontPadding = true
+            // de danh du khong gian (line spacing) cho dau hien day du, dung
+            // vi tri, khong bi vat cat.
+            includeFontPadding = true
             setPadding(dp(1), 0, dp(1), 0)
             minWidth = 0
             minimumWidth = 0
@@ -469,7 +662,9 @@ class QrKeyboardService : InputMethodService() {
             minimumHeight = 0
             background = bg
             layoutParams = LinearLayout.LayoutParams(
-                0, dp(44), weight
+                // Tang nhe chieu cao phim (44dp -> 48dp) de co them khong
+                // gian doc, giup dau cau hien day du khong bi ep/cat mat.
+                0, dp(48), weight
             ).apply {
                 setMargins(dp(2), dp(2), dp(2), dp(2))
             }
@@ -550,6 +745,7 @@ class QrKeyboardService : InputMethodService() {
             textSize = 22f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
+            includeFontPadding = true
             setPadding(dp(14), dp(8), dp(14), dp(8))
             background = GradientDrawable().apply {
                 cornerRadius = dp(6).toFloat()
@@ -609,9 +805,11 @@ class QrKeyboardService : InputMethodService() {
 
     /** Xu ly mot ky tu go theo kieu Telex: doi chieu voi phan "tu" da go tu
      *  truoc (currentWord) de biet co can xoa/thay the ky tu truoc do hay
-     *  khong (vd go "a" roi "a" -> "芒", go nguyen am roi "s" -> them dau sac). */
+     *  khong (vd go "a" roi "a" -> "â", go nguyen am roi "s" -> them dau sac). */
     private fun insertVietnameseChar(ch: Char) {
         val ic = currentInputConnection ?: return
+        val hadPendingSuggestion = pendingSuggestion != null
+        clearAutocorrectSuggestion()
         val lower = ch.lowercaseChar()
         val oldLen = currentWord.length
         val newWordLower = VietnameseTelex.processKey(currentWord.toString(), lower)
@@ -633,26 +831,42 @@ class QrKeyboardService : InputMethodService() {
         } finally {
             ic.endBatchEdit()
         }
+        if (hadPendingSuggestion) redrawKeyboard()
     }
 
+    /** Chen dau cach/dau cau/ky hieu - luon ket thuc "tu" hien tai. Neu vua
+     *  go xong mot "tu" Tieng Viet (ket thuc bang dau cach, khong dang bat
+     *  Shift), kiem tra xem tu do co the bi go sai chinh ta khong (xem
+     *  [checkAutocorrectSuggestion]) truoc khi xoa bo dem [currentWord]. */
     private fun insertText(text: String) {
+        val boundaryWord = currentWord.toString()
         selfInitiatedChange = true
         currentInputConnection?.commitText(text, 1)
-        // Dau cach/dau cau/ky hieu luon ket thuc "tu" hien tai.
         currentWord.clear()
+
+        if (isVietnameseMode && text == " " && !isShiftOn && boundaryWord.length >= 2) {
+            checkAutocorrectSuggestion(boundaryWord)
+        } else if (pendingSuggestion != null) {
+            clearAutocorrectSuggestion()
+            redrawKeyboard()
+        }
     }
 
     private fun deleteChar() {
+        val hadPendingSuggestion = pendingSuggestion != null
+        clearAutocorrectSuggestion()
         selfInitiatedChange = true
         currentInputConnection?.deleteSurroundingText(1, 0)
         if (currentWord.isNotEmpty()) {
             currentWord.deleteCharAt(currentWord.length - 1)
         }
+        if (hadPendingSuggestion) redrawKeyboard()
     }
 
     private fun sendEnter() {
         val ic = currentInputConnection ?: return
         currentWord.clear()
+        clearAutocorrectSuggestion()
         selfInitiatedChange = true
         val action = currentInputEditorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION)
         if (action != null && action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
@@ -698,6 +912,9 @@ class QrKeyboardService : InputMethodService() {
             ic?.commitText(text, 1)
             ic?.commitText("\n", 1)
             currentWord.clear()
+            val hadPendingSuggestion = pendingSuggestion != null
+            clearAutocorrectSuggestion()
+            if (hadPendingSuggestion) redrawKeyboard()
             pendingCallback = null
         }
 
@@ -731,10 +948,118 @@ class QrKeyboardService : InputMethodService() {
 }
 
 /**
+ * Goi y sua loi chinh ta Tieng Viet don gian, dua tren mot tu dien co san
+ * (file assets/vn_words.txt, ~6600 tu Tieng Viet thong dung, moi tu 1 dong).
+ * Cach hoat dong: khi mot "tu" nguoi dung go xong KHONG co trong tu dien,
+ * tim trong tu dien mot tu SAI LECH DUNG 1 KY TU (them/xoa/doi 1 ky tu) so
+ * voi tu do; neu tim thay, coi la goi y sua loi hop ly. Day la mot ky thuat
+ * don gian (khong phai mo hinh ngon ngu day du), nen chi bat duoc cac loi
+ * go sai co ban (thieu/du/sai 1 ky tu) - khong bat duoc loi sai dau thanh
+ * lam tu do van "co ve giong tu khac" trong tu dien, hay loi ngu phap/ngu
+ * canh. Tu dien duoc TAI MOT LAN DUY NHAT (lazy, dung ca cho toan bo doi
+ * song cua IME) va nhom theo do dai tu de tim kiem nhanh hon.
+ */
+private object VietnameseAutocorrect {
+
+    private const val DICTIONARY_ASSET_PATH = "vn_words.txt"
+
+    @Volatile
+    private var dictionaryByLength: Map<Int, List<String>>? = null
+
+    @Volatile
+    private var dictionarySet: Set<String>? = null
+
+    /** Tai tu dien tu file assets/vn_words.txt (chi 1 lan). Neu file khong
+     *  ton tai (vd nguoi dung chua them file nay vao du an) hoac loi doc,
+     *  tra ve tap rong - luc do tinh nang goi y coi nhu tam tat, KHONG lam
+     *  crash ung dung. */
+    private fun ensureLoaded(context: android.content.Context) {
+        if (dictionarySet != null) return
+        synchronized(this) {
+            if (dictionarySet != null) return
+            val words = try {
+                context.assets.open(DICTIONARY_ASSET_PATH)
+                    .bufferedReader(Charsets.UTF_8)
+                    .useLines { lines -> lines.filter { it.isNotBlank() }.toHashSet() }
+            } catch (e: Exception) {
+                emptySet()
+            }
+            dictionarySet = words
+            dictionaryByLength = words.groupBy { it.length }
+        }
+    }
+
+    /** Tra ve mot goi y thay the cho [word] (chu thuong) neu [word] KHONG co
+     *  trong tu dien nhung co dung mot tu trong tu dien sai lech 1 ky tu -
+     *  nguoc lai (tu dung roi, hoac khong tim thay goi y phu hop) tra null. */
+    fun suggestFor(context: android.content.Context, word: String): String? {
+        ensureLoaded(context)
+        val set = dictionarySet ?: return null
+        if (word.isEmpty() || word in set) return null
+
+        val byLength = dictionaryByLength ?: return null
+        val pool = (byLength[word.length].orEmpty()) +
+            (byLength[word.length - 1].orEmpty()) +
+            (byLength[word.length + 1].orEmpty())
+
+        // Uu tien tu co ky tu DAU giong nhau, giam so luong can so sanh va
+        // tang do lien quan cua goi y (tranh goi y "la" cho tu "ba" chang han).
+        val firstChar = word[0]
+        return pool.firstOrNull { candidate ->
+            candidate.isNotEmpty() && candidate[0] == firstChar &&
+                isEditDistanceAtMostOne(word, candidate)
+        }
+    }
+
+    /** True neu chi can DUNG MOT phep them/xoa/doi 1 ky tu de bien [a]
+     *  thanh [b] (khoang cach Levenshtein <= 1). Viet rieng (khong dung DP
+     *  day du) vi chi can biet <=1 hay khong, nhanh hon nhieu so voi tinh
+     *  toan bo ma tran Levenshtein cho tu dien lon. */
+    private fun isEditDistanceAtMostOne(a: String, b: String): Boolean {
+        if (a == b) return true
+        val lenA = a.length
+        val lenB = b.length
+        if (kotlin.math.abs(lenA - lenB) > 1) return false
+
+        if (lenA == lenB) {
+            // Cung do dai: chi cho phep DOI dung 1 ky tu.
+            var diffCount = 0
+            for (i in a.indices) {
+                if (a[i] != b[i]) {
+                    diffCount++
+                    if (diffCount > 1) return false
+                }
+            }
+            return diffCount == 1
+        }
+
+        // Do dai lech nhau dung 1: kiem tra xem co the XOA dung 1 ky tu cua
+        // chuoi dai hon de duoc chuoi ngan hon khong.
+        val longer = if (lenA > lenB) a else b
+        val shorter = if (lenA > lenB) b else a
+        var i = 0
+        var j = 0
+        var skipped = false
+        while (i < longer.length && j < shorter.length) {
+            if (longer[i] == shorter[j]) {
+                i++
+                j++
+            } else if (!skipped) {
+                skipped = true
+                i++
+            } else {
+                return false
+            }
+        }
+        return true
+    }
+}
+
+/**
  * Bo xu ly go Tieng Viet kieu Telex don gian: chuyen mot chuoi ky tu QWERTY
  * thuong (khong dau) thanh chuoi co dau Tieng Viet, dua tren "tu" dang go
  * (tu luc bat dau tu den ky tu hien tai). Cac quy tac Telex duoc ho tro:
- *   - aa -> 芒, aw -> 膬, ee -> 锚, oo -> 么, ow -> 啤, uw -> 瓢, dd -> 膽
+ *   - aa -> â, aw -> ă, ee -> ê, oo -> ô, ow -> ơ, uw -> ư, dd -> đ
  *   - s/f/r/x/j -> dau sac/huyen/hoi/nga/nang; z -> bo dau
  * Day la mot bo xu ly rut gon (khong xu ly het moi truong hop dac biet cua
  * chinh ta Tieng Viet), nhung dap ung tot phan lon cac tu thong dung.
@@ -745,20 +1070,20 @@ private object VietnameseTelex {
     // [khong dau, sac, huyen, hoi, nga, nang]
     private val vowelGroups: List<CharArray> = listOf(
         charArrayOf('a', '\u00e1', '\u00e0', '\u1ea3', '\u00e3', '\u1ea1'), // a
-        charArrayOf('\u0103', '\u1eaf', '\u1eb1', '\u1eb3', '\u1eb5', '\u1eb7'), // 膬
-        charArrayOf('\u00e2', '\u1ea5', '\u1ea7', '\u1ea9', '\u1eab', '\u1ead'), // 芒
+        charArrayOf('\u0103', '\u1eaf', '\u1eb1', '\u1eb3', '\u1eb5', '\u1eb7'), // ă
+        charArrayOf('\u00e2', '\u1ea5', '\u1ea7', '\u1ea9', '\u1eab', '\u1ead'), // â
         charArrayOf('e', '\u00e9', '\u00e8', '\u1ebb', '\u1ebd', '\u1eb9'), // e
-        charArrayOf('\u00ea', '\u1ebf', '\u1ec1', '\u1ec3', '\u1ec5', '\u1ec7'), // 锚
+        charArrayOf('\u00ea', '\u1ebf', '\u1ec1', '\u1ec3', '\u1ec5', '\u1ec7'), // ê
         charArrayOf('i', '\u00ed', '\u00ec', '\u1ec9', '\u0129', '\u1ecb'), // i
         charArrayOf('o', '\u00f3', '\u00f2', '\u1ecf', '\u00f5', '\u1ecd'), // o
-        charArrayOf('\u00f4', '\u1ed1', '\u1ed3', '\u1ed5', '\u1ed7', '\u1ed9'), // 么
-        charArrayOf('\u01a1', '\u1edb', '\u1edd', '\u1edf', '\u1ee1', '\u1ee3'), // 啤
+        charArrayOf('\u00f4', '\u1ed1', '\u1ed3', '\u1ed5', '\u1ed7', '\u1ed9'), // ô
+        charArrayOf('\u01a1', '\u1edb', '\u1edd', '\u1edf', '\u1ee1', '\u1ee3'), // ơ
         charArrayOf('u', '\u00fa', '\u00f9', '\u1ee7', '\u0169', '\u1ee5'), // u
-        charArrayOf('\u01b0', '\u1ee9', '\u1eeb', '\u1eed', '\u1eef', '\u1ef1'), // 瓢
+        charArrayOf('\u01b0', '\u1ee9', '\u1eeb', '\u1eed', '\u1eef', '\u1ef1'), // ư
         charArrayOf('y', '\u00fd', '\u1ef3', '\u1ef7', '\u1ef9', '\u1ef5')  // y
     )
 
-    // Cac nhom "co mu/moc" (芒, 膬, 锚, 么, 啤, 瓢) duoc uu tien khi dat dau thanh
+    // Cac nhom "co mu/moc" (â, ă, ê, ô, ơ, ư) duoc uu tien khi dat dau thanh
     // neu chung xuat hien trong cum nguyen am.
     private val modifiedGroupIndices = setOf(1, 2, 4, 7, 8, 10)
 
