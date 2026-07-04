@@ -936,9 +936,11 @@ class QrKeyboardService : InputMethodService() {
         currentInputConnection?.commitText(text, 1)
         currentWord.clear()
 
-        if (isVietnameseMode && text == " " && !isShiftOn && boundaryWord.length >= 2) {
-            checkAutocorrectSuggestion(boundaryWord)
-        } else if (pendingSuggestion != null) {
+        // DA BO: goi y sua loi Tieng Viet (checkAutocorrectSuggestion) sau
+        // moi dau cach - viec do tu dien (VietnameseAutocorrect, doc/duyet
+        // ~6600 tu trong vn_words.txt) lam ban phim bi KHUNG lai dung luc
+        // vua go xong mot tu, gay mat chu/lag khi go nhanh lien tuc.
+        if (pendingSuggestion != null) {
             clearAutocorrectSuggestion()
             redrawKeyboard()
         }
