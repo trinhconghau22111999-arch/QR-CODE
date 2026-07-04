@@ -1154,7 +1154,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.MATCH_PARENT,
             heightPx,
-            WindowManager.LayoutParams.TYPE_APPLICATION_ATTACHED_IN_DECOR,
+            WindowManager.LayoutParams.TYPE_APPLICATION_PANEL,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM,
             PixelFormat.TRANSLUCENT
         ).apply {
