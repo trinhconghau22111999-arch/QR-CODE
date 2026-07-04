@@ -59,7 +59,7 @@ class QrScanActivity : AppCompatActivity() {
          *  nay, chi co CHIEU CAO cua khung la nho lai). Muon khung to/nho
          *  hon nua, chi can doi so nay (vd 0.6f cho nho hon, 0.85f cho to
          *  hon), khong can dong gi khac. */
-        private const val SCAN_WINDOW_HEIGHT_RATIO = 0.7f
+        private const val SCAN_WINDOW_HEIGHT_RATIO = 0.35f
 
         /** Ty le khoang HO giua canh duoi khung quet va canh tren ban phim,
          *  tinh theo chieu cao ban phim (xem [floatAboveKeyboard]). Truoc
@@ -67,7 +67,7 @@ class QrScanActivity : AppCompatActivity() {
          *  Gio day = 1/3 chieu cao ban phim theo yeu cau. Muon doi khoang
          *  ho, chi can sua so nay (vd 0.5f cho ho rong hon, 0f de tro lai
          *  dinh sat nhu truoc). */
-        private const val SCAN_KEYBOARD_GAP_RATIO = 1f / 3f
+        private const val SCAN_KEYBOARD_GAP_RATIO = 1f
     }
 
     private lateinit var cameraExecutor: ExecutorService
