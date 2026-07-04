@@ -20,14 +20,17 @@
             </intent-filter>
         </activity>
 
-        <!-- Activity trong suot dung de mo camera quet QR tu ban phim -->
+        <!-- Activity toi gian, CHI dung de hien hop thoai xin quyen Camera
+             he thong (Android bat buoc phai gan hop thoai nay voi mot
+             Activity). Khong con chua camera/preview/khung quet nao ca -
+             toan bo giao dien quet gio nam trong QrKeyboardService duoi dang
+             mot View noi (xem showQrOverlay() trong QrKeyboardService.kt). -->
         <activity
-            android:name=".QrScanActivity"
+            android:name=".QrCameraPermissionActivity"
             android:exported="false"
             android:theme="@style/Theme.Transparent"
             android:excludeFromRecents="true"
-            android:taskAffinity="com.example.qrkeyboard.qrscan"
-            android:launchMode="singleTop" />
+            android:taskAffinity="com.example.qrkeyboard.qrpermission" />
 
         <!-- Dich vu ban phim (Input Method Service) -->
         <service
