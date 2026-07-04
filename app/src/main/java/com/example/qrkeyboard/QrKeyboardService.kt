@@ -4,7 +4,8 @@ import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.inputmethodservice.InputMethodService
-import android.os.SystemClock
+import android.media.AudioManager
+import android.media.ToneGenerator
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
@@ -13,6 +14,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.PopupWindow
 import android.widget.TextView
@@ -22,8 +24,12 @@ import android.widget.Toast
  * Dich vu ban phim ao (Input Method Service). Hien thi mot ban phim QWERTY
  * don gian dung code (khong phu thuoc file layout XML), kem nut [QR] de mo
  * QrScanActivity quet ma QR va chen ket qua thang vao o nhap lieu dang mo.
- * Ho tro go tieng Viet kieu Telex (chuyen doi tu ban phim QWERTY chuan) khi
- * bat che do Tieng Viet bang cach nham giu phim cach 2 giay.
+ * Ho tro go tieng Viet kieu Telex (chuyen doi tu ban phim QWERTY chuan). Bat/
+ * tat che do Tieng Viet bang cach VUOT tren phim cach: vuot TU TRAI SANG PHAI
+ * de chuyen ve Tieng Anh, vuot TU PHAI SANG TRAI de chuyen sang Tieng Viet
+ * (xem [buildSpaceKey]) - thay cho kieu cham nhanh 2 lan (double-tap) truoc
+ * day, vi double-tap de bi kich hoat nham khi go nhanh lien tuc 2 dau cach
+ * gan nhau (vd giua 2 cau), gay doi ngon ngu ngoai y muon.
  */
 class QrKeyboardService : InputMethodService() {
 
@@ -38,11 +44,10 @@ class QrKeyboardService : InputMethodService() {
             pendingCallback?.invoke(text)
         }
 
-        /** Khoang thoi gian toi da (ms) giua 2 lan cham phim cach de tinh la
-         *  "cham nhanh 2 lan" (double-tap), dung de bat/tat che do Tieng Viet.
-         *  Truoc day dung kieu nham GIU 2 giay - qua kho bam dung, nen doi
-         *  sang cham nhanh 2 lan cho de thao tac hon. */
-        private const val LANGUAGE_TOGGLE_DOUBLE_TAP_MS = 350L
+        /** Khoang cach toi thieu (dp) ngon tay phai di chuyen theo chieu
+         *  ngang tren phim cach de tinh la mot cu VUOT (swipe) doi ngon ngu,
+         *  thay vi mot cai CHAM (tap) chen dau cach binh thuong. */
+        private const val SPACE_SWIPE_THRESHOLD_DP = 24
 
         /** Phim xoa (鈱�): thoi gian nham giu truoc khi bat dau tu dong xoa
          *  LIEN TUC (ms), va khoang cach (ms) giua cac lan xoa lien tiep sau
@@ -64,8 +69,8 @@ class QrKeyboardService : InputMethodService() {
     private var mode = KeyboardMode.LETTERS
     private var isShiftOn = false
 
-    /** Bat/tat go Tieng Viet kieu Telex, chuyen doi bang cach nham giu phim
-     *  cach bang cach cham nhanh 2 lan lien tiep (xem [LANGUAGE_TOGGLE_DOUBLE_TAP_MS]). */
+    /** Bat/tat go Tieng Viet kieu Telex, chuyen doi bang cach VUOT ngang tren
+     *  phim cach (xem [buildSpaceKey]). */
     private var isVietnameseMode = false
 
     /** Bo dem chua cac ky tu (thuong, chua dau) cua "tu" dang go trong che do
@@ -75,6 +80,37 @@ class QrKeyboardService : InputMethodService() {
     private var currentWord = StringBuilder()
 
     private var previewPopup: PopupWindow? = null
+    private var previewBubble: TextView? = null
+
+    /** Danh dau lan thay doi selection/con tro SAP TOI trong o nhap lieu la
+     *  do CHINH ban phim nay gay ra (qua commitText/deleteSurroundingText),
+     *  duoc dat true ngay TRUOC moi lan ban phim tu goi cac ham do, roi
+     *  onUpdateSelection() se doc co nay de phan biet: neu con tro doi vi tri
+     *  vi mot ly do KHAC (nguoi dung cham vao van ban de doi cho, dung phim
+     *  mui ten, ung dung tu thay doi noi dung, chuyen o nhap, ...) thi phai
+     *  xoa bo dem [currentWord] - neu khong, lan go tiep theo se bi ap dung
+     *  bien doi Telex nham vao "tu" cu (khong con nam canh con tro nua), gay
+     *  loi kieu chen lai/nhac lai chu vua go truoc do. */
+    private var selfInitiatedChange = false
+
+    /** ToneGenerator rieng de phat tieng "tick" nho moi khi nham phim (xem
+     *  [playKeyClickTone]), tach biet voi toneGenerator "bip" quet QR o
+     *  QrScanActivity. Dung STREAM_SYSTEM + muc am luong thap (khac voi muc
+     *  0-100 cua startTone) de tieng "tick" nay nho, khong gay khoc chiu khi
+     *  go nhieu phim lien tuc. */
+    private val keyClickToneGenerator: ToneGenerator by lazy {
+        ToneGenerator(AudioManager.STREAM_SYSTEM, 35)
+    }
+
+    private fun playKeyClickTone() {
+        try {
+            // Thoi luong RAT ngan (20ms) de tieng "tick" gon, khong bi ngat
+            // quang hay chong tieng nhau khi go nhanh nhieu phim lien tiep.
+            keyClickToneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP2, 20)
+        } catch (e: Exception) {
+            // Bo qua neu audio chua san sang (hiem gap).
+        }
+    }
 
     private val letterRows = listOf(
         "qwertyuiop",
@@ -292,33 +328,98 @@ class QrKeyboardService : InputMethodService() {
         return row
     }
 
-    /** Phim cach: chuc nang chinh la chen dau cach; cham NHANH 2 lan lien
-     *  tiep (trong vong LANGUAGE_TOGGLE_DOUBLE_TAP_MS) se chuyen doi giua go
-     *  Tieng Viet (Telex) va Tieng Anh - giong kieu "double-tap space" quen
-     *  thuoc, de bam hon nhieu so voi kieu nham giu 2 giay truoc day. Vi lan
-     *  cham dau tien da chen 1 dau cach roi, khi phat hien la lan cham thu 2
-     *  (tuc double-tap), ham nay se XOA lai dau cach vua chen do truoc khi
-     *  doi ngon ngu, de khong bi thua dau cach ngoai y muon. Nhan chu vao
-     *  trang thai hien tai (EN/VI) de nguoi dung biet dang o che do nao. */
-    private fun buildSpaceKey(weight: Float): Button {
-        val label = "\u2423 " + if (isVietnameseMode) "VI" else "EN"
-        var lastTapTime = 0L
-        return buildKey(label = label, weight = weight) {
-            val now = SystemClock.elapsedRealtime()
-            if (lastTapTime != 0L && now - lastTapTime <= LANGUAGE_TOGGLE_DOUBLE_TAP_MS) {
-                lastTapTime = 0L
-                // Xoa dau cach vua chen o lan cham dau tien, roi doi ngon ngu.
-                currentInputConnection?.deleteSurroundingText(1, 0)
-                toggleVietnameseMode()
-            } else {
-                lastTapTime = now
-                insertChar(' ')
+    /** Phim cach: chuc nang chinh la chen dau cach khi CHAM binh thuong
+     *  (khong keo ngang qua nguong [SPACE_SWIPE_THRESHOLD_DP]). Neu ngon tay
+     *  VUOT ngang qua nguong do truoc khi tha ra, xem la mot cu vuot doi ngon
+     *  ngu thay vi mot cai cham:
+     *   - Vuot TU TRAI SANG PHAI (deltaX duong)  -> ve Tieng Anh.
+     *   - Vuot TU PHAI SANG TRAI (deltaX am)     -> sang Tieng Viet.
+     *  Hai chu "V" (trai) va "E" (phai) ghim co dinh o hai dau phim, chu nao
+     *  ung voi ngon ngu DANG BAT thi to/sang mau xanh de nguoi dung biet minh
+     *  dang o che do nao va vuot ve huong nao de doi. Khong con dung kieu
+     *  cham nhanh 2 lan (double-tap) nhu truoc, vi kieu do de bi kich hoat
+     *  nham khi go nhanh lien tiep 2 dau cach gan nhau (vd giua 2 cau), gay
+     *  doi ngon ngu ngoai y muon giua chung. */
+    private fun buildSpaceKey(weight: Float): View {
+        val bg = GradientDrawable().apply {
+            cornerRadius = dp(4).toFloat()
+            setColor(Color.parseColor("#303134"))
+        }
+        val container = FrameLayout(this).apply {
+            background = bg
+            layoutParams = LinearLayout.LayoutParams(0, dp(44), weight).apply {
+                setMargins(dp(2), dp(2), dp(2), dp(2))
+            }
+            isHapticFeedbackEnabled = true
+        }
+
+        fun edgeColor(active: Boolean) =
+            if (active) Color.parseColor("#8AB4F8") else Color.parseColor("#80868B")
+
+        val vLabel = TextView(this).apply {
+            text = "V"
+            textSize = 12f
+            setTextColor(edgeColor(isVietnameseMode))
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER_VERTICAL or Gravity.START
+            ).apply { setMargins(dp(10), 0, 0, 0) }
+        }
+        val eLabel = TextView(this).apply {
+            text = "E"
+            textSize = 12f
+            setTextColor(edgeColor(!isVietnameseMode))
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER_VERTICAL or Gravity.END
+            ).apply { setMargins(0, 0, dp(10), 0) }
+        }
+        val centerLabel = TextView(this).apply {
+            text = "\u2423 " + if (isVietnameseMode) "VI" else "EN"
+            textSize = 13f
+            setTextColor(Color.WHITE)
+            gravity = Gravity.CENTER
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+        container.addView(vLabel)
+        container.addView(eLabel)
+        container.addView(centerLabel)
+
+        val swipeThresholdPx = dp(SPACE_SWIPE_THRESHOLD_DP)
+        var downX = 0f
+        container.setOnTouchListener { v, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    playKeyClickTone()
+                    downX = event.rawX
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    val deltaX = event.rawX - downX
+                    if (kotlin.math.abs(deltaX) >= swipeThresholdPx) {
+                        setLanguageMode(vietnamese = deltaX < 0)
+                    } else {
+                        insertChar(' ')
+                    }
+                    true
+                }
+                MotionEvent.ACTION_CANCEL -> true
+                else -> false
             }
         }
+
+        return container
     }
 
-    private fun toggleVietnameseMode() {
-        isVietnameseMode = !isVietnameseMode
+    /** Chuyen thang sang che do [vietnamese] (khong phai toggle) - dung boi
+     *  cu vuot tren phim cach, moi huong vuot ung voi dung MOT ngon ngu cu
+     *  the (xem [buildSpaceKey]), khong phu thuoc trang thai hien tai. */
+    private fun setLanguageMode(vietnamese: Boolean) {
+        if (isVietnameseMode == vietnamese) return
+        isVietnameseMode = vietnamese
         currentWord.clear()
         Toast.makeText(
             this,
@@ -390,6 +491,7 @@ class QrKeyboardService : InputMethodService() {
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    playKeyClickTone()
                     if (label.length == 1) showKeyPreview(v, label)
                     repeatTriggered = false
                     if (onRepeat != null) {
@@ -430,12 +532,21 @@ class QrKeyboardService : InputMethodService() {
         return button
     }
 
-    /** Hien mot bong nho, chu to, ngay phia tren phim dang nham, giong hieu
-     *  ung "noi chu" quen thuoc tren cac ban phim ao khac. */
-    private fun showKeyPreview(anchor: View, label: String) {
-        hideKeyPreview()
+    /** Tao (chi mot lan duy nhat, dung lai cho nhung lan sau) cap PopupWindow
+     *  + TextView dung de "noi chu" xem truoc. TRUOC DAY moi lan nham mot
+     *  phim la mot cap PopupWindow/TextView MOI duoc tao ra roi huy di ngay
+     *  sau do - viec them/bot cua so qua WindowManager (System IPC) nhieu
+     *  lan lien tuc nhu vay la mot nguyen nhan chinh khien ban phim bi "do"
+     *  (nhap khong kip) khi go nhanh. Gio day chi tao MOT LAN, nhung lan sau
+     *  chi doi noi dung chu (bubble.text) va vi tri (popup.update(...)) cua
+     *  cung mot cua so co san, re hon rat nhieu so voi tao cua so moi. */
+    private fun getOrCreatePreviewPopup(): Pair<PopupWindow, TextView> {
+        val existingPopup = previewPopup
+        val existingBubble = previewBubble
+        if (existingPopup != null && existingBubble != null) {
+            return existingPopup to existingBubble
+        }
         val bubble = TextView(this).apply {
-            text = label
             textSize = 22f
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
@@ -450,6 +561,16 @@ class QrKeyboardService : InputMethodService() {
         ).apply {
             isClippingEnabled = false
         }
+        previewPopup = popup
+        previewBubble = bubble
+        return popup to bubble
+    }
+
+    /** Hien mot bong nho, chu to, ngay phia tren phim dang nham, giong hieu
+     *  ung "noi chu" quen thuoc tren cac ban phim ao khac. */
+    private fun showKeyPreview(anchor: View, label: String) {
+        val (popup, bubble) = getOrCreatePreviewPopup()
+        bubble.text = label
         val loc = IntArray(2)
         anchor.getLocationInWindow(loc)
         bubble.measure(
@@ -459,16 +580,20 @@ class QrKeyboardService : InputMethodService() {
         val x = loc[0] + anchor.width / 2 - bubble.measuredWidth / 2
         val y = loc[1] - bubble.measuredHeight - dp(4)
         try {
-            popup.showAtLocation(anchor, Gravity.NO_GRAVITY, x, y)
-            previewPopup = popup
+            if (popup.isShowing) {
+                // Cua so co san dang hien: chi di chuyen no toi vi tri moi,
+                // khong tao/them cua so moi vao WindowManager.
+                popup.update(x, y, -1, -1)
+            } else {
+                popup.showAtLocation(anchor, Gravity.NO_GRAVITY, x, y)
+            }
         } catch (e: Exception) {
             // Bo qua neu window chua san sang de hien popup (hiem gap).
         }
     }
 
     private fun hideKeyPreview() {
-        previewPopup?.dismiss()
-        previewPopup = null
+        previewPopup?.let { if (it.isShowing) it.dismiss() }
     }
 
     /** Chen mot ky tu chu cai. Neu dang o che do Tieng Viet, chuyen qua bo
@@ -493,19 +618,32 @@ class QrKeyboardService : InputMethodService() {
         currentWord = StringBuilder(newWordLower)
         val display = if (isShiftOn) newWordLower.uppercase() else newWordLower
 
-        if (oldLen > 0) {
-            ic.deleteSurroundingText(oldLen, 0)
+        selfInitiatedChange = true
+        // Goi xoa + chen trong CUNG mot batch edit: bao dam ung dung dich
+        // (o nhap lieu ben duoi) coi day la MOT thao tac lien tuc duy nhat
+        // thay vi 2 thao tac rieng le - vua tranh viec ung dung ve lai giao
+        // dien 2 lan (do trung gian) gay giat/cham khi go nhanh, vua tranh
+        // truong hop hiem gap 2 IPC rieng le bi xu ly khong dung thu tu.
+        ic.beginBatchEdit()
+        try {
+            if (oldLen > 0) {
+                ic.deleteSurroundingText(oldLen, 0)
+            }
+            ic.commitText(display, 1)
+        } finally {
+            ic.endBatchEdit()
         }
-        ic.commitText(display, 1)
     }
 
     private fun insertText(text: String) {
+        selfInitiatedChange = true
         currentInputConnection?.commitText(text, 1)
         // Dau cach/dau cau/ky hieu luon ket thuc "tu" hien tai.
         currentWord.clear()
     }
 
     private fun deleteChar() {
+        selfInitiatedChange = true
         currentInputConnection?.deleteSurroundingText(1, 0)
         if (currentWord.isNotEmpty()) {
             currentWord.deleteCharAt(currentWord.length - 1)
@@ -515,12 +653,36 @@ class QrKeyboardService : InputMethodService() {
     private fun sendEnter() {
         val ic = currentInputConnection ?: return
         currentWord.clear()
+        selfInitiatedChange = true
         val action = currentInputEditorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION)
         if (action != null && action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
             ic.performEditorAction(action)
         } else {
             ic.commitText("\n", 1)
         }
+    }
+
+    /** Duoc goi moi khi selection/con tro trong o nhap lieu thay doi. Neu
+     *  thay doi nay KHONG phai do chinh ban phim gay ra (co [selfInitiatedChange]
+     *  la false - vd nguoi dung vua cham vao giua doan van ban de doi vi tri
+     *  go, dung phim mui ten, hoac ung dung tu thay doi noi dung), bo dem
+     *  [currentWord] khong con dung voi vi tri con tro thuc te nua nen PHAI
+     *  xoa - neu khong, lan go Tieng Viet tiep theo se lay nham "tu" cu lam
+     *  ngu canh de bien doi Telex, gay hien tuong "chen nhac/lap lai chu vua
+     *  go truoc do" (vd go "cong hau" ra "cong conghau"). */
+    override fun onUpdateSelection(
+        oldSelStart: Int,
+        oldSelEnd: Int,
+        newSelStart: Int,
+        newSelEnd: Int,
+        candidatesStart: Int,
+        candidatesEnd: Int
+    ) {
+        super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+        if (!selfInitiatedChange) {
+            currentWord.clear()
+        }
+        selfInitiatedChange = false
     }
 
     /** Mo QrScanActivity nhu mot cua so noi, khong cuop focus ban phim,
@@ -532,6 +694,7 @@ class QrKeyboardService : InputMethodService() {
     private fun openQrScanner() {
         pendingCallback = { text ->
             val ic = currentInputConnection
+            selfInitiatedChange = true
             ic?.commitText(text, 1)
             ic?.commitText("\n", 1)
             currentWord.clear()
@@ -556,6 +719,14 @@ class QrKeyboardService : InputMethodService() {
         // Huy moi vong lap xoa-lien-tuc dang cho (phong truong hop nguoi
         // dung roi o nhap trong luc van con dang giu phim xoa).
         deleteRepeatHandler.removeCallbacksAndMessages(null)
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        previewPopup?.let { if (it.isShowing) it.dismiss() }
+        previewPopup = null
+        previewBubble = null
+        keyClickToneGenerator.release()
     }
 }
 
@@ -662,9 +833,19 @@ private object VietnameseTelex {
      *  GIO DAY: bo qua moi phu am cuoi (khong phai nguyen am) o cuoi tu
      *  truoc, tim ra cum nguyen am GAN CUOI NHAT trong tu (du no khong con
      *  nam o vi tri cuoi cung nua), uu tien nguyen am "co mu/moc" (â, ê, ô,
-     *  ơ, ư, ă) neu co, neu khong lay nguyen am cuoi cung trong cum. Neu
-     *  khong tim thay nguyen am nao trong ca tu, tra ve null de ky tu duoc
-     *  chen nhu binh thuong (vd "s", "r", "x" o dau tu la phu am). */
+     *  ơ, ư, ă) neu co. Neu khong co nguyen am "co mu/moc" nao trong cum:
+     *   - Neu SAU cum nguyen am van con phu am (tu dang "dong", vd "hoan"),
+     *     dau dat o nguyen am CUOI cung trong cum (ngay truoc phu am), vi
+     *     day la vi tri dung duy nhat trong tieng Viet cho truong hop nay
+     *     (vd "hoan" + f -> "hoàn", dau o "a").
+     *   - Neu cum nguyen am nam SAT CUOI TU (tu "mo", khong co phu am theo
+     *     sau, vd "bao", "hoa", "khoe", "thuy"), dau dat o nguyen am DAU
+     *     TIEN trong cum (kieu chinh ta "cu": "bảo", "hòa", "khỏe", "thúy")
+     *     - TRUOC DAY luon dat o nguyen am CUOI cum bat ke con hay het tu,
+     *     nen "bao" + r (hoi) sai ra "baỏ" (dau tren "o") thay vi dung phai
+     *     la "bảo" (dau tren "a"). Day la sua chinh cho loi nay.
+     *  Neu khong tim thay nguyen am nao trong ca tu, tra ve null de ky tu
+     *  duoc chen nhu binh thuong (vd "s", "r", "x" o dau tu la phu am). */
     private fun applyTone(word: String, key: Char): String? {
         val toneIdx = when (key) {
             's' -> 1
@@ -681,6 +862,10 @@ private object VietnameseTelex {
         while (end >= 0 && !charToGroupTone.containsKey(word[end])) end--
         if (end < 0) return null
 
+        // Cum nguyen am nam SAT CUOI TU (khong co phu am nao theo sau) khi
+        // vi tri cuoi cung cua cum ("end") trung voi ky tu cuoi cung cua tu.
+        val isOpenSyllable = end == word.length - 1
+
         val clusterIndices = mutableListOf<Int>()
         var i = end
         while (i >= 0 && charToGroupTone.containsKey(word[i])) {
@@ -691,7 +876,11 @@ private object VietnameseTelex {
         val preferred = clusterIndices.lastOrNull { pos ->
             charToGroupTone[word[pos]]!!.first in modifiedGroupIndices
         }
-        val target = preferred ?: clusterIndices.last()
+        val target = when {
+            preferred != null -> preferred
+            isOpenSyllable && clusterIndices.size >= 2 -> clusterIndices.first()
+            else -> clusterIndices.last()
+        }
 
         val (groupIdx, _) = charToGroupTone[word[target]]!!
         val newChar = vowelGroups[groupIdx][toneIdx]
