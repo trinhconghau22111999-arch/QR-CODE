@@ -2050,35 +2050,61 @@ private object VietnameseTelex {
     private fun applyDoubleModifier(word: String, key: Char): String? {
         if (word.isEmpty()) return null
 
-        fun replaceLastOccurrence(target: Char, replacement: Char): String? {
-            val idx = word.lastIndexOf(target)
-            if (idx < 0) return null
-            return word.substring(0, idx) + replacement + word.substring(idx + 1)
-        }
-
         // Vi tri GAN CUOI NHAT trong [word] co ky tu thuoc NHOM nguyen am goc
         // [groupIdx] - BAT KY dang mang dau thanh nao (vd nhom 0 "a" khop ca
         // voi 'a','á','à','ả','ã','ạ'), khong chi ky tu thuan khong dau.
         fun lastIndexOfGroup(groupIdx: Int): Int? =
             word.indices.lastOrNull { i -> charToGroupTone[word[i]]?.first == groupIdx }
 
-        // Doi ky tu tai NHOM [fromGroupIdx] gan cuoi nhat sang NHOM
-        // [toGroupIdx], GIU NGUYEN dau thanh (tone) da co san tren ky tu do.
-        fun replaceGroupPreservingTone(fromGroupIdx: Int, toGroupIdx: Int): String? {
-            val idx = lastIndexOfGroup(fromGroupIdx) ?: return null
-            val toneIdx = charToGroupTone[word[idx]]!!.second
-            val newChar = vowelGroups[toGroupIdx][toneIdx]
-            return word.substring(0, idx) + newChar + word.substring(idx + 1)
+        // SUA THEM (theo yeu cau nguoi dung): ho tro "HUY bien doi" khi phim
+        // modifier duoc go LAP LAI mot lan nua, giong quy uoc Unikey chuan
+        // ("aaa" -> "aa" thay vi giu "â" roi chen them "a" vo nghia). Doi/HUY
+        // giua NHOM GOC [fromGroupIdx] (vd "a") va NHOM DICH [toGroupIdx]
+        // (vd "â") theo phim [key]:
+        //  - Neu nguyen am GAN CUOI NHAT trong ca hai nhom nay dang o NHOM
+        //    GOC (chua bien doi) -> bien doi BINH THUONG sang NHOM DICH, giu
+        //    nguyen dau thanh da co (hanh vi cu, khong doi).
+        //  - Neu nguyen am do dang o NHOM DICH (DA duoc bien doi tu truoc,
+        //    vd "â" tu "aa") VA CHUA mang dau thanh nao (tone == "khong dau")
+        //    -> coi day la lan go phim modifier THU BA lien tiep: HUY bien
+        //    doi (dua ve lai NHOM GOC), roi CHEN THEM ky tu [key] vao CUOI
+        //    CUNG cua tu (nhu mot chu cai binh thuong duoc go tiep theo, y
+        //    het cach "aaa" duoc hieu la "aa"+"a" = 2 chu "a"). Vi du:
+        //    "chêt" (đã có ê, chưa dấu) + "e" -> huy "ê"->"e" ("chet") roi
+        //    chen "e" o cuoi -> "chete".
+        //  - Neu nguyen am o NHOM DICH nhung DA CO dau thanh roi (vd "ế" -
+        //    ê + sac) -> KHONG huy (dau thanh la thong tin quan trong khong
+        //    the tu y bo), tra ve null de ky tu moi duoc chen BINH THUONG o
+        //    cuoi tu, giu nguyen dau thanh cu. Vi du: "chết" + "e" ->
+        //    "chếte" (khong phai "cheét" hay "chette").
+        fun toggleGroup(fromGroupIdx: Int, toGroupIdx: Int): String? {
+            val fromIdx = lastIndexOfGroup(fromGroupIdx)
+            val toIdx = lastIndexOfGroup(toGroupIdx)
+            val toIsNearer = toIdx != null && (fromIdx == null || toIdx > fromIdx)
+            if (toIsNearer) {
+                val toneIdx = charToGroupTone[word[toIdx!!]]!!.second
+                if (toneIdx != 0) return null // da co dau thanh -> khong huy
+                val baseChar = vowelGroups[fromGroupIdx][0]
+                return word.substring(0, toIdx) + baseChar + word.substring(toIdx + 1) + key
+            }
+            if (fromIdx != null) {
+                val toneIdx = charToGroupTone[word[fromIdx]]!!.second
+                val newChar = vowelGroups[toGroupIdx][toneIdx]
+                return word.substring(0, fromIdx) + newChar + word.substring(fromIdx + 1)
+            }
+            return null
         }
 
         return when (key) {
-            'a' -> replaceGroupPreservingTone(0, 2) // a-family -> â
-            'e' -> replaceGroupPreservingTone(3, 4) // e-family -> ê
-            'o' -> replaceGroupPreservingTone(6, 7) // o-family -> ô
+            'a' -> toggleGroup(0, 2) // a-family <-> â
+            'e' -> toggleGroup(3, 4) // e-family <-> ê
+            'o' -> toggleGroup(6, 7) // o-family <-> ô
             'w' -> {
                 // Cum "uo" LIEN TIEP gan cuoi nhat (ky tu nhom "u" [9] ngay
                 // truoc mot ky tu nhom "o" [6]) - neu co, doi CA HAI thanh
                 // "ươ" cung luc (quy uoc Telex chuan cho cum nguyen am doi).
+                // (Truong hop nay chi xu ly chieu BIEN DOI XUOI, khong ap
+                // dung "huy" cho ca cum - qua hiem gap trong thuc te go go.)
                 val uoIdx = (0 until word.length - 1).lastOrNull { i ->
                     charToGroupTone[word[i]]?.first == 9 && charToGroupTone[word[i + 1]]?.first == 6
                 }
@@ -2089,27 +2115,35 @@ private object VietnameseTelex {
                     val newO = vowelGroups[8][toneO]
                     word.substring(0, uoIdx) + newU + newO + word.substring(uoIdx + 2)
                 } else {
-                    // Khong co cum "uo": quay ve logic cu - trong 3 nhom
-                    // nguyen am co the bien doi boi "w" (a->ă, o->ơ, u->ư),
-                    // chon nhom co vi tri GAN CUOI TU NHAT.
-                    val hits = listOfNotNull(
-                        lastIndexOfGroup(0)?.let { it to (0 to 1) },   // a -> ă
-                        lastIndexOfGroup(6)?.let { it to (6 to 8) },   // o -> ơ
-                        lastIndexOfGroup(9)?.let { it to (9 to 10) }   // u -> ư
-                    )
-                    val best = hits.maxByOrNull { it.first }
-                    if (best == null) {
-                        null
-                    } else {
-                        val (idx, groupPair) = best
-                        val (_, toGroupIdx) = groupPair
-                        val toneIdx = charToGroupTone[word[idx]]!!.second
-                        val newChar = vowelGroups[toGroupIdx][toneIdx]
-                        word.substring(0, idx) + newChar + word.substring(idx + 1)
-                    }
+                    // Khong co cum "uo": trong 3 cap nhom co the bien doi/huy
+                    // boi "w" (a<->ă, o<->ơ, u<->ư), chon cap co vi tri GAN
+                    // CUOI TU NHAT (xet ca hai nhom goc/dich cua moi cap), roi
+                    // ap dung toggleGroup (bien doi hoac huy) cho DUY NHAT cap
+                    // do.
+                    val pairs = listOf(0 to 1, 6 to 8, 9 to 10)
+                    val best = pairs.mapNotNull { (fromG, toG) ->
+                        val pos = maxOf(lastIndexOfGroup(fromG) ?: -1, lastIndexOfGroup(toG) ?: -1)
+                        if (pos < 0) null else Triple(pos, fromG, toG)
+                    }.maxByOrNull { it.first }
+                    if (best == null) null else toggleGroup(best.second, best.third)
                 }
             }
-            'd' -> replaceLastOccurrence('d', '\u0111')
+            'd' -> {
+                // "d" <-> "đ": HUY tuong tu cac nguyen am o tren, nhung đ
+                // khong mang dau thanh nen khong can kiem tra tone - cu thay
+                // "đ" gan cuoi nhat (neu no gan hon "d" thuong) tro lai "d"
+                // roi chen them "d" moi o cuoi tu. Vi du: "đo" + "d" -> "do"
+                // + "d" = "dod" (thay vi "ddo" hay giu nguyen "đo" roi chen
+                // "d" vo nghia).
+                val dIdx = word.lastIndexOf('d')
+                val dashIdx = word.lastIndexOf('\u0111')
+                val useDash = dashIdx >= 0 && (dIdx < 0 || dashIdx > dIdx)
+                when {
+                    useDash -> word.substring(0, dashIdx) + 'd' + word.substring(dashIdx + 1) + 'd'
+                    dIdx >= 0 -> word.substring(0, dIdx) + '\u0111' + word.substring(dIdx + 1)
+                    else -> null
+                }
+            }
             else -> null
         }
     }
@@ -2194,7 +2228,23 @@ private object VietnameseTelex {
             else -> clusterIndices.last()
         }
 
-        val (groupIdx, _) = charToGroupTone[word[target]]!!
+        val (groupIdx, currentToneIdx) = charToGroupTone[word[target]]!!
+
+        // SUA THEM (theo yeu cau nguoi dung): neu nguyen am o vi tri [target]
+        // DA MANG dung dau thanh vua duoc go lan nua (vd "chết" - ê+sac - roi
+        // go tiep phim "s" mot lan nua), coi day la HUY dau thanh (quy uoc
+        // giong Unikey: go lap lai cung mot phim dau thanh se "thoat" dau
+        // thanh do) - dua nguyen am ve lai KHONG DAU (giu nguyen nhom, vd "ê"
+        // van la "ê", chi bo dau "sac"), roi CHEN THEM ky tu [key] vao CUOI
+        // CUNG cua tu nhu mot chu cai binh thuong. Vi du: "chết" + "s" (sac)
+        // -> huy dau sac tren "ế" ve "ê" ("chêt"), roi chen "s" o cuoi ->
+        // "chêts". Neu dau thanh moi KHAC dau thanh hien co, giu hanh vi cu:
+        // THAY dau thanh binh thuong (khong chen them ky tu nao).
+        if (currentToneIdx == toneIdx) {
+            val revertedChar = vowelGroups[groupIdx][0]
+            return word.substring(0, target) + revertedChar + word.substring(target + 1) + key
+        }
+
         val newChar = vowelGroups[groupIdx][toneIdx]
         return word.substring(0, target) + newChar + word.substring(target + 1)
     }
