@@ -493,7 +493,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                         // phai) - giong vi tri quen thuoc tren da so ban phim
                         // khac, thay vi nam ca hai o hang duoi cung nhu truoc.
                         rowView.addView(
-                            buildKey("\u2b06", weight = 1.5f, highlight = isShiftOn) {
+                            buildKey("\u2b06", weight = 1.5f, highlight = isShiftOn, verticalNudgeDp = 3) {
                                 isShiftOn = !isShiftOn
                                 redrawKeyboard()
                             },
@@ -734,10 +734,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             )
         }
 
-        row.addView(buildKey("?123", weight = 1.4f) { switchMode(KeyboardMode.NUMBERS) })
-        row.addView(buildKey(",", weight = 1f) { insertText(",") })
+        row.addView(buildKey("?123", weight = 1.4f, verticalNudgeDp = -3) { switchMode(KeyboardMode.NUMBERS) })
+        row.addView(buildKey(",", weight = 1f, verticalNudgeDp = -3) { insertText(",") })
         row.addView(buildSpaceKey(weight = 4.2f))
-        row.addView(buildKey(".", weight = 1f) {
+        row.addView(buildKey(".", weight = 1f, verticalNudgeDp = -3) {
             insertText(".")
             // Bat co "viet hoa chu tiep theo" - xem giai thich o khai bao
             // [capitalizeNextLetter].
@@ -788,8 +788,8 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             )
         }
 
-        row.addView(buildKey("ABC", weight = 1.6f) { switchMode(KeyboardMode.LETTERS) })
-        row.addView(buildKey("QR", weight = 1.2f, highlight = true) {
+        row.addView(buildKey("ABC", weight = 1.6f, verticalNudgeDp = -3) { switchMode(KeyboardMode.LETTERS) })
+        row.addView(buildKey("QR", weight = 1.2f, highlight = true, verticalNudgeDp = -3) {
             val now = android.os.SystemClock.uptimeMillis()
             val isDoubleTap = now - lastQrKeyTapTime <= QR_DOUBLE_TAP_MAX_INTERVAL_MS
             // Dat lai ve 0 sau khi da tinh la dup-tap, de mot cham thu 3 lien
@@ -833,7 +833,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             )
         }
 
-        row.addView(buildKey("ABC", weight = 1.4f) { switchMode(KeyboardMode.LETTERS) })
+        row.addView(buildKey("ABC", weight = 1.4f, verticalNudgeDp = -3) { switchMode(KeyboardMode.LETTERS) })
         row.addView(buildSpaceKey(weight = 4.8f))
         row.addView(buildKey("\u21b5", weight = 1.4f, highlight = true) { sendEnter() })
 
@@ -955,6 +955,13 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         label: String,
         weight: Float = 1f,
         highlight: Boolean = false,
+        // Dich phim len/xuong mot chut so voi vi tri mac dinh trong hang
+        // (duong = xuong, am = len), MA KHONG lam doi tong chieu cao ma
+        // hang chiem dung (vi tong margin tren+duoi luon giu nguyen la
+        // dp(2), chi TY LE phan bo giua tren/duoi thay doi) - dung de chinh
+        // tay may phim bi lech vi tri theo phan anh cua nguoi dung (xem cac
+        // noi goi ham nay trong buildLettersBottomRow, buildNumbersBottomRow...).
+        verticalNudgeDp: Int = 0,
         onRepeat: (() -> Unit)? = null,
         onClick: () -> Unit
     ): Button {
@@ -977,12 +984,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             // hien thi tren MOT dong duy nhat, tranh bi xuong dong roi cat
             // mat chu (vd chi con thay dau "?" ma khong thay "123").
             // RIENG hai phim bieu tuong Enter (\u21b5) va Shift/in hoa (\u2b06):
-            // TO HON HAN cac phim mot-ky-tu thong thuong (24f thay vi 16f) -
-            // nguoi dung phan anh 2 phim nay qua nho, kho nhin thay ngay (cac
-            // ky hieu mui ten nay von nhin "nhat" hon chu cai binh thuong o
-            // cung mot co chu, nen can to hon moi de nhan ra tuong duong).
+            // TO HON HAN cac phim mot-ky-tu thong thuong - nguoi dung phan
+            // anh 2 phim nay VAN CON hoi nho (24f) sau lan chinh truoc, tang
+            // tiep len 28f de thay ro han nua.
             textSize = when {
-                label == "\u21b5" || label == "\u2b06" -> 24f
+                label == "\u21b5" || label == "\u2b06" -> 28f
                 label.length > 3 -> 11f
                 label.length > 1 -> 13f
                 else -> 16f
@@ -1025,7 +1031,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 // ngang/thap de tranh bi khuat hang tren cung.
                 0, dp(keyHeightDp), weight
             ).apply {
-                setMargins(dp(1), dp(1), dp(1), dp(1))
+                // Tong margin tren+duoi LUON la dp(2) khong doi (1+nudge va
+                // 1-nudge cong lai luon bang 2), nen [verticalNudgeDp] CHI
+                // dich vi tri phim len/xuong trong o cua no, KHONG lam thay
+                // doi tong chieu cao ca hang.
+                setMargins(dp(1), dp(1 + verticalNudgeDp), dp(1), dp(1 - verticalNudgeDp))
             }
             gravity = Gravity.CENTER
             isHapticFeedbackEnabled = true
