@@ -109,7 +109,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
          *  thay vi mot cai CHAM (tap) chen dau cach binh thuong. */
         private const val SPACE_SWIPE_THRESHOLD_DP = 24
 
-        /** Phim xoa (⌫): thoi gian nham giu truoc khi bat dau tu dong xoa
+        /** Phim xoa (鈱�): thoi gian nham giu truoc khi bat dau tu dong xoa
          *  LIEN TUC (ms), va khoang cach (ms) giua cac lan xoa lien tiep sau
          *  do. Nham giu qua [DELETE_REPEAT_INITIAL_DELAY_MS] se kich hoat
          *  xoa lap lai moi [DELETE_REPEAT_INTERVAL_MS] cho den khi tha tay,
@@ -144,20 +144,13 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
          *  het khoang thoi gian nay ma ban phim van chua duoc mo lai, moi coi
          *  la nguoi dung THAT SU roi di va dong khung quet. */
         private const val FINISH_INPUT_HIDE_DEBOUNCE_MS = 500L
-
-        /** Nhan dang cac phim BIEU TUONG (khong phai chu cai/ky hieu thuong)
-         *  can hien THI TO HON han muc mac dinh cua mot ky tu don trong
-         *  [buildKey]: Enter (\u21b5), Shift thuong (\u2b06) va Shift dang
-         *  Caps Lock (\u21ea) - de de nhan biet/de bam hon, dung nhu giao
-         *  dien truoc day. */
-        private val LARGE_ICON_LABELS = setOf("\u21b5", "\u2b06", "\u21ea")
     }
 
     /** Thoi diem (uptimeMillis) cua lan cham nut [QR] gan nhat, dung de phat
      *  hien cu dup-tap (xem [QR_DOUBLE_TAP_MAX_INTERVAL_MS]) o [buildNumbersBottomRow]. */
     private var lastQrKeyTapTime = 0L
 
-    /** Handler dung rieng cho vong lap xoa lien tuc khi giu phim ⌫. */
+    /** Handler dung rieng cho vong lap xoa lien tuc khi giu phim 鈱�. */
     private val deleteRepeatHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     /** Handler + lenh "hoan" dung rieng cho co che TRE truoc khi dong khung
@@ -197,7 +190,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     /** Vi tri (do dai [currentWord] tai thoi diem kich hoat) ma [shiftOnce]
      *  dang "nham toi" - chi dung trong che do Tieng Viet, xem
      *  [insertVietnameseChar]: mot chu cai co dau co the can NHIEU lan go
-     *  Telex de hoan thien (vd "a" roi "a" lan 2 -> "â"), nen khong the coi
+     *  Telex de hoan thien (vd "a" roi "a" lan 2 -> "芒"), nen khong the coi
      *  la "da go xong 1 chu cai" ngay sau lan go DAU TIEN - phai doi den khi
      *  mot lan go THUC SU cham toi vi tri SAU vi tri nay (tuc chu cai o vi
      *  tri [shiftOnceTargetPos] da "on dinh", khong con bi sua nua) moi that
@@ -294,7 +287,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         redrawKeyboard()
     }
 
-    /** AudioManager dung de phat am thanh gõ phim (xem [playKeyClickTone]).
+    /** AudioManager dung de phat am thanh g玫 phim (xem [playKeyClickTone]).
      *  TRUOC DAY dung ToneGenerator phat mot tieng "tin" (beep dien tu tong
      *  hop) - nguoi dung phan anh nghe khong hay VA moi lan goi startTone()
      *  la mot lenh dong bo toi audio HAL, lam CHAM luc go nhanh (tich luy dan
@@ -514,7 +507,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     )
 
     /** Trang ky hieu mo rong (nut "=\<"). Truoc day 2 phim dau hang thu 2 la
-     *  £, € (ky hieu tien te it dung) - doi thanh <, > (dau ngoac nhon) de
+     *  拢, 鈧� (ky hieu tien te it dung) - doi thanh <, > (dau ngoac nhon) de
      *  huu ich hon cho viec go code/van ban ky thuat. */
     private val extendedSymbolRows = listOf(
         "~`|\u2022\u221a\u03c0\u00f7\u00d7\u00b6\u0394",
@@ -549,13 +542,13 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 letterRows.forEachIndexed { index, row ->
                     val rowView = buildCharRow(row, applyShiftCase = true)
                     if (index == letterRows.lastIndex) {
-                        // Hang chu cai cuoi cung (zxcvbnm): nut Shift (⇧) o
-                        // DAU hang (ben trai), nut xoa (⌫) o CUOI hang (ben
+                        // Hang chu cai cuoi cung (zxcvbnm): nut Shift (鈬�) o
+                        // DAU hang (ben trai), nut xoa (鈱�) o CUOI hang (ben
                         // phai) - giong vi tri quen thuoc tren da so ban phim
                         // khac, thay vi nam ca hai o hang duoi cung nhu truoc.
                         rowView.addView(
-                            // Icon doi khac nhau: "⇧" cho shift thuong (bam 1
-                            // lan, hoac chua bam), "⇪" khi Caps Lock dang bat
+                            // Icon doi khac nhau: "鈬�" cho shift thuong (bam 1
+                            // lan, hoac chua bam), "鈬�" khi Caps Lock dang bat
                             // (bam 2 lan lien tiep) - de nguoi dung phan biet
                             // duoc 2 trang thai chi bang mat, khong can go thu.
                             buildKey(if (shiftLocked) "\u21ea" else "\u2b06", weight = 1.5f, highlight = isShiftOn) {
@@ -595,7 +588,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         redrawKeyboard()
     }
 
-    /** Xu ly 1 lan bam nut Shift (⇧/⇪):
+    /** Xu ly 1 lan bam nut Shift (鈬�/鈬�):
      *  - Dang bat Caps Lock ([shiftLocked]): bam (du 1 hay 2 lan) -> TAT het,
      *    ve trang thai binh thuong (giong da so ban phim khac).
      *  - Bam 2 lan LIEN TIEP (cach nhau <= [SHIFT_DOUBLE_TAP_WINDOW_MS]) ->
@@ -711,7 +704,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             inner.addView(btn)
         }
 
-        // Nut banh rang (⚙) - luon la item CUOI CUNG trong hang, cung kich
+        // Nut banh rang (鈿�) - luon la item CUOI CUNG trong hang, cung kich
         // thuoc/kieu dang voi cac phim emoji khac de nam gon trong dong truot,
         // mo bang cai dat am thanh/rung/mau vien (xem [showSettingsPanel]).
         val settingsBg = buildGlowKeyBackground(cornerDp = 4)
@@ -921,7 +914,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     }
 
     /** Hang 3 cua trang ky hieu mo rong: nut "?123" de quay lai trang so,
-     *  cac ky hieu %, ©, ®, ™, ℅, [, ] va nut xoa - cung do rong nhu nhau. */
+     *  cac ky hieu %, 漏, 庐, 鈩�, 鈩�, [, ] va nut xoa - cung do rong nhu nhau. */
     private fun buildExtendedSymbolsRow3(): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1063,7 +1056,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  - Neu co [onRepeat], nham GIU phim se tu dong goi lai [onRepeat] lien
      *    tuc (sau [DELETE_REPEAT_INITIAL_DELAY_MS] dau tien, roi lap lai moi
      *    [DELETE_REPEAT_INTERVAL_MS]) cho den khi tha tay ra - dung cho phim
-     *    xoa (⌫) de "giu la xoa hoai". Neu chi cham nhanh (tha ra truoc khi
+     *    xoa (鈱�) de "giu la xoa hoai". Neu chi cham nhanh (tha ra truoc khi
      *    kich hoat lap lai), van goi [onClick] binh thuong dung 1 lan. */
     private fun buildKey(
         label: String,
@@ -1090,13 +1083,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             // Chu nho hon o cac phim nhieu ky tu (vd "?123", "EN") va cho
             // hien thi tren MOT dong duy nhat, tranh bi xuong dong roi cat
             // mat chu (vd chi con thay dau "?" ma khong thay "123").
-            // RIENG cac phim bieu tuong Enter (\u21b5) va Shift/Caps Lock
-            // (\u2b06 khi thuong, \u21ea khi dang Caps Lock) duoc phong to
-            // hon han muc 16f mac dinh cua mot ky tu don - truoc day cung to
-            // nhu vay nhung bi thu nho lai chung voi logic length-based o
-            // tren, kho nhin hon. Day la sua lai NHU CU cho de thay.
             textSize = when {
-                label in LARGE_ICON_LABELS -> 22f
                 label.length > 3 -> 11f
                 label.length > 1 -> 13f
                 else -> 16f
@@ -1106,7 +1093,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             // bi cat mat. Theme Button mac dinh cua Android dat
             // includeFontPadding = false de chu gon hon, nhung dieu nay lam
             // Android CAT MAT phan tren cua dau (dac biet dau sac/nga/hoi tren
-            // chu hoa co dau mu nhu "Ấ", "Ế", "Ổ"...), khien dau nhin nhu bi
+            // chu hoa co dau mu nhu "岷�", "岷�", "峄�"...), khien dau nhin nhu bi
             // "thut" xuong de/nam len chu. Bat lai includeFontPadding = true
             // de danh du khong gian (line spacing) cho dau hien day du, dung
             // vi tri, khong bi vat cat.
@@ -1274,7 +1261,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
     /** Xu ly mot ky tu go theo kieu Telex: doi chieu voi phan "tu" da go tu
      *  truoc (currentWord) de biet co can xoa/thay the ky tu truoc do hay
-     *  khong (vd go "a" roi "a" -> "â", go nguyen am roi "s" -> them dau sac).
+     *  khong (vd go "a" roi "a" -> "芒", go nguyen am roi "s" -> them dau sac).
      *
      *  TRUOC DAY: moi lan go 1 ky tu, ham nay LUON xoa TOAN BO tu dang go
      *  (deleteSurroundingText(oldLen,0)) roi CHEN LAI TOAN BO tu moi - vd go
@@ -1288,7 +1275,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  ky tu binh thuong, khong kich hoat bien doi Telex nao ca, thi toan bo
      *  tu cu la tien to chung, CHI CAN commit dung 1 ky tu moi, KHONG can xoa
      *  gi ca). Chi khi mot phep bien doi Telex THUC SU thay doi mot ky tu o
-     *  giua/gan cuoi tu (vd "tiep"+"e" -> "tiêp") thi moi can xoa+chen phan
+     *  giua/gan cuoi tu (vd "tiep"+"e" -> "ti锚p") thi moi can xoa+chen phan
      *  DUOI KHAC NHAU ke tu diem do - van dung, nhung nho hon nhieu so voi
      *  xoa+chen ca tu. */
     private fun insertVietnameseChar(ch: Char) {
@@ -1299,11 +1286,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
         // LOI TRUOC DAY: go xong 1 tu (vd "hau") + dau cach se lam currentWord
         // bi XOA TRANG (xem [insertText] - dung de danh dau tu da "chot").
-        // Neu sau do nguoi dung XOA dau cach do di (bang phim ⌫) de noi lai
+        // Neu sau do nguoi dung XOA dau cach do di (bang phim 鈱�) de noi lai
         // vao cuoi tu ("hau"), currentWord VAN DANG TRONG (khong tu dong
         // "khoi phuc" lai thanh "hau"), nen go them ky tu Telex tiep theo
-        // (vd "a" de "hau"+"a" -> "hâu") se bi hieu la BAT DAU MOT TU MOI, ra
-        // ket qua sai (vd "haua" thay vi "hâu" dung mong doi).
+        // (vd "a" de "hau"+"a" -> "h芒u") se bi hieu la BAT DAU MOT TU MOI, ra
+        // ket qua sai (vd "haua" thay vi "h芒u" dung mong doi).
         // KHAC PHUC: neu currentWord dang TRONG, dong bo lai tu NOI DUNG THUC
         // TE truoc con tro (doc qua InputConnection) - lay chuoi CHU CAI lien
         // tuc gan con tro nhat (dung [Char.isLetter], bao gom ca chu Tieng
@@ -1330,8 +1317,8 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // dau), viet hoa DUY NHAT ky tu dau tien cua phan hau to moi, giu
         // nguyen (theo isShiftOn) cho phan con lai. KHONG tat co ngay - vi
         // ky tu dau tu CO THE con bi mot phim Telex tiep theo bien doi THEM
-        // (vd go "a" (cap) roi go "a" lan 2 -> "â", hoac "d" (cap) roi "d"
-        // lan 2 -> "đ") ma van phai tiep tuc duoc viet hoa. Chi tat co khi
+        // (vd go "a" (cap) roi go "a" lan 2 -> "芒", hoac "d" (cap) roi "d"
+        // lan 2 -> "膽") ma van phai tiep tuc duoc viet hoa. Chi tat co khi
         // gap lan go KHONG dong den vi tri dau tu nua (commonPrefixLen > 0)
         // - dau hieu ky tu dau tu da "on dinh", khong con bi ghi de lai.
         val touchesWordStart = commonPrefixLen == 0 && newSuffixLower.isNotEmpty()
@@ -1386,31 +1373,19 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     /** Doc mot doan van ban truoc con tro (qua InputConnection) va, neu doan
      *  ngay truoc con tro la mot day CHU CAI lien tuc (khong bi ngat boi dau
      *  cach/dau cau/ky tu khac), dat day chu cai do (ve chu thuong) lam
-     *  [currentWord] moi - de cac phep bien doi Telex tiep theo (aa->â, dau
+     *  [currentWord] moi - de cac phep bien doi Telex tiep theo (aa->芒, dau
      *  thanh s/f/r/x/j...) ap dung DUNG vao tu dang go, thay vi nham la dang
      *  bat dau mot tu hoan toan moi. Neu ky tu ngay truoc con tro KHONG phai
      *  chu cai (vd dang thuc su dung sau dau cach/dau cau, hoac dau dong van
      *  ban), khong lam gi ca - [currentWord] tiep tuc trong, dung nhu mong
      *  doi cho mot tu moi thuc su. */
-    /** [forceSync]: neu true, GAN LAI [currentWord] ngay ca khi phan doc
-     *  duoc ("recovered") la RONG (tuc dat lai currentWord ve rong luon) -
-     *  dung khi can dong bo TUYET DOI theo noi dung THUC TE (vd sau moi lan
-     *  xoa, xem [deleteChar]). Mac dinh false: giu nguyen hanh vi cu (chi
-     *  gan lai khi recovered KHONG rong), dung cho luc BAT DAU go mot ky tu
-     *  moi (xem [insertVietnameseChar]) - noi ma "recovered rong" khong nen
-     *  ghi de mot currentWord co the van dang hop le. */
-    private fun resyncCurrentWordFromInputConnection(
-        ic: android.view.inputmethod.InputConnection,
-        forceSync: Boolean = false
-    ) {
+    private fun resyncCurrentWordFromInputConnection(ic: android.view.inputmethod.InputConnection) {
         val before = ic.getTextBeforeCursor(40, 0)?.toString() ?: return
         var i = before.length
         while (i > 0 && before[i - 1].isLetter()) i--
         val recovered = before.substring(i)
         if (recovered.isNotEmpty()) {
             currentWord = StringBuilder(recovered.lowercase())
-        } else if (forceSync) {
-            currentWord.clear()
         }
     }
 
@@ -1454,32 +1429,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             currentWord.clear()
         } else {
             ic?.deleteSurroundingText(1, 0)
-            // LOI NGHIEM TRONG TRUOC DAY: chi tru bot 1 ky tu khoi [currentWord]
-            // (deleteCharAt) MA KHONG doc lai IC de xac nhan. Mot khi
-            // [currentWord] rong (vd da xoa het tu dang go), CAC LAN XOA
-            // TIEP THEO (xoa qua dau cach, xoa tiep vao TU TRUOC do nua) khong
-            // con duoc [currentWord] theo doi - no cu dung yen o trang thai
-            // rong, "tin tuong mu quang" rang moi lenh deleteSurroundingText
-            // truoc do chac chan da xoa dung. Neu vi ly do bat dong bo cua
-            // InputConnection (hay gap nhat khi giu phim xoa LIEN TUC that
-            // nhanh moi [DELETE_REPEAT_INTERVAL_MS] tren mot so ung dung xu
-            // ly edit qua tien trinh/bat dong bo khac, chua kip "thoat" het cac
-            // lenh xoa truoc do) khien mot vai ky tu THUC RA CHUA duoc xoa xong
-            // (vd con sot "ậu" cua tu "hậu" vua xoa), thi ky tu sot lai do se
-            // nam im trong [currentWord] cho toi khi nguoi dung go tu MOI, roi
-            // bi TRON LAN vao ngay dau tu moi (vd go "trịnh" ra "ẩutịnh" - loi
-            // nghiem trong nguoi dung phan anh).
-            // KHAC PHUC: sau MOI lan xoa, DOC LAI va DONG BO [currentWord]
-            // TRUC TIEP tu noi dung THUC TE ngay truoc con tro (dung
-            // [resyncCurrentWordFromInputConnection] voi forceSync = true, de
-            // no cung dat lai currentWord ve RONG khi khong con chu cai nao
-            // truoc con tro nua, thay vi chi lam vay khi tim thay chu). Neu co
-            // do tre bat dong bo, no se duoc PHAT HIEN va TU SUA dan qua cac
-            // lan bam xoa TIEP THEO (truoc khi nguoi dung kip go chu moi),
-            // thay vi am tham ton tai roi gay tron chu.
-            if (ic != null) {
-                resyncCurrentWordFromInputConnection(ic, forceSync = true)
-            } else if (currentWord.isNotEmpty()) {
+            if (currentWord.isNotEmpty()) {
                 currentWord.deleteCharAt(currentWord.length - 1)
             }
         }
@@ -1566,7 +1516,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     }
 
     // ---------------------------------------------------------------------
-    // BANG CAI DAT (am thanh, rung, mau vien) - mo tu nut banh rang (⚙) cuoi
+    // BANG CAI DAT (am thanh, rung, mau vien) - mo tu nut banh rang (鈿�) cuoi
     // hang emoji (xem [buildEmojiRow]). Dung CUNG ky thuat "View noi qua
     // WindowManager cua chinh Service" nhu khung quet QR (xem [showQrOverlay])
     // thay vi Dialog/AlertDialog thong thuong, vi mot InputMethodService
@@ -1577,7 +1527,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     private var settingsOverlayView: View? = null
 
     /** Hien bang cai dat, CHE TAM len khu vuc ban phim (cung chieu cao ban
-     *  phim hien tai) - dong lai (nut "✕" hoac cham ra ngoai) se tra ve ban
+     *  phim hien tai) - dong lai (nut "鉁�" hoac cham ra ngoai) se tra ve ban
      *  phim binh thuong, cac thay doi (am luong, cuong do rung, mau vien) da
      *  duoc luu ngay khi nguoi dung chinh, khong can nut "Luu" rieng. */
     private fun showSettingsPanel() {
@@ -2171,7 +2121,7 @@ private object VietnameseAutocorrect {
  * Bo xu ly go Tieng Viet kieu Telex don gian: chuyen mot chuoi ky tu QWERTY
  * thuong (khong dau) thanh chuoi co dau Tieng Viet, dua tren "tu" dang go
  * (tu luc bat dau tu den ky tu hien tai). Cac quy tac Telex duoc ho tro:
- *   - aa -> â, aw -> ă, ee -> ê, oo -> ô, ow -> ơ, uw -> ư, dd -> đ
+ *   - aa -> 芒, aw -> 膬, ee -> 锚, oo -> 么, ow -> 啤, uw -> 瓢, dd -> 膽
  *   - s/f/r/x/j -> dau sac/huyen/hoi/nga/nang; z -> bo dau
  * Day la mot bo xu ly rut gon (khong xu ly het moi truong hop dac biet cua
  * chinh ta Tieng Viet), nhung dap ung tot phan lon cac tu thong dung.
@@ -2182,20 +2132,20 @@ private object VietnameseTelex {
     // [khong dau, sac, huyen, hoi, nga, nang]
     private val vowelGroups: List<CharArray> = listOf(
         charArrayOf('a', '\u00e1', '\u00e0', '\u1ea3', '\u00e3', '\u1ea1'), // a
-        charArrayOf('\u0103', '\u1eaf', '\u1eb1', '\u1eb3', '\u1eb5', '\u1eb7'), // ă
-        charArrayOf('\u00e2', '\u1ea5', '\u1ea7', '\u1ea9', '\u1eab', '\u1ead'), // â
+        charArrayOf('\u0103', '\u1eaf', '\u1eb1', '\u1eb3', '\u1eb5', '\u1eb7'), // 膬
+        charArrayOf('\u00e2', '\u1ea5', '\u1ea7', '\u1ea9', '\u1eab', '\u1ead'), // 芒
         charArrayOf('e', '\u00e9', '\u00e8', '\u1ebb', '\u1ebd', '\u1eb9'), // e
-        charArrayOf('\u00ea', '\u1ebf', '\u1ec1', '\u1ec3', '\u1ec5', '\u1ec7'), // ê
+        charArrayOf('\u00ea', '\u1ebf', '\u1ec1', '\u1ec3', '\u1ec5', '\u1ec7'), // 锚
         charArrayOf('i', '\u00ed', '\u00ec', '\u1ec9', '\u0129', '\u1ecb'), // i
         charArrayOf('o', '\u00f3', '\u00f2', '\u1ecf', '\u00f5', '\u1ecd'), // o
-        charArrayOf('\u00f4', '\u1ed1', '\u1ed3', '\u1ed5', '\u1ed7', '\u1ed9'), // ô
-        charArrayOf('\u01a1', '\u1edb', '\u1edd', '\u1edf', '\u1ee1', '\u1ee3'), // ơ
+        charArrayOf('\u00f4', '\u1ed1', '\u1ed3', '\u1ed5', '\u1ed7', '\u1ed9'), // 么
+        charArrayOf('\u01a1', '\u1edb', '\u1edd', '\u1edf', '\u1ee1', '\u1ee3'), // 啤
         charArrayOf('u', '\u00fa', '\u00f9', '\u1ee7', '\u0169', '\u1ee5'), // u
-        charArrayOf('\u01b0', '\u1ee9', '\u1eeb', '\u1eed', '\u1eef', '\u1ef1'), // ư
+        charArrayOf('\u01b0', '\u1ee9', '\u1eeb', '\u1eed', '\u1eef', '\u1ef1'), // 瓢
         charArrayOf('y', '\u00fd', '\u1ef3', '\u1ef7', '\u1ef9', '\u1ef5')  // y
     )
 
-    // Cac nhom "co mu/moc" (â, ă, ê, ô, ơ, ư) duoc uu tien khi dat dau thanh
+    // Cac nhom "co mu/moc" (芒, 膬, 锚, 么, 啤, 瓢) duoc uu tien khi dat dau thanh
     // neu chung xuat hien trong cum nguyen am.
     private val modifiedGroupIndices = setOf(1, 2, 4, 7, 8, 10)
 
@@ -2216,30 +2166,30 @@ private object VietnameseTelex {
         return word + keyLower
     }
 
-    /** Xu ly cac cap chuyen doi: aa->â, aw->ă, ee->ê, oo->ô, ow->ơ, uw->ư,
-     *  dd->đ. TRUOC DAY chi ap dung khi ky tu ngay LIEN TRUOC do khop dung
-     *  quy tac (vd phai go "tiee" thi "e" thu 2 moi bien "e" thanh "ê"), nen
+    /** Xu ly cac cap chuyen doi: aa->芒, aw->膬, ee->锚, oo->么, ow->啤, uw->瓢,
+     *  dd->膽. TRUOC DAY chi ap dung khi ky tu ngay LIEN TRUOC do khop dung
+     *  quy tac (vd phai go "tiee" thi "e" thu 2 moi bien "e" thanh "锚"), nen
      *  neu nguoi dung lo go het phu am cuoi tu roi ("tiep") moi quay lai them
      *  "e" thi se KHONG nhan (chi chen them chu "e" moi, sai chinh ta).
      *  GIO DAY: tim NGUYEN AM GOC (chua bien doi) GAN CUOI NHAT trong CA TU
      *  (khong bat buoc phai dung sat cuoi), roi bien doi ngay tai vi tri do,
      *  giu nguyen moi ky tu dung sau no (vd phu am cuoi). Nho vay go "tiep"
-     *  roi go them "e" van ra "tiêp" dung nhu go "tiee" tu dau.
+     *  roi go them "e" van ra "ti锚p" dung nhu go "tiee" tu dau.
      *
      *  SUA THEM (2 loi nguoi dung phan anh):
-     *  1) "hạu" (danh sai) + dat con tro truoc "u" + go them "a" TRUOC DAY ra
-     *     "hạau" (sai) vi ham chi tim ky tu 'a' THUAN (khong dau) - trong khi
-     *     ky tu thuc te ngay truoc con tro la 'ạ' (a MANG SAN dau nang), nen
+     *  1) "h岷" (danh sai) + dat con tro truoc "u" + go them "a" TRUOC DAY ra
+     *     "h岷u" (sai) vi ham chi tim ky tu 'a' THUAN (khong dau) - trong khi
+     *     ky tu thuc te ngay truoc con tro la '岷�' (a MANG SAN dau nang), nen
      *     bi coi la "khong khop", chi chen them chu "a" moi. GIO DAY: tim
-     *     theo NHOM nguyen am goc (vd nhom "a" gom ca a/á/à/ả/ã/ạ) bang
+     *     theo NHOM nguyen am goc (vd nhom "a" gom ca a/谩/脿/岷�/茫/岷�) bang
      *     [lastIndexOfGroup], roi GIU NGUYEN dau thanh da co khi doi nhom (vd
-     *     'ạ' -> 'ậ', khong phai 'ạ' -> 'ạa') - ra dung "hậu" nhu mong doi.
-     *  2) "được" bi go ra "đuợc": phim "w" TRUOC DAY chi doi MOT nguyen am
+     *     '岷�' -> '岷�', khong phai '岷�' -> '岷') - ra dung "h岷璾" nhu mong doi.
+     *  2) "膽瓢峄" bi go ra "膽u峄": phim "w" TRUOC DAY chi doi MOT nguyen am
      *     gan cuoi nhat trong so {a,o,u} (uu tien "o" vi nam sau "u" trong tu
-     *     "duo"), nen chi "o" -> "ơ", con "u" bi bo qua, giu nguyen. GIO DAY:
+     *     "duo"), nen chi "o" -> "啤", con "u" bi bo qua, giu nguyen. GIO DAY:
      *     kiem tra rieng cum "uo" LIEN TIEP (dung quy uoc Telex chuan cho cum
-     *     nguyen am doi "ươ") - neu co, doi CA HAI ky tu cung luc (u -> ư VA
-     *     o -> ơ), moi ra dung "được". Chi khi KHONG co cum "uo" moi quay ve
+     *     nguyen am doi "瓢啤") - neu co, doi CA HAI ky tu cung luc (u -> 瓢 VA
+     *     o -> 啤), moi ra dung "膽瓢峄". Chi khi KHONG co cum "uo" moi quay ve
      *     logic cu (chon 1 trong 3 nguyen am gan cuoi nhat). */
     private fun applyDoubleModifier(word: String, key: Char): String? {
         if (word.isEmpty()) return null
@@ -2252,7 +2202,7 @@ private object VietnameseTelex {
 
         // Vi tri GAN CUOI NHAT trong [word] co ky tu thuoc NHOM nguyen am goc
         // [groupIdx] - BAT KY dang mang dau thanh nao (vd nhom 0 "a" khop ca
-        // voi 'a','á','à','ả','ã','ạ'), khong chi ky tu thuan khong dau.
+        // voi 'a','谩','脿','岷�','茫','岷�'), khong chi ky tu thuan khong dau.
         fun lastIndexOfGroup(groupIdx: Int): Int? =
             word.indices.lastOrNull { i -> charToGroupTone[word[i]]?.first == groupIdx }
 
@@ -2266,13 +2216,13 @@ private object VietnameseTelex {
         }
 
         return when (key) {
-            'a' -> replaceGroupPreservingTone(0, 2) // a-family -> â
-            'e' -> replaceGroupPreservingTone(3, 4) // e-family -> ê
-            'o' -> replaceGroupPreservingTone(6, 7) // o-family -> ô
+            'a' -> replaceGroupPreservingTone(0, 2) // a-family -> 芒
+            'e' -> replaceGroupPreservingTone(3, 4) // e-family -> 锚
+            'o' -> replaceGroupPreservingTone(6, 7) // o-family -> 么
             'w' -> {
                 // Cum "uo" LIEN TIEP gan cuoi nhat (ky tu nhom "u" [9] ngay
                 // truoc mot ky tu nhom "o" [6]) - neu co, doi CA HAI thanh
-                // "ươ" cung luc (quy uoc Telex chuan cho cum nguyen am doi).
+                // "瓢啤" cung luc (quy uoc Telex chuan cho cum nguyen am doi).
                 val uoIdx = (0 until word.length - 1).lastOrNull { i ->
                     charToGroupTone[word[i]]?.first == 9 && charToGroupTone[word[i + 1]]?.first == 6
                 }
@@ -2284,12 +2234,12 @@ private object VietnameseTelex {
                     word.substring(0, uoIdx) + newU + newO + word.substring(uoIdx + 2)
                 } else {
                     // Khong co cum "uo": quay ve logic cu - trong 3 nhom
-                    // nguyen am co the bien doi boi "w" (a->ă, o->ơ, u->ư),
+                    // nguyen am co the bien doi boi "w" (a->膬, o->啤, u->瓢),
                     // chon nhom co vi tri GAN CUOI TU NHAT.
                     val hits = listOfNotNull(
-                        lastIndexOfGroup(0)?.let { it to (0 to 1) },   // a -> ă
-                        lastIndexOfGroup(6)?.let { it to (6 to 8) },   // o -> ơ
-                        lastIndexOfGroup(9)?.let { it to (9 to 10) }   // u -> ư
+                        lastIndexOfGroup(0)?.let { it to (0 to 1) },   // a -> 膬
+                        lastIndexOfGroup(6)?.let { it to (6 to 8) },   // o -> 啤
+                        lastIndexOfGroup(9)?.let { it to (9 to 10) }   // u -> 瓢
                     )
                     val best = hits.maxByOrNull { it.first }
                     if (best == null) {
@@ -2314,18 +2264,18 @@ private object VietnameseTelex {
      *  moi go dau thanh ("s") thi se KHONG nhan (chi chen them chu "s" moi).
      *  GIO DAY: bo qua moi phu am cuoi (khong phai nguyen am) o cuoi tu
      *  truoc, tim ra cum nguyen am GAN CUOI NHAT trong tu (du no khong con
-     *  nam o vi tri cuoi cung nua), uu tien nguyen am "co mu/moc" (â, ê, ô,
-     *  ơ, ư, ă) neu co. Neu khong co nguyen am "co mu/moc" nao trong cum:
+     *  nam o vi tri cuoi cung nua), uu tien nguyen am "co mu/moc" (芒, 锚, 么,
+     *  啤, 瓢, 膬) neu co. Neu khong co nguyen am "co mu/moc" nao trong cum:
      *   - Neu SAU cum nguyen am van con phu am (tu dang "dong", vd "hoan"),
      *     dau dat o nguyen am CUOI cung trong cum (ngay truoc phu am), vi
      *     day la vi tri dung duy nhat trong tieng Viet cho truong hop nay
-     *     (vd "hoan" + f -> "hoàn", dau o "a").
+     *     (vd "hoan" + f -> "ho脿n", dau o "a").
      *   - Neu cum nguyen am nam SAT CUOI TU (tu "mo", khong co phu am theo
      *     sau, vd "bao", "hoa", "khoe", "thuy"), dau dat o nguyen am DAU
-     *     TIEN trong cum (kieu chinh ta "cu": "bảo", "hòa", "khỏe", "thúy")
+     *     TIEN trong cum (kieu chinh ta "cu": "b岷", "h貌a", "kh峄廵", "th煤y")
      *     - TRUOC DAY luon dat o nguyen am CUOI cum bat ke con hay het tu,
-     *     nen "bao" + r (hoi) sai ra "baỏ" (dau tren "o") thay vi dung phai
-     *     la "bảo" (dau tren "a"). Day la sua chinh cho loi nay.
+     *     nen "bao" + r (hoi) sai ra "ba峄�" (dau tren "o") thay vi dung phai
+     *     la "b岷" (dau tren "a"). Day la sua chinh cho loi nay.
      *  Neu khong tim thay nguyen am nao trong ca tu, tra ve null de ky tu
      *  duoc chen nhu binh thuong (vd "s", "r", "x" o dau tu la phu am). */
     private fun applyTone(word: String, key: Char): String? {
@@ -2358,36 +2308,8 @@ private object VietnameseTelex {
         val preferred = clusterIndices.lastOrNull { pos ->
             charToGroupTone[word[pos]]!!.first in modifiedGroupIndices
         }
-
-        // SUA LOI: "hoa" + s (sac) truoc day ra "hóa" (dau tren "o") thay vi
-        // dung phai la "hoá" (dau tren "a") - tuong tu "hoai" + f (huyen) ra
-        // "hòai" thay vi "hoài". NGUYEN NHAN: quy tac cu chi nhin "cum nguyen
-        // am nam sat cuoi tu thi dau dat o nguyen am DAU TIEN trong cum", ma
-        // KHONG phan biet duoc truong hop "o"/"u" dung dau tu la AM DEM (mot
-        // kieu ban nguyen am, doc gan giong "w", KHONG PHAI la am chinh cua
-        // van) voi truong hop no la NGUYEN AM CHINH thuc su (vd "bao", "cõi").
-        // Vi du: "hoa" gom am dem "o" + am chinh "a" (o chi la ban-nguyen-am
-        // dung truoc, giong nhu trong "qua", "hoa don" - khong phai nguyen am
-        // chinh) - dau thanh LUON phai dat o am chinh ("a"), bat ke tu la mo
-        // (khong phu am cuoi, vd "hoa", "hoài") hay dong (co phu am cuoi, vd
-        // "hoan" -> "hoàn", truong hop nay code CU DA lam dung roi). Nhom
-        // "o"/"u" chi la am dem khi ky tu NGAY SAU no (trong cum) thuoc nhom
-        // "a", "e" hoac "y" (vd oa, oe, oai, uy, uơ, ua nhu trong "qua") - cac
-        // truong hop con lai (vd "ao", "eo", "oi", "ui" - "o"/"u" dung SAU,
-        // dong vai tro nguyen am cuoi/ban-am CUOI cua van, khong phai am dem)
-        // van giu logic cu (dau o nguyen am DAU cum neu tu mo, vd "bảo").
-        fun isGlideOnsetCluster(): Boolean {
-            if (clusterIndices.size < 2) return false
-            val firstGroup = charToGroupTone[word[clusterIndices[0]]]!!.first
-            val secondGroup = charToGroupTone[word[clusterIndices[1]]]!!.first
-            val isGlide = firstGroup == 6 || firstGroup == 9 // "o" hoac "u"
-            val isMainAfterGlide = secondGroup == 0 || secondGroup == 3 || secondGroup == 11 // a, e, y
-            return isGlide && isMainAfterGlide
-        }
-
         val target = when {
             preferred != null -> preferred
-            isGlideOnsetCluster() -> clusterIndices[1]
             isOpenSyllable && clusterIndices.size >= 2 -> clusterIndices.first()
             else -> clusterIndices.last()
         }
