@@ -25,6 +25,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
+import android.text.InputType
 import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
@@ -1330,11 +1331,40 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         if (hadPendingSuggestion) redrawKeyboard()
     }
 
+    /** LOI nguoi dung phan anh ve nut Enter (\u21b5): TRUOC DAY, moi khi o
+     *  nhap co khai bao san mot "hanh dong ban phim" (IME action - vd Gui,
+     *  Tim kiem, Tiep theo, Xong...), nut nay se GOI LUON hanh dong do (vd
+     *  bam Gui tin nhan) thay vi xuong dong - dieu nay RAT PHIEN trong cac
+     *  app nhan tin/chat: o nhap tin nhan o do THUONG co khai bao san hanh
+     *  dong "Gui", nen bam Enter de xuong dong (viet tin nhan nhieu dong)
+     *  lai vo tinh GUI LUON tin nhan dang go do.
+     *
+     *  GIO DAY: sua thanh kieu "Alt+Enter" - giong voi to hop phim Alt+Enter
+     *  tren ban phim vat ly ma nhieu app chat dung de CHEN XUONG DONG THAT
+     *  SU, KHONG kich hoat hanh dong Gui/Tim kiem/... cua o nhap:
+     *   - Neu o nhap la loai NHIEU DONG (co co [InputType.TYPE_TEXT_FLAG_MULTI_LINE]
+     *     hoac [InputType.TYPE_TEXT_FLAG_IME_MULTI_LINE] - vd o soan tin
+     *     nhan, o ghi chu, o binh luan dai...): LUON chen ky tu xuong dong
+     *     that ("\n"), bo qua hanh dong ban phim du o do co khai bao gi.
+     *   - Neu o nhap la loai MOT DONG (khong co hai co tren - vd o tim kiem,
+     *     o dang nhap, o dien so dien thoai...): xuong dong THAT SU khong co
+     *     y nghia o day (o nay khong the hien thi nhieu dong duoc), nen day
+     *     la truong hop "KHONG THE Alt-Enter duoc" - quay ve dung hanh vi
+     *     Enter THONG THUONG nhu truoc: goi hanh dong ban phim neu co khai
+     *     bao (Gui/Tim kiem/Xong...), neu khong co gi khai bao thi moi chen
+     *     xuong dong nhu mot phuong an du phong cuoi cung. */
     private fun sendEnter() {
         val ic = currentInputConnection ?: return
         currentWord.clear()
         clearAutocorrectSuggestion()
         selfInitiatedChange = true
+        val inputType = currentInputEditorInfo?.inputType ?: InputType.TYPE_NULL
+        val isMultiLine = (inputType and InputType.TYPE_TEXT_FLAG_MULTI_LINE) != 0 ||
+            (inputType and InputType.TYPE_TEXT_FLAG_IME_MULTI_LINE) != 0
+        if (isMultiLine) {
+            ic.commitText("\n", 1)
+            return
+        }
         val action = currentInputEditorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION)
         if (action != null && action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
             ic.performEditorAction(action)
