@@ -30,6 +30,8 @@ import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.PopupWindow
+import android.widget.ScrollView
+import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.camera.core.Camera
@@ -142,6 +144,13 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
          *  het khoang thoi gian nay ma ban phim van chua duoc mo lai, moi coi
          *  la nguoi dung THAT SU roi di va dong khung quet. */
         private const val FINISH_INPUT_HIDE_DEBOUNCE_MS = 500L
+
+        /** Nhan dang cac phim BIEU TUONG (khong phai chu cai/ky hieu thuong)
+         *  can hien THI TO HON han muc mac dinh cua mot ky tu don trong
+         *  [buildKey]: Enter (\u21b5), Shift thuong (\u2b06) va Shift dang
+         *  Caps Lock (\u21ea) - de de nhan biet/de bam hon, dung nhu giao
+         *  dien truoc day. */
+        private val LARGE_ICON_LABELS = setOf("\u21b5", "\u2b06", "\u21ea")
     }
 
     /** Thoi diem (uptimeMillis) cua lan cham nut [QR] gan nhat, dung de phat
@@ -245,6 +254,46 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  loi kieu chen lai/nhac lai chu vua go truoc do. */
     private var selfInitiatedChange = false
 
+    // ---------------------------------------------------------------------
+    // CAI DAT BAN PHIM (am thanh, rung, mau vien) - luu qua SharedPreferences
+    // de con lai giua cac lan mo ban phim, chinh trong bang cai dat mo tu nut
+    // banh rang cuoi hang emoji (xem [showSettingsPanel]).
+    // ---------------------------------------------------------------------
+
+    private val keyboardPrefs by lazy {
+        getSharedPreferences("qr_keyboard_prefs", MODE_PRIVATE)
+    }
+
+    private val PREF_SOUND_VOLUME = "sound_volume"
+    private val PREF_VIBRATION_AMPLITUDE = "vibration_amplitude"
+    private val PREF_BORDER_COLOR = "border_color"
+
+    /** Am luong am thanh "tach" khi go phim, tu 0f (tat han - KHONG goi
+     *  playSoundEffect nua) den 1f (to nhat). Mac dinh 1f (bat, to nhat) de
+     *  giu dung hanh vi truoc day. */
+    private var soundVolume = keyboardPrefs.getFloat(PREF_SOUND_VOLUME, 1f)
+
+    /** Bien do (amplitude) rung khi go phim, tu 0 (tat han - KHONG goi
+     *  vibrate() nua) den 255 (manh nhat). Mac dinh 200 de giu dung hanh vi
+     *  truoc day (xem [vibrateKeyPress]). */
+    private var vibrationAmplitude = keyboardPrefs.getInt(PREF_VIBRATION_AMPLITUDE, 200)
+
+    private fun saveSoundVolume(volume: Float) {
+        soundVolume = volume.coerceIn(0f, 1f)
+        keyboardPrefs.edit().putFloat(PREF_SOUND_VOLUME, soundVolume).apply()
+    }
+
+    private fun saveVibrationAmplitude(amplitude: Int) {
+        vibrationAmplitude = amplitude.coerceIn(0, 255)
+        keyboardPrefs.edit().putInt(PREF_VIBRATION_AMPLITUDE, vibrationAmplitude).apply()
+    }
+
+    private fun saveBorderColor(colorHex: String) {
+        glowColor = Color.parseColor(colorHex)
+        keyboardPrefs.edit().putString(PREF_BORDER_COLOR, colorHex).apply()
+        redrawKeyboard()
+    }
+
     /** AudioManager dung de phat am thanh gõ phim (xem [playKeyClickTone]).
      *  TRUOC DAY dung ToneGenerator phat mot tieng "tin" (beep dien tu tong
      *  hop) - nguoi dung phan anh nghe khong hay VA moi lan goi startTone()
@@ -259,8 +308,9 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     }
 
     private fun playKeyClickTone() {
+        if (soundVolume <= 0f) return // nguoi dung da tat am thanh go phim trong cai dat
         try {
-            audioManager.playSoundEffect(AudioManager.FX_KEYPRESS_STANDARD)
+            audioManager.playSoundEffect(AudioManager.FX_KEYPRESS_STANDARD, soundVolume)
         } catch (e: Exception) {
             // Bo qua neu audio chua san sang (hiem gap), hoac nguoi dung da
             // tat "am thanh cham" trong Settings he thong (khi do API nay se
@@ -352,6 +402,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     private var loggedNoVibrator = false
 
     private fun vibrateKeyPress() {
+        if (vibrationAmplitude <= 0) return // nguoi dung da tat rung trong cai dat
         if (!vibrator.hasVibrator()) {
             if (!loggedNoVibrator) {
                 loggedNoVibrator = true
@@ -360,11 +411,12 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             return
         }
         try {
-            // Do dai 40ms + bien do 200/255 - manh va ro rang hon muc mac
-            // dinh, de dam bao cam nhan duoc ke ca tren may co dong co rung
-            // yeu, nhung van gan dung loai "cham phim" de duoc he thong ap
-            // dung dung thanh truot cuong do "Rung khi cham".
-            val effect = VibrationEffect.createOneShot(40L, 200)
+            // Do dai 40ms, bien do lay tu cai dat nguoi dung ([vibrationAmplitude],
+            // mac dinh 200/255) - manh va ro rang hon muc mac dinh he thong, de
+            // dam bao cam nhan duoc ke ca tren may co dong co rung yeu, nhung
+            // van gan dung loai "cham phim" de duoc he thong ap dung dung thanh
+            // truot cuong do "Rung khi cham".
+            val effect = VibrationEffect.createOneShot(40L, vibrationAmplitude.coerceIn(1, 255))
             when {
                 Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU ->
                     vibrator.vibrate(effect, touchVibrationAttributes)
@@ -381,9 +433,26 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     }
 
 
+    /** Danh sach cac mau vien co the chon trong bang cai dat (xem
+     *  [showSettingsPanel]) - phan tu dau tien ("#B388FF", tim neon) la mau
+     *  MAC DINH khi nguoi dung chua tung chon gi ca. */
+    private val borderColorPresets = listOf(
+        "#B388FF", // Tim neon (mac dinh)
+        "#7BD3FF", // Xanh duong neon
+        "#6EE7A8", // Xanh la neon
+        "#FF8FB1", // Hong neon
+        "#FFB86B", // Cam neon
+        "#FFF176", // Vang neon
+        "#FFFFFF"  // Trang
+    )
+
     /** Mau tim neon dung CHUNG cho VIEN phat sang cua tat ca cac phim, tren
-     *  CA BA trang (chu cai, so, ky hieu) - xem [buildGlowKeyBackground]. */
-    private val glowColor = Color.parseColor("#B388FF")
+     *  CA BA trang (chu cai, so, ky hieu) - xem [buildGlowKeyBackground].
+     *  Doc tu [keyboardPrefs], nguoi dung co the doi qua bang cai dat (nut
+     *  banh rang cuoi hang emoji, xem [showSettingsPanel]). */
+    private var glowColor = Color.parseColor(
+        keyboardPrefs.getString(PREF_BORDER_COLOR, borderColorPresets[0])
+    )
 
     /** Nen phim kieu "kinh toi + vien tim phat sang", gom 2 lop GradientDrawable
      *  chong len nhau (dung LayerDrawable):
@@ -641,6 +710,36 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             }
             inner.addView(btn)
         }
+
+        // Nut banh rang (⚙) - luon la item CUOI CUNG trong hang, cung kich
+        // thuoc/kieu dang voi cac phim emoji khac de nam gon trong dong truot,
+        // mo bang cai dat am thanh/rung/mau vien (xem [showSettingsPanel]).
+        val settingsBg = buildGlowKeyBackground(cornerDp = 4)
+        val settingsBtn = Button(this).apply {
+            text = "\u2699"
+            isAllCaps = false
+            textSize = 20f
+            includeFontPadding = true
+            isSingleLine = true
+            setPadding(0, 0, 0, 0)
+            minWidth = 0
+            minimumWidth = 0
+            minHeight = 0
+            minimumHeight = 0
+            gravity = Gravity.CENTER
+            background = settingsBg
+            isHapticFeedbackEnabled = true
+            layoutParams = LinearLayout.LayoutParams(emojiKeySizePx, emojiKeySizePx).apply {
+                setMargins(dp(3), dp(3), dp(3), dp(3))
+            }
+            setOnClickListener { v ->
+                v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                vibrateKeyPress()
+                playKeyClickTone()
+                showSettingsPanel()
+            }
+        }
+        inner.addView(settingsBtn)
 
         return HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
@@ -991,7 +1090,13 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             // Chu nho hon o cac phim nhieu ky tu (vd "?123", "EN") va cho
             // hien thi tren MOT dong duy nhat, tranh bi xuong dong roi cat
             // mat chu (vd chi con thay dau "?" ma khong thay "123").
+            // RIENG cac phim bieu tuong Enter (\u21b5) va Shift/Caps Lock
+            // (\u2b06 khi thuong, \u21ea khi dang Caps Lock) duoc phong to
+            // hon han muc 16f mac dinh cua mot ky tu don - truoc day cung to
+            // nhu vay nhung bi thu nho lai chung voi logic length-based o
+            // tren, kho nhin hon. Day la sua lai NHU CU cho de thay.
             textSize = when {
+                label in LARGE_ICON_LABELS -> 22f
                 label.length > 3 -> 11f
                 label.length > 1 -> 13f
                 else -> 16f
@@ -1287,13 +1392,25 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  chu cai (vd dang thuc su dung sau dau cach/dau cau, hoac dau dong van
      *  ban), khong lam gi ca - [currentWord] tiep tuc trong, dung nhu mong
      *  doi cho mot tu moi thuc su. */
-    private fun resyncCurrentWordFromInputConnection(ic: android.view.inputmethod.InputConnection) {
+    /** [forceSync]: neu true, GAN LAI [currentWord] ngay ca khi phan doc
+     *  duoc ("recovered") la RONG (tuc dat lai currentWord ve rong luon) -
+     *  dung khi can dong bo TUYET DOI theo noi dung THUC TE (vd sau moi lan
+     *  xoa, xem [deleteChar]). Mac dinh false: giu nguyen hanh vi cu (chi
+     *  gan lai khi recovered KHONG rong), dung cho luc BAT DAU go mot ky tu
+     *  moi (xem [insertVietnameseChar]) - noi ma "recovered rong" khong nen
+     *  ghi de mot currentWord co the van dang hop le. */
+    private fun resyncCurrentWordFromInputConnection(
+        ic: android.view.inputmethod.InputConnection,
+        forceSync: Boolean = false
+    ) {
         val before = ic.getTextBeforeCursor(40, 0)?.toString() ?: return
         var i = before.length
         while (i > 0 && before[i - 1].isLetter()) i--
         val recovered = before.substring(i)
         if (recovered.isNotEmpty()) {
             currentWord = StringBuilder(recovered.lowercase())
+        } else if (forceSync) {
+            currentWord.clear()
         }
     }
 
@@ -1337,7 +1454,32 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             currentWord.clear()
         } else {
             ic?.deleteSurroundingText(1, 0)
-            if (currentWord.isNotEmpty()) {
+            // LOI NGHIEM TRONG TRUOC DAY: chi tru bot 1 ky tu khoi [currentWord]
+            // (deleteCharAt) MA KHONG doc lai IC de xac nhan. Mot khi
+            // [currentWord] rong (vd da xoa het tu dang go), CAC LAN XOA
+            // TIEP THEO (xoa qua dau cach, xoa tiep vao TU TRUOC do nua) khong
+            // con duoc [currentWord] theo doi - no cu dung yen o trang thai
+            // rong, "tin tuong mu quang" rang moi lenh deleteSurroundingText
+            // truoc do chac chan da xoa dung. Neu vi ly do bat dong bo cua
+            // InputConnection (hay gap nhat khi giu phim xoa LIEN TUC that
+            // nhanh moi [DELETE_REPEAT_INTERVAL_MS] tren mot so ung dung xu
+            // ly edit qua tien trinh/bat dong bo khac, chua kip "thoat" het cac
+            // lenh xoa truoc do) khien mot vai ky tu THUC RA CHUA duoc xoa xong
+            // (vd con sot "ậu" cua tu "hậu" vua xoa), thi ky tu sot lai do se
+            // nam im trong [currentWord] cho toi khi nguoi dung go tu MOI, roi
+            // bi TRON LAN vao ngay dau tu moi (vd go "trịnh" ra "ẩutịnh" - loi
+            // nghiem trong nguoi dung phan anh).
+            // KHAC PHUC: sau MOI lan xoa, DOC LAI va DONG BO [currentWord]
+            // TRUC TIEP tu noi dung THUC TE ngay truoc con tro (dung
+            // [resyncCurrentWordFromInputConnection] voi forceSync = true, de
+            // no cung dat lai currentWord ve RONG khi khong con chu cai nao
+            // truoc con tro nua, thay vi chi lam vay khi tim thay chu). Neu co
+            // do tre bat dong bo, no se duoc PHAT HIEN va TU SUA dan qua cac
+            // lan bam xoa TIEP THEO (truoc khi nguoi dung kip go chu moi),
+            // thay vi am tham ton tai roi gay tron chu.
+            if (ic != null) {
+                resyncCurrentWordFromInputConnection(ic, forceSync = true)
+            } else if (currentWord.isNotEmpty()) {
                 currentWord.deleteCharAt(currentWord.length - 1)
             }
         }
@@ -1421,6 +1563,197 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
         if (qrOverlayView != null) return // camera van dang chay, chi doi che do o tren
         showQrOverlay()
+    }
+
+    // ---------------------------------------------------------------------
+    // BANG CAI DAT (am thanh, rung, mau vien) - mo tu nut banh rang (⚙) cuoi
+    // hang emoji (xem [buildEmojiRow]). Dung CUNG ky thuat "View noi qua
+    // WindowManager cua chinh Service" nhu khung quet QR (xem [showQrOverlay])
+    // thay vi Dialog/AlertDialog thong thuong, vi mot InputMethodService
+    // KHONG the tu hien Dialog gan voi Activity nao ca - phai tu quan ly cua
+    // so cua chinh minh.
+    // ---------------------------------------------------------------------
+
+    private var settingsOverlayView: View? = null
+
+    /** Hien bang cai dat, CHE TAM len khu vuc ban phim (cung chieu cao ban
+     *  phim hien tai) - dong lai (nut "✕" hoac cham ra ngoai) se tra ve ban
+     *  phim binh thuong, cac thay doi (am luong, cuong do rung, mau vien) da
+     *  duoc luu ngay khi nguoi dung chinh, khong can nut "Luu" rieng. */
+    private fun showSettingsPanel() {
+        if (settingsOverlayView != null) return // da dang mo san
+        val decorView = window?.window?.decorView ?: return
+        val heightPx = decorView.height.takeIf { it > 0 }
+            ?: (resources.displayMetrics.heightPixels / 2)
+
+        val view = buildSettingsPanelContentView(heightPx)
+        val params = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.MATCH_PARENT,
+            heightPx,
+            WindowManager.LayoutParams.TYPE_APPLICATION_PANEL,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_ALT_FOCUSABLE_IM,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.BOTTOM
+            y = 0
+            token = decorView.windowToken
+        }
+
+        try {
+            qrWindowManager.addView(view, params)
+        } catch (e: Exception) {
+            // Mot so ROM/dong may co the tu choi kieu cua so nay trong vai
+            // tinh huong hiem - bao cho nguoi dung thay vi treo im lang.
+            Toast.makeText(this, "Kh\u00f4ng m\u1edf \u0111\u01b0\u1ee3c b\u1ea3ng c\u00e0i \u0111\u1eb7t", Toast.LENGTH_SHORT).show()
+            return
+        }
+        settingsOverlayView = view
+    }
+
+    private fun hideSettingsPanel() {
+        settingsOverlayView?.let {
+            try { qrWindowManager.removeView(it) } catch (e: Exception) { /* da bi go truoc do */ }
+        }
+        settingsOverlayView = null
+        // Ve lai ban phim ngay ben duoi de moi thay doi (vd mau vien) hien
+        // dung ngay khi bang cai dat vua dong.
+        redrawKeyboard()
+    }
+
+    /** Dung code de dung giao dien bang cai dat: tieu de + nut dong o tren,
+     *  2 thanh truot (am luong / cuong do rung) va 1 hang mau vien co the
+     *  chon o duoi. Tat ca deu duoc LUU NGAY khi thay doi (xem [saveSoundVolume],
+     *  [saveVibrationAmplitude], [saveBorderColor]), khong can nut "Luu". */
+    private fun buildSettingsPanelContentView(heightPx: Int): View {
+        val root = FrameLayout(this).apply {
+            setBackgroundColor(Color.parseColor("#0A0A0F"))
+        }
+
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(14), dp(16), dp(14))
+        }
+
+        // Hang tieu de + nut dong.
+        val headerRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        }
+        headerRow.addView(TextView(this).apply {
+            text = "C\u00e0i \u0111\u1eb7t b\u00e0n ph\u00edm"
+            setTextColor(Color.parseColor("#D4BBFF"))
+            textSize = 16f
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        headerRow.addView(Button(this).apply {
+            text = "\u2715"
+            isAllCaps = false
+            setTextColor(Color.parseColor("#D4BBFF"))
+            textSize = 16f
+            background = buildGlowKeyBackground(cornerDp = 4)
+            layoutParams = LinearLayout.LayoutParams(dp(40), dp(40))
+            setOnClickListener { hideSettingsPanel() }
+        })
+        content.addView(headerRow)
+
+        content.addView(buildSettingsSectionLabel("\u00c2m l\u01b0\u1ee3ng khi g\u00f5 ph\u00edm"))
+        content.addView(buildSettingsSeekBar(
+            initialProgress = (soundVolume * 100).toInt(),
+            onChanged = { progress -> saveSoundVolume(progress / 100f) },
+            onPreview = { playKeyClickTone() }
+        ))
+
+        content.addView(buildSettingsSectionLabel("C\u01b0\u1eddng \u0111\u1ed9 rung khi g\u00f5 ph\u00edm"))
+        content.addView(buildSettingsSeekBar(
+            initialProgress = (vibrationAmplitude * 100 / 255),
+            onChanged = { progress -> saveVibrationAmplitude(progress * 255 / 100) },
+            onPreview = { vibrateKeyPress() }
+        ))
+
+        content.addView(buildSettingsSectionLabel("M\u00e0u vi\u1ec1n ph\u00edm"))
+        content.addView(buildBorderColorRow())
+
+        return ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, heightPx
+            )
+            addView(content)
+        }.let {
+            root.addView(it)
+            root
+        }
+    }
+
+    private fun buildSettingsSectionLabel(label: String): TextView = TextView(this).apply {
+        text = label
+        setTextColor(Color.parseColor("#B388FF"))
+        textSize = 13f
+        setPadding(0, dp(10), 0, dp(4))
+    }
+
+    /** Mot thanh truot 0-100 dung chung cho ca am luong va cuong do rung -
+     *  [onChanged] duoc goi (va LUU luon) moi khi gia tri thay doi, con
+     *  [onPreview] chi goi khi nguoi dung THA tay (stopTrackingTouch) de
+     *  nguoi dung nghe/cam nhan thu muc vua chon, thay vi phat lien tuc lien
+     *  tuc gay om/rung nhieu qua trong luc keo. */
+    private fun buildSettingsSeekBar(
+        initialProgress: Int,
+        onChanged: (Int) -> Unit,
+        onPreview: () -> Unit
+    ): SeekBar {
+        return SeekBar(this).apply {
+            max = 100
+            progress = initialProgress.coerceIn(0, 100)
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    if (fromUser) onChanged(progress)
+                }
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                    onPreview()
+                }
+            })
+        }
+    }
+
+    /** Hang cac o vuong mau (mot cho moi phan tu trong [borderColorPresets])
+     *  de chon lam mau vien phim - o dang duoc chon hien VIEN TRANG day de de
+     *  nhan biet, cham vao o khac se doi ngay lap tuc (xem [saveBorderColor]). */
+    private fun buildBorderColorRow(): LinearLayout {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, dp(4), 0, dp(4))
+        }
+        val swatchSizePx = dp(36)
+        borderColorPresets.forEach { colorHex ->
+            val isSelected = Color.parseColor(colorHex) == glowColor
+            val swatch = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.parseColor(colorHex))
+                setStroke(dp(if (isSelected) 3 else 1), if (isSelected) Color.WHITE else Color.parseColor("#40FFFFFF"))
+            }
+            row.addView(Button(this).apply {
+                background = swatch
+                layoutParams = LinearLayout.LayoutParams(swatchSizePx, swatchSizePx).apply {
+                    setMargins(dp(6), 0, dp(6), 0)
+                }
+                setOnClickListener {
+                    saveBorderColor(colorHex)
+                    // Ve lai ngay hang mau de o vua chon hien vien trang -
+                    // don gian nhat la mo lai toan bo bang cai dat.
+                    settingsOverlayView?.let { hideSettingsPanel() }
+                    showSettingsPanel()
+                }
+            })
+        }
+        return row
     }
 
     /** Them View chua preview camera vao THANG cua so cua Service nay (khong
@@ -2025,8 +2358,36 @@ private object VietnameseTelex {
         val preferred = clusterIndices.lastOrNull { pos ->
             charToGroupTone[word[pos]]!!.first in modifiedGroupIndices
         }
+
+        // SUA LOI: "hoa" + s (sac) truoc day ra "hóa" (dau tren "o") thay vi
+        // dung phai la "hoá" (dau tren "a") - tuong tu "hoai" + f (huyen) ra
+        // "hòai" thay vi "hoài". NGUYEN NHAN: quy tac cu chi nhin "cum nguyen
+        // am nam sat cuoi tu thi dau dat o nguyen am DAU TIEN trong cum", ma
+        // KHONG phan biet duoc truong hop "o"/"u" dung dau tu la AM DEM (mot
+        // kieu ban nguyen am, doc gan giong "w", KHONG PHAI la am chinh cua
+        // van) voi truong hop no la NGUYEN AM CHINH thuc su (vd "bao", "cõi").
+        // Vi du: "hoa" gom am dem "o" + am chinh "a" (o chi la ban-nguyen-am
+        // dung truoc, giong nhu trong "qua", "hoa don" - khong phai nguyen am
+        // chinh) - dau thanh LUON phai dat o am chinh ("a"), bat ke tu la mo
+        // (khong phu am cuoi, vd "hoa", "hoài") hay dong (co phu am cuoi, vd
+        // "hoan" -> "hoàn", truong hop nay code CU DA lam dung roi). Nhom
+        // "o"/"u" chi la am dem khi ky tu NGAY SAU no (trong cum) thuoc nhom
+        // "a", "e" hoac "y" (vd oa, oe, oai, uy, uơ, ua nhu trong "qua") - cac
+        // truong hop con lai (vd "ao", "eo", "oi", "ui" - "o"/"u" dung SAU,
+        // dong vai tro nguyen am cuoi/ban-am CUOI cua van, khong phai am dem)
+        // van giu logic cu (dau o nguyen am DAU cum neu tu mo, vd "bảo").
+        fun isGlideOnsetCluster(): Boolean {
+            if (clusterIndices.size < 2) return false
+            val firstGroup = charToGroupTone[word[clusterIndices[0]]]!!.first
+            val secondGroup = charToGroupTone[word[clusterIndices[1]]]!!.first
+            val isGlide = firstGroup == 6 || firstGroup == 9 // "o" hoac "u"
+            val isMainAfterGlide = secondGroup == 0 || secondGroup == 3 || secondGroup == 11 // a, e, y
+            return isGlide && isMainAfterGlide
+        }
+
         val target = when {
             preferred != null -> preferred
+            isGlideOnsetCluster() -> clusterIndices[1]
             isOpenSyllable && clusterIndices.size >= 2 -> clusterIndices.first()
             else -> clusterIndices.last()
         }
