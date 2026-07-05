@@ -431,14 +431,46 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     private fun dp(value: Int): Int =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics).toInt()
 
+    /** LOI nguoi dung phan anh: man hinh NGANG (landscape) hoac cua so hep
+     *  (chieu cao man hinh nho) khien toan bo ban phim (5 hang x 48dp/hang =
+     *  ~262dp, TRUOC DAY chieu cao phim la SO CO DINH, khong doi theo man
+     *  hinh) CAO HON khong gian thuc te danh cho ban phim. Vi cua so IME luon
+     *  duoc neo o DAY man hinh va "moc" len TREN, phan vuot qua bi day len
+     *  TREN DINH man hinh - tuc bi CAT MAT/KHUAT hoan toan (khong phai cuon
+     *  duoc, chi la khong con cho de ve), dung y het hien tuong nguoi dung
+     *  chup man hinh: chi con thay 2 hang duoi cung (zxcvbnm + hang phim
+     *  cach), hang zxcvbnm bi "cat" o mep tren vi no la hang DAU TIEN con
+     *  vua may cham toi vach tren cung con hien duoc.
+     *
+     *  KHAC PHUC: tinh chieu cao MOI phim (dung chung cho toan bo ban phim,
+     *  thay cho hang so 48 co dinh) dua theo [screenHeightDp] THUC TE cua
+     *  man hinh hien tai (tu dong cap nhat lai moi khi ban phim duoc ve lai,
+     *  vd sau khi xoay man hinh) - man hinh cang thap (ngang, cua so nho) thi
+     *  phim cang thap theo TY LE, dam bao TOAN BO 5 hang luon vua du trong
+     *  khong gian thuc te, khong con hang nao bi day khuat len tren nua. Man
+     *  hinh doc binh thuong (screenHeightDp lon) van giu nguyen 48dp nhu cu,
+     *  khong doi gi ca. */
+    private val keyHeightDp: Int
+        get() {
+            val screenHeightDp = resources.configuration.screenHeightDp
+            return when {
+                screenHeightDp <= 400 -> 34 // man hinh ngang (landscape) tren hau het dien thoai
+                screenHeightDp <= 550 -> 42 // man hinh doc nhung thap (dien thoai nho, cua so chia doi)
+                else -> 48 // man hinh doc binh thuong - giu nguyen nhu cu
+            }
+        }
+
     override fun onCreateInputView(): View = buildKeyboardView()
 
     /** Ve lai toan bo ban phim theo [mode] hien tai. */
     private fun buildKeyboardView(): View {
+        // Vien tren/duoi cua toan bo ban phim cung co giam theo [keyHeightDp]
+        // de danh them chut khong gian doc khi man hinh thap (xem [keyHeightDp]).
+        val verticalPaddingDp = if (keyHeightDp < 48) 2 else 6
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.parseColor("#050507"))
-            setPadding(dp(4), dp(6), dp(4), dp(6))
+            setPadding(dp(4), dp(verticalPaddingDp), dp(4), dp(verticalPaddingDp))
         }
 
         when (mode) {
@@ -552,7 +584,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val inner = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
         }
-        val emojiKeySizePx = dp(40)
+        // Kich thuoc phim emoji CUNG co giai theo [keyHeightDp] (tru di 8dp
+        // de danh vien margin), dong bo voi cac phim khac tren ban phim khi
+        // man hinh ngang/thap.
+        val emojiKeySizePx = dp(keyHeightDp - 8)
         emojiList.forEach { emoji ->
             val bg = buildGlowKeyBackground(cornerDp = 4)
             val btn = Button(this).apply {
@@ -585,7 +620,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         return HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
             layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(46)
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(keyHeightDp - 2)
             )
             addView(inner)
         }
@@ -617,7 +652,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             isSingleLine = true
             background = bg
             gravity = Gravity.CENTER
-            layoutParams = LinearLayout.LayoutParams(0, dp(40), 6f).apply {
+            layoutParams = LinearLayout.LayoutParams(0, dp(keyHeightDp - 8), 6f).apply {
                 setMargins(dp(2), dp(2), dp(2), dp(2))
             }
             setOnClickListener {
@@ -814,7 +849,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val bg = buildGlowKeyBackground()
         val container = FrameLayout(this).apply {
             background = bg
-            layoutParams = LinearLayout.LayoutParams(0, dp(48), weight).apply {
+            layoutParams = LinearLayout.LayoutParams(0, dp(keyHeightDp), weight).apply {
                 setMargins(dp(1), dp(1), dp(1), dp(1))
             }
             isHapticFeedbackEnabled = true
@@ -959,9 +994,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             minimumHeight = 0
             background = bg
             layoutParams = LinearLayout.LayoutParams(
-                // Tang nhe chieu cao phim (44dp -> 48dp) de co them khong
-                // gian doc, giup dau cau hien day du khong bi ep/cat mat.
-                0, dp(48), weight
+                // Chieu cao phim GIO CO GIAN theo man hinh thuc te (xem
+                // [keyHeightDp]) thay vi so co dinh 48dp nhu truoc - man hinh
+                // doc binh thuong van la 48dp nhu cu, chi giam khi man hinh
+                // ngang/thap de tranh bi khuat hang tren cung.
+                0, dp(keyHeightDp), weight
             ).apply {
                 setMargins(dp(1), dp(1), dp(1), dp(1))
             }
