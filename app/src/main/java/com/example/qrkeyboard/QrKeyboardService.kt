@@ -5,7 +5,9 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.LayerDrawable
 import android.inputmethodservice.InputMethodService
 import android.media.AudioManager
 import android.media.ToneGenerator
@@ -312,6 +314,35 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     }
 
 
+    /** Mau tim neon dung CHUNG cho VIEN phat sang cua tat ca cac phim, tren
+     *  CA BA trang (chu cai, so, ky hieu) - xem [buildGlowKeyBackground]. */
+    private val glowColor = Color.parseColor("#B388FF")
+
+    /** Nen phim kieu "kinh toi + vien tim phat sang", gom 2 lop GradientDrawable
+     *  chong len nhau (dung LayerDrawable):
+     *   - Lop NGOAI: nen gan den (hoi anh xanh), vien DAY hon nhung alpha THAP
+     *     (~25%) -> tao cam giac quang sang lan ra ngoai (bloom gia lap, vi
+     *     Android khong co blur re cho hang chuc phim ve cung luc).
+     *   - Lop TRONG: vien MANH (1dp), mau tim DAM (khong alpha) -> duong net
+     *     sac, giong duong ke tim trong anh mau.
+     *  Dung CHUNG cho moi phim thuong tren CA 3 trang ban phim (chu/so/ky
+     *  hieu) - xem [buildKey]. */
+    private fun buildGlowKeyBackground(cornerDp: Int = 6): Drawable {
+        val outerGlow = GradientDrawable().apply {
+            cornerRadius = dp(cornerDp + 2).toFloat()
+            setColor(Color.parseColor("#0A0A0F"))
+            setStroke(dp(4), Color.parseColor("#40B388FF"))
+        }
+        val innerLine = GradientDrawable().apply {
+            cornerRadius = dp(cornerDp).toFloat()
+            setColor(Color.TRANSPARENT)
+            setStroke(dp(1), glowColor)
+        }
+        return LayerDrawable(arrayOf(outerGlow, innerLine)).apply {
+            setLayerInset(1, dp(2), dp(2), dp(2), dp(2))
+        }
+    }
+
     private val letterRows = listOf(
         "qwertyuiop",
         "asdfghjkl",
@@ -362,7 +393,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     private fun buildKeyboardView(): View {
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#202124"))
+            setBackgroundColor(Color.parseColor("#050507"))
             setPadding(dp(4), dp(6), dp(4), dp(6))
         }
 
@@ -479,10 +510,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
         val emojiKeySizePx = dp(40)
         emojiList.forEach { emoji ->
-            val bg = GradientDrawable().apply {
-                cornerRadius = dp(4).toFloat()
-                setColor(Color.parseColor("#303134"))
-            }
+            val bg = buildGlowKeyBackground(cornerDp = 4)
             val btn = Button(this).apply {
                 text = emoji
                 isAllCaps = false
@@ -533,12 +561,13 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
         val bg = GradientDrawable().apply {
             cornerRadius = dp(4).toFloat()
-            setColor(Color.parseColor("#1A3A5C"))
+            setColor(Color.parseColor("#1A0F2E"))
+            setStroke(dp(1), glowColor)
         }
         val suggestionBtn = Button(this).apply {
             text = "Sua th\u00e0nh: \u201c$suggestion\u201d"
             isAllCaps = false
-            setTextColor(Color.parseColor("#8AB4F8"))
+            setTextColor(Color.parseColor("#D4BBFF"))
             textSize = 13f
             includeFontPadding = true
             isSingleLine = true
@@ -738,14 +767,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  nham khi go nhanh lien tiep 2 dau cach gan nhau (vd giua 2 cau), gay
      *  doi ngon ngu ngoai y muon giua chung. */
     private fun buildSpaceKey(weight: Float): View {
-        val bg = GradientDrawable().apply {
-            cornerRadius = dp(4).toFloat()
-            setColor(Color.parseColor("#303134"))
-        }
+        val bg = buildGlowKeyBackground()
         val container = FrameLayout(this).apply {
             background = bg
             layoutParams = LinearLayout.LayoutParams(0, dp(48), weight).apply {
-                setMargins(dp(2), dp(2), dp(2), dp(2))
+                setMargins(dp(1), dp(1), dp(1), dp(1))
             }
             isHapticFeedbackEnabled = true
         }
@@ -843,9 +869,26 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         onRepeat: (() -> Unit)? = null,
         onClick: () -> Unit
     ): Button {
-        val bg = GradientDrawable().apply {
-            cornerRadius = dp(4).toFloat()
-            setColor(if (highlight) Color.parseColor("#1A73E8") else Color.parseColor("#303134"))
+        // Phim highlight (Enter, Shift dang bat, nut QR): van dung nen kinh +
+        // vien phat sang nhu phim thuong, nhung DOI mau nen ben trong sang
+        // xanh duong nhe de phan biet - vien tim VAN giu nguyen tren CA hai
+        // loai phim, dam bao dong bo mau tren toan bo ban phim.
+        val bg: Drawable = if (highlight) {
+            val outerGlow = GradientDrawable().apply {
+                cornerRadius = dp(8).toFloat()
+                setColor(Color.parseColor("#1A2A4A"))
+                setStroke(dp(4), Color.parseColor("#40B388FF"))
+            }
+            val innerLine = GradientDrawable().apply {
+                cornerRadius = dp(6).toFloat()
+                setColor(Color.parseColor("#1A73E8"))
+                setStroke(dp(1), glowColor)
+            }
+            LayerDrawable(arrayOf(outerGlow, innerLine)).apply {
+                setLayerInset(1, dp(2), dp(2), dp(2), dp(2))
+            }
+        } else {
+            buildGlowKeyBackground()
         }
         val button = Button(this).apply {
             text = label
@@ -880,7 +923,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 // gian doc, giup dau cau hien day du khong bi ep/cat mat.
                 0, dp(48), weight
             ).apply {
-                setMargins(dp(2), dp(2), dp(2), dp(2))
+                setMargins(dp(1), dp(1), dp(1), dp(1))
             }
             gravity = Gravity.CENTER
             isHapticFeedbackEnabled = true
