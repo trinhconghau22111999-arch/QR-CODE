@@ -124,6 +124,16 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
          *  dong man hinh quet ngay. */
         private const val QR_DOUBLE_TAP_MAX_INTERVAL_MS = 350L
 
+        /** Khoang thoi gian (ms) toi da giua 2 lan cham nut Shift (⇧) de tinh
+         *  la mot cu DUP-TAP (cham 2 lan lien tiep) - dung de phan biet:
+         *   - Cham 1 lan (don): chi VIET HOA CHU CAI KE TIEP, sau do TU DONG
+         *     tat, giong hanh vi Shift thuong tren cac ban phim khac.
+         *   - Dup-tap (2 lan lien tiep, trong khoang thoi gian nay): bat CAPS
+         *     LOCK - giu viet hoa LIEN TUC cho toi khi nguoi dung tu cham lai
+         *     nut Shift mot lan nua de tat (hanh vi Caps Lock cu, khong doi).
+         *  Xem [buildKeyboardView], phan xu ly nut Shift trong trang chu cai. */
+        private const val SHIFT_DOUBLE_TAP_MAX_INTERVAL_MS = 350L
+
         /** Khoang thoi gian (ms) TRE truoc khi thuc su dong khung quet QR +
          *  coi la "roi ban phim" sau khi he thong bao [onFinishInputView] voi
          *  finishingInput = true. LY DO: mot so thong bao/popup thoang qua
@@ -148,6 +158,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     /** Thoi diem (uptimeMillis) cua lan cham nut [QR] gan nhat, dung de phat
      *  hien cu dup-tap (xem [QR_DOUBLE_TAP_MAX_INTERVAL_MS]) o [buildNumbersBottomRow]. */
     private var lastQrKeyTapTime = 0L
+
+    /** Thoi diem (uptimeMillis) cua lan cham nut Shift (⇧) gan nhat, dung de
+     *  phat hien cu dup-tap (xem [SHIFT_DOUBLE_TAP_MAX_INTERVAL_MS]). */
+    private var lastShiftTapTime = 0L
 
     /** Handler dung rieng cho vong lap xoa lien tuc khi giu phim ⌫. */
     private val deleteRepeatHandler = android.os.Handler(android.os.Looper.getMainLooper())
@@ -508,8 +522,45 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                         // phai) - giong vi tri quen thuoc tren da so ban phim
                         // khac, thay vi nam ca hai o hang duoi cung nhu truoc.
                         rowView.addView(
-                            buildKey("\u2b06", weight = 1.5f, highlight = isShiftOn, verticalNudgeDp = 3) {
-                                isShiftOn = !isShiftOn
+                            buildKey(
+                                "\u2b06", weight = 1.5f,
+                                highlight = isShiftOn || capitalizeNextLetter,
+                                verticalNudgeDp = 3
+                            ) {
+                                val now = android.os.SystemClock.uptimeMillis()
+                                val isDoubleTap = now - lastShiftTapTime <= SHIFT_DOUBLE_TAP_MAX_INTERVAL_MS
+                                // Dat lai ve 0 sau khi da tinh la dup-tap, de
+                                // mot cham thu 3 lien ngay sau do khong bi
+                                // hieu nham la dup-tap cua cap tiep theo.
+                                lastShiftTapTime = if (isDoubleTap) 0L else now
+                                when {
+                                    // Dup-tap: bat/tat CAPS LOCK (giu hoa lien
+                                    // tuc). Lan cham dau tien cua cap dup-tap
+                                    // nay co the da tam thoi bat
+                                    // [capitalizeNextLetter] (nhanh nhu chop,
+                                    // xem nhanh "else" ben duoi) - xoa no di
+                                    // vi Caps Lock da du hieu luc, khong can
+                                    // co "mot chu" rieng nua.
+                                    isDoubleTap -> {
+                                        isShiftOn = !isShiftOn
+                                        capitalizeNextLetter = false
+                                    }
+                                    // Dang bat Caps Lock san (tu lan dup-tap
+                                    // truoc) va nguoi dung cham THEM mot lan
+                                    // don (khong phai dup-tap) nua: tat Caps
+                                    // Lock di, giong hanh vi quen thuoc tren
+                                    // cac ban phim khac.
+                                    isShiftOn -> {
+                                        isShiftOn = false
+                                        capitalizeNextLetter = false
+                                    }
+                                    // Cham 1 lan don binh thuong: dao trang
+                                    // thai "viet hoa CHU CAI KE TIEP roi tu
+                                    // tat" - cham lai lan nua (van la don, chua
+                                    // du nhanh de tinh la dup-tap) se HUY bo
+                                    // y dinh viet hoa do di.
+                                    else -> capitalizeNextLetter = !capitalizeNextLetter
+                                }
                                 redrawKeyboard()
                             },
                             0
@@ -583,7 +634,12 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             )
         }
         chars.forEach { ch ->
-            val label = if (applyShiftCase && isShiftOn) ch.uppercaseChar().toString() else ch.toString()
+            // Hien thi chu HOA tren phim khi dang bat Caps Lock (isShiftOn)
+            // HOAC dang bat "viet hoa 1 chu ke tiep" (capitalizeNextLetter) -
+            // truoc day chi kiem tra isShiftOn nen o trang thai Shift "don"
+            // (1 chu), phim van hien chu thuong, khong khop voi chu THAT SU
+            // se duoc chen ra (da viet hoa, xem [insertChar]).
+            val label = if (applyShiftCase && (isShiftOn || capitalizeNextLetter)) ch.uppercaseChar().toString() else ch.toString()
             row.addView(buildKey(label) { insertChar(ch) })
         }
         return row
@@ -1197,6 +1253,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         if (shouldCapitalize) capitalizeNextLetter = false
         val out = if (isShiftOn || shouldCapitalize) ch.uppercaseChar() else ch
         insertText(out.toString())
+        // Vua "tieu thu" xong Shift "don" (viet hoa 1 chu) - ve lai ban phim
+        // de cac phim tro ve hien thi chu THUONG, dong bo voi trang thai moi
+        // (xem [buildCharRow], gio co hien preview chu hoa theo ca
+        // [capitalizeNextLetter], khong chi [isShiftOn] nhu truoc).
+        if (shouldCapitalize) redrawKeyboard()
     }
 
     /** Xu ly mot ky tu go theo kieu Telex: doi chieu voi phan "tu" da go tu
@@ -1292,7 +1353,14 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             isShiftOn -> newSuffixLower.uppercase()
             else -> newSuffixLower
         }
-        if (capitalizeNextLetter && !touchesWordStart) {
+        // [capitalizeNextLetter] vua duoc TIEU THU (tat) o day - can ve lai
+        // ban phim de cac phim CHU CAI tro ve hien thi CHU THUONG (dong bo
+        // voi trang thai moi), neu khong phim se "ket dinh" hien chu HOA sai
+        // cho toi khi co ly do khac lam ban phim ve lai (xem [buildCharRow]
+        // - gio co kiem tra ca [capitalizeNextLetter] de hien preview chu hoa
+        // ngay khi Shift "don" dang bat).
+        val justConsumedSingleShift = capitalizeNextLetter && !touchesWordStart
+        if (justConsumedSingleShift) {
             capitalizeNextLetter = false
         }
 
@@ -1315,7 +1383,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             // ky tu cu): khong can xoa gi ca, chi 1 lenh commit duy nhat.
             ic.commitText(newSuffixDisplay, 1)
         }
-        if (hadPendingSuggestion) redrawKeyboard()
+        if (hadPendingSuggestion || justConsumedSingleShift) redrawKeyboard()
     }
 
     /** Doc mot doan van ban truoc con tro (qua InputConnection) va, neu doan
