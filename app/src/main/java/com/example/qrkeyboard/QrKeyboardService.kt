@@ -205,6 +205,30 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  [insertVietnameseChar]. */
     private var capitalizeNextLetter = false
 
+    /** CHI dung de quyet dinh HIEN THI (nhan chu tren cac phim + highlight
+     *  nut Shift) - TACH RIENG khoi [capitalizeNextLetter] (co chuc nang,
+     *  anh huong toi CHU THAT SU se duoc chen).
+     *
+     *  LY DO can tach: o che do Tieng Viet, [capitalizeNextLetter] PHAI duoc
+     *  GIU NGUYEN la true ngay sau khi da go xong 1 chu cai dau tu (xem
+     *  [insertVietnameseChar]) - vi phim Telex TIEP THEO co the con tiep tuc
+     *  bien doi DUNG vi tri chu cai do (vd go "A" (hoa) roi go them "a" ->
+     *  phai ra "Â" hoa, khong phai "âa" hay "aA"), nen chua the "tat" that su
+     *  luc nay. NHUNG neu dung chinh [capitalizeNextLetter] de quyet dinh
+     *  hien thi ban phim, cac phim se bi "ket dinh" hien chu HOA lau hon can
+     *  thiet: nguoi dung go xong 1 chu (vd "Anh") thi ban phim VAN con hien
+     *  toan chu hoa cho toi khi ho go THEM 1 chu cai nua moi chiu ve lai chu
+     *  thuong - tao cam giac "cham tre 1 nhip" rat de gay hieu lam la Shift
+     *  chua tat.
+     *
+     *  GIO DAY: [showCapitalPreview] duoc TAT ngay lap tuc ngay sau khi CHU
+     *  CAI DAU TIEN da duoc chen xong (xem [insertVietnameseChar]), bat ke
+     *  [capitalizeNextLetter] (logic) co con duoc giu true hay khong - nen
+     *  ban phim luon quay ve hien chu THUONG ngay sau 1 lan go, dung nhu
+     *  nguoi dung mong doi, ma khong lam sai lech kha nang Telex tiep tuc
+     *  bien doi dung chu cai vua go hoa do. */
+    private var showCapitalPreview = false
+
     /** Bo dem chua cac ky tu (thuong, chua dau) cua "tu" dang go trong che do
      *  Tieng Viet, dung de bo dong bo Telex co the xoa/thay the dung phan da
      *  chen truoc do khi ap dau/mu. Duoc xoa moi khi gap dau cach, dau cau,
@@ -524,7 +548,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                         rowView.addView(
                             buildKey(
                                 "\u2b06", weight = 1.5f,
-                                highlight = isShiftOn || capitalizeNextLetter,
+                                highlight = isShiftOn || showCapitalPreview,
                                 verticalNudgeDp = 3
                             ) {
                                 val now = android.os.SystemClock.uptimeMillis()
@@ -544,6 +568,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                                     isDoubleTap -> {
                                         isShiftOn = !isShiftOn
                                         capitalizeNextLetter = false
+                                        showCapitalPreview = false
                                     }
                                     // Dang bat Caps Lock san (tu lan dup-tap
                                     // truoc) va nguoi dung cham THEM mot lan
@@ -553,13 +578,17 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                                     isShiftOn -> {
                                         isShiftOn = false
                                         capitalizeNextLetter = false
+                                        showCapitalPreview = false
                                     }
                                     // Cham 1 lan don binh thuong: dao trang
                                     // thai "viet hoa CHU CAI KE TIEP roi tu
                                     // tat" - cham lai lan nua (van la don, chua
                                     // du nhanh de tinh la dup-tap) se HUY bo
                                     // y dinh viet hoa do di.
-                                    else -> capitalizeNextLetter = !capitalizeNextLetter
+                                    else -> {
+                                        capitalizeNextLetter = !capitalizeNextLetter
+                                        showCapitalPreview = capitalizeNextLetter
+                                    }
                                 }
                                 redrawKeyboard()
                             },
@@ -613,6 +642,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         cancelPendingFinishHide()
         currentWord.clear()
         capitalizeNextLetter = false
+        showCapitalPreview = false
         val hadPendingSuggestion = pendingSuggestion != null
         clearAutocorrectSuggestion()
         if (mode != KeyboardMode.LETTERS) {
@@ -639,7 +669,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             // truoc day chi kiem tra isShiftOn nen o trang thai Shift "don"
             // (1 chu), phim van hien chu thuong, khong khop voi chu THAT SU
             // se duoc chen ra (da viet hoa, xem [insertChar]).
-            val label = if (applyShiftCase && (isShiftOn || capitalizeNextLetter)) ch.uppercaseChar().toString() else ch.toString()
+            val label = if (applyShiftCase && (isShiftOn || showCapitalPreview)) ch.uppercaseChar().toString() else ch.toString()
             row.addView(buildKey(label) { insertChar(ch) })
         }
         return row
@@ -813,6 +843,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             // Bat co "viet hoa chu tiep theo" - xem giai thich o khai bao
             // [capitalizeNextLetter].
             capitalizeNextLetter = true
+            showCapitalPreview = true
         })
         row.addView(buildKey("\u21b5", weight = 1.4f, highlight = true) { sendEnter() })
 
@@ -1250,7 +1281,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // lap, khong co bien doi nhieu buoc nao co the "danh mat" chu hoa da
         // ap, nen co the ap dung va TIEU THU (tat) co ngay tai day.
         val shouldCapitalize = capitalizeNextLetter && ch.isLetter()
-        if (shouldCapitalize) capitalizeNextLetter = false
+        if (shouldCapitalize) {
+            capitalizeNextLetter = false
+            showCapitalPreview = false
+        }
         val out = if (isShiftOn || shouldCapitalize) ch.uppercaseChar() else ch
         insertText(out.toString())
         // Vua "tieu thu" xong Shift "don" (viet hoa 1 chu) - ve lai ban phim
@@ -1344,8 +1378,9 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // gap lan go KHONG dong den vi tri dau tu nua (commonPrefixLen > 0)
         // - dau hieu ky tu dau tu da "on dinh", khong con bi ghi de lai.
         val touchesWordStart = commonPrefixLen == 0 && newSuffixLower.isNotEmpty()
+        val wasCapitalizingWordStart = capitalizeNextLetter && touchesWordStart
         val newSuffixDisplay = when {
-            capitalizeNextLetter && touchesWordStart -> {
+            wasCapitalizingWordStart -> {
                 val restLower = newSuffixLower.drop(1)
                 val rest = if (isShiftOn) restLower.uppercase() else restLower
                 newSuffixLower.first().uppercaseChar() + rest
@@ -1362,6 +1397,22 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val justConsumedSingleShift = capitalizeNextLetter && !touchesWordStart
         if (justConsumedSingleShift) {
             capitalizeNextLetter = false
+        }
+        // SUA THEM (theo yeu cau nguoi dung): ngay khi CHU CAI DAU TIEN sau
+        // Shift "don" da duoc chen xong (wasCapitalizingWordStart == true),
+        // TAT [showCapitalPreview] NGAY LAP TUC de ban phim quay ve hien chu
+        // THUONG tu day - KHONG doi them 1 lan go nua. Truoc day ham nay chi
+        // ve lai ban phim khi [justConsumedSingleShift] (tuc phai doi den khi
+        // gap mot phim TIEP THEO khong dong den vi tri dau tu), nen nguoi
+        // dung thay ban phim "cham tre 1 nhip": go xong chu hoa dau tien roi
+        // ma cac phim VAN con hien chu hoa cho toi khi go THEM 1 chu nua moi
+        // chiu doi. Luu y: [capitalizeNextLetter] (logic, khac voi
+        // [showCapitalPreview] chi de hien thi) VAN duoc giu nguyen gia tri
+        // true trong truong hop nay - vi phim Telex tiep theo van co the con
+        // bien doi dung vi tri chu cai vua go (vd "A"+"a" -> "Â"), chi rieng
+        // PHAN HIEN THI la duoc tat som hon it hon.
+        if (wasCapitalizingWordStart) {
+            showCapitalPreview = false
         }
 
         selfInitiatedChange = true
@@ -1383,7 +1434,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             // ky tu cu): khong can xoa gi ca, chi 1 lenh commit duy nhat.
             ic.commitText(newSuffixDisplay, 1)
         }
-        if (hadPendingSuggestion || justConsumedSingleShift) redrawKeyboard()
+        if (hadPendingSuggestion || justConsumedSingleShift || wasCapitalizingWordStart) redrawKeyboard()
     }
 
     /** Doc mot doan van ban truoc con tro (qua InputConnection) va, neu doan
@@ -1520,6 +1571,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             // (neu dang cho) khong con y nghia gi voi vi tri con tro moi,
             // huy di de tranh viet hoa nham mot cho khong lien quan.
             capitalizeNextLetter = false
+            showCapitalPreview = false
         }
         selfInitiatedChange = false
     }
