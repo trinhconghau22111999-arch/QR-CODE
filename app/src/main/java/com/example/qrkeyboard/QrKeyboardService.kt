@@ -9,8 +9,12 @@ import android.graphics.drawable.GradientDrawable
 import android.inputmethodservice.InputMethodService
 import android.media.AudioManager
 import android.media.ToneGenerator
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
@@ -262,6 +266,40 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         ToneGenerator(AudioManager.STREAM_NOTIFICATION, 100)
     }
 
+    /** Vibrator cua thiet bi, dung de RUNG THAT (goi truc tiep, khong qua
+     *  performHapticFeedback) moi khi nguoi dung nham mot phim - xem
+     *  [vibrateKeyPress]. Lay theo cach phu hop voi tung phien ban Android:
+     *  tu API 31 (Android 12) tro di phai qua VibratorManager, cac ban truoc
+     *  do lay truc tiep tu Context. */
+    private val vibrator: Vibrator by lazy {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val manager = getSystemService(VibratorManager::class.java)
+            manager.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            getSystemService(Vibrator::class.java)
+        }
+    }
+
+    /** Rung nhe (~15ms) khi nham phim - goi TRUC TIEP vao Vibrator cua may
+     *  thay vi chi dua vao View.performHapticFeedback(). LY DO: performHapticFeedback
+     *  phu thuoc cai dat he thong "Rung khi cham" (Settings.System.HAPTIC_FEEDBACK_ENABLED)
+     *  - neu nguoi dung (hoac mac dinh cua may) tat cai dat do, phim se KHONG
+     *  rung du code da goi dung ham, gay hien tuong "bam phim khong thay
+     *  rung" nguoi dung phan anh. Goi truc tiep Vibrator.vibrate() KHONG bi
+     *  chi phoi boi cai dat do, nen chac chan rung moi lan cham phim, tru khi
+     *  chinh may khong co dong co rung (hasVibrator() = false) hoac nguoi
+     *  dung tat han quyen rung o cap he thong khac. */
+    private fun vibrateKeyPress() {
+        if (!vibrator.hasVibrator()) return
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            vibrator.vibrate(VibrationEffect.createOneShot(15L, VibrationEffect.DEFAULT_AMPLITUDE))
+        } else {
+            @Suppress("DEPRECATION")
+            vibrator.vibrate(15L)
+        }
+    }
+
 
     private val letterRows = listOf(
         "qwertyuiop",
@@ -452,6 +490,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 }
                 setOnClickListener { v ->
                     v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    vibrateKeyPress()
                     playKeyClickTone()
                     insertText(emoji)
                 }
@@ -498,6 +537,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             }
             setOnClickListener {
                 it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                vibrateKeyPress()
                 playKeyClickTone()
                 acceptAutocorrectSuggestion()
             }
@@ -733,6 +773,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    vibrateKeyPress()
                     playKeyClickTone()
                     downX = event.rawX
                     true
@@ -842,6 +883,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    vibrateKeyPress()
                     playKeyClickTone()
                     if (label.length == 1) showKeyPreview(v, label)
                     repeatTriggered = false
