@@ -134,6 +134,15 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
          *  Xem [buildKeyboardView], phan xu ly nut Shift trong trang chu cai. */
         private const val SHIFT_DOUBLE_TAP_MAX_INTERVAL_MS = 350L
 
+        /** So dp them vao vien DUOI CUNG cua toan bo ban phim (ngoai vien
+         *  [verticalPaddingDp] mac dinh trong [buildKeyboardView]) de NHICH
+         *  CA BAN PHIM LEN cao hon mot chut so voi day man hinh/thanh dieu
+         *  huong, theo phan anh cua nguoi dung. Chi tang vien DUOI (khong
+         *  dong vien tren) vi cua so IME neo o day man hinh - them vien duoi
+         *  se day toan bo noi dung len cao hon ma khong lam xe lech vi tri
+         *  tuong doi giua cac hang phim voi nhau. */
+        private const val EXTRA_BOTTOM_LIFT_DP = 4
+
         /** Khoang thoi gian (ms) TRE truoc khi thuc su dong khung quet QR +
          *  coi la "roi ban phim" sau khi he thong bao [onFinishInputView] voi
          *  finishingInput = true. LY DO: mot so thong bao/popup thoang qua
@@ -521,10 +530,18 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // Vien tren/duoi cua toan bo ban phim cung co giam theo [keyHeightDp]
         // de danh them chut khong gian doc khi man hinh thap (xem [keyHeightDp]).
         val verticalPaddingDp = if (keyHeightDp < 48) 2 else 6
+        // NHICH CA BAN PHIM LEN mot chut (theo phan anh nguoi dung): them
+        // rieng vao vien DUOI CUNG (khong dong vao vien tren) mot khoang dem
+        // nho [EXTRA_BOTTOM_LIFT_DP]. Vi cua so ban phim (IME) tu dong tinh
+        // chieu cao theo WRAP_CONTENT va luon dinh (neo) o SAT DAY man hinh,
+        // them khoang dem o DUOI se day toan bo cac hang phim len cao hon
+        // mot chut so voi day man hinh/thanh dieu huong, ma KHONG lam xe dich
+        // vi tri tuong doi giua cac hang voi nhau (khac voi viec doi
+        // [verticalPaddingDp] o tren, vi do la vien CHUNG ca tren lan duoi).
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.parseColor("#050507"))
-            setPadding(dp(4), dp(verticalPaddingDp), dp(4), dp(verticalPaddingDp))
+            setPadding(dp(4), dp(verticalPaddingDp), dp(4), dp(verticalPaddingDp + EXTRA_BOTTOM_LIFT_DP))
         }
 
         when (mode) {
@@ -548,8 +565,20 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                         rowView.addView(
                             buildKey(
                                 "\u2b06", weight = 1.5f,
-                                highlight = isShiftOn || showCapitalPreview,
-                                verticalNudgeDp = 3
+                                highlight = isShiftOn || showCapitalPreview
+                                // KHONG con dung verticalNudgeDp o day nua: truoc
+                                // day phim nay bi nhich rieng +3 (khac voi cac
+                                // phim chu z/x/c/v...m va phim ⌫ CUNG HANG, tat
+                                // ca deu de mac dinh 0) - vi pham dung yeu cau
+                                // "cac phim CUNG HANG phai NGANG NHAU het". Bo
+                                // nhich di de Shift level tuyet doi voi phan con
+                                // lai cua hang. Khoang cach xuong hang duoi (xem
+                                // [buildLettersBottomRow]) van dam bao khong
+                                // chong/de nhau, vi hang duoi da dung baseMarginDp
+                                // = 4 rieng, cho margin tren = 1dp - khop voi
+                                // margin duoi mac dinh 1dp cua CA hang chu cai
+                                // nay (bao gom ca Shift), tao khoang cach DEU
+                                // NHAU dp(2) tren toan bo chieu rong.
                             ) {
                                 val now = android.os.SystemClock.uptimeMillis()
                                 val isDoubleTap = now - lastShiftTapTime <= SHIFT_DOUBLE_TAP_MAX_INTERVAL_MS
@@ -835,16 +864,21 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             )
         }
 
-        row.addView(buildKey("?123", weight = 1.4f, verticalNudgeDp = -3) { switchMode(KeyboardMode.NUMBERS) })
-        row.addView(buildKey(",", weight = 1f, verticalNudgeDp = -3) { insertText(",") })
+        row.addView(buildKey("?123", weight = 1.4f, verticalNudgeDp = -3, baseMarginDp = 4) { switchMode(KeyboardMode.NUMBERS) })
+        row.addView(buildKey(",", weight = 1f, verticalNudgeDp = -3, baseMarginDp = 4) { insertText(",") })
         // HA phim cach xuong NGANG BANG voi "." va "," (theo phan anh nguoi
-        // dung): truoc day phim cach dung margin CO DINH (tuong duong nudge
-        // = 0), trong khi "." va "," da duoc chinh len [-3], nen phim cach
-        // (va ca phim Enter ben duoi) nhin LECH cao hon han so voi hai phim
-        // do. GIO DAY dung CUNG mot gia tri nudge [-3] cho ca 4 phim trong
-        // hang nay (?123/,/ /.) de dam bao chung THANG HANG voi nhau.
-        row.addView(buildSpaceKey(weight = 4.2f, verticalNudgeDp = -3))
-        row.addView(buildKey(".", weight = 1f, verticalNudgeDp = -3) {
+        // dung): ca 5 phim trong hang nay (?123/,/phim cach/./Enter) PHAI
+        // dung dung CUNG mot cap (verticalNudgeDp, baseMarginDp) de dam bao
+        // margin tren/duoi tinh ra Y HET NHAU tren ca 5 phim - baseMarginDp=4
+        // (thay vi mac dinh 1) de phep tinh base+nudge/base-nudge voi
+        // nudge=-3 vAN LA SO DUONG THAT SU (tren=dp(1), duoi=dp(7)), KHONG
+        // con roi vao truong hop bi ep ve 0 (truoc day base=1 + nudge=-3 =
+        // -2, bi chan ve 0, khien tat ca 5 phim tuy giong nhau nhung mat het
+        // "ty le" nudge that su - day chinh la ly do phim cach/Enter van
+        // "nhu chua ha du" so voi dau cham du code da gan cung mot gia tri
+        // nudge).
+        row.addView(buildSpaceKey(weight = 4.2f, verticalNudgeDp = -3, baseMarginDp = 4))
+        row.addView(buildKey(".", weight = 1f, verticalNudgeDp = -3, baseMarginDp = 4) {
             insertText(".")
             // Bat co "viet hoa chu tiep theo" - xem giai thich o khai bao
             // [capitalizeNextLetter].
@@ -852,8 +886,8 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             showCapitalPreview = true
         })
         // HA phim Enter xuong NGANG BANG voi "." va "," - cung ly do va cung
-        // gia tri nudge nhu phim cach o tren.
-        row.addView(buildKey("\u21b5", weight = 1.4f, highlight = true, verticalNudgeDp = -3) { sendEnter() })
+        // cap (nudge, base) nhu phim cach o tren.
+        row.addView(buildKey("\u21b5", weight = 1.4f, highlight = true, verticalNudgeDp = -3, baseMarginDp = 4) { sendEnter() })
 
         return row
     }
@@ -903,8 +937,15 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             )
         }
 
-        row.addView(buildKey("ABC", weight = 1.6f, verticalNudgeDp = -3) { switchMode(KeyboardMode.LETTERS) })
-        row.addView(buildKey("QR", weight = 1.2f, highlight = true, verticalNudgeDp = -3) {
+        // QUAN TRONG: CA 4 phim trong hang nay (ABC/QR/phim cach/Enter) PHAI
+        // dung dung CUNG cap (verticalNudgeDp, baseMarginDp) - truoc day chi
+        // "ABC" va "QR" duoc nhich (-3) con phim cach/Enter thi khong (mac
+        // dinh 0), khien 2 phim do LECH VI TRI so voi "ABC"/"QR" ngay ben
+        // canh (loi tuong tu da gap va sua o [buildLettersBottomRow], dung
+        // cung mot cap gia tri -3/4 de dong bo VI TRI CHIEU DOC giua trang So
+        // va trang Chu cai, khong bi "nhay" khi chuyen qua lai giua 2 trang).
+        row.addView(buildKey("ABC", weight = 1.6f, verticalNudgeDp = -3, baseMarginDp = 4) { switchMode(KeyboardMode.LETTERS) })
+        row.addView(buildKey("QR", weight = 1.2f, highlight = true, verticalNudgeDp = -3, baseMarginDp = 4) {
             val now = android.os.SystemClock.uptimeMillis()
             val isDoubleTap = now - lastQrKeyTapTime <= QR_DOUBLE_TAP_MAX_INTERVAL_MS
             // Dat lai ve 0 sau khi da tinh la dup-tap, de mot cham thu 3 lien
@@ -912,8 +953,8 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             lastQrKeyTapTime = if (isDoubleTap) 0L else now
             openQrScanner(continuous = isDoubleTap)
         })
-        row.addView(buildSpaceKey(weight = 5.4f))
-        row.addView(buildKey("\u21b5", weight = 1.6f, highlight = true) { sendEnter() })
+        row.addView(buildSpaceKey(weight = 5.4f, verticalNudgeDp = -3, baseMarginDp = 4))
+        row.addView(buildKey("\u21b5", weight = 1.6f, highlight = true, verticalNudgeDp = -3, baseMarginDp = 4) { sendEnter() })
 
         return row
     }
@@ -949,9 +990,13 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             )
         }
 
-        row.addView(buildKey("ABC", weight = 1.4f, verticalNudgeDp = -3) { switchMode(KeyboardMode.LETTERS) })
-        row.addView(buildSpaceKey(weight = 4.8f))
-        row.addView(buildKey("\u21b5", weight = 1.4f, highlight = true) { sendEnter() })
+        // Dong bo dung cap (verticalNudgeDp, baseMarginDp) voi 2 trang kia -
+        // xem giai thich chi tiet trong [buildLettersBottomRow] va
+        // [buildNumbersBottomRow]. Truoc day "ABC" duoc nhich (-3) rieng le
+        // con phim cach/Enter thi khong, gay lech hang.
+        row.addView(buildKey("ABC", weight = 1.4f, verticalNudgeDp = -3, baseMarginDp = 4) { switchMode(KeyboardMode.LETTERS) })
+        row.addView(buildSpaceKey(weight = 4.8f, verticalNudgeDp = -3, baseMarginDp = 4))
+        row.addView(buildKey("\u21b5", weight = 1.4f, highlight = true, verticalNudgeDp = -3, baseMarginDp = 4) { sendEnter() })
 
         return row
     }
@@ -968,7 +1013,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  cham nhanh 2 lan (double-tap) nhu truoc, vi kieu do de bi kich hoat
      *  nham khi go nhanh lien tiep 2 dau cach gan nhau (vd giua 2 cau), gay
      *  doi ngon ngu ngoai y muon giua chung. */
-    private fun buildSpaceKey(weight: Float, verticalNudgeDp: Int = 0): View {
+    private fun buildSpaceKey(weight: Float, verticalNudgeDp: Int = 0, baseMarginDp: Int = 1): View {
         val bg = buildGlowKeyBackground()
         val container = FrameLayout(this).apply {
             background = bg
@@ -977,25 +1022,33 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             outlineProvider = null
             layoutParams = LinearLayout.LayoutParams(0, dp(keyHeightDp), weight).apply {
                 // Cung cong thuc voi [buildKey]: [verticalNudgeDp] doi TY LE
-                // phan bo giua tren/duoi de dich phim len/xuong (duong =
-                // xuong, am = len) - dung khi can dong bo vi tri voi cac phim
-                // Button ben canh (vd "." va "," o cung hang, xem
-                // [buildLettersBottomRow]).
+                // phan bo giua tren/duoi (quanh [baseMarginDp]) de dich phim
+                // len/xuong (duong = xuong, am = len) - dung khi can dong bo
+                // vi tri voi cac phim Button ben canh (vd "." va "," o cung
+                // hang, xem [buildLettersBottomRow]).
                 //
-                // QUAN TRONG (loi da gap): cong thuc CU la dp(1+nudge)/
-                // dp(1-nudge) - voi |nudge| >= 2 se cho ra margin AM (vd
-                // nudge=-3 -> margin tren = dp(1-3) = dp(-2)). Margin AM lam
-                // phim TRAN ra ngoai ranh gioi hang cua no, DE LAN/CHE len
-                // hang ben canh (dung y nguoi dung phan anh: "hang chot dang
-                // lan len hang 2"). GIO DAY dung maxOf(0, ...) de KHONG BAO
-                // GIO cho ra margin am - phim co the mat bot doi xung (tong
-                // tren+duoi khong con co dinh dp(2) nua khi nudge lon), nhung
-                // khong bao gio tran/de len hang khac nua.
+                // QUAN TRONG (loi da gap): cong thuc CU luon dung baseMarginDp
+                // CO DINH = 1 cho moi truong hop - voi |nudge| >= 2 se cho ra
+                // margin AM (vd nudge=-3, base=1 -> margin tren = dp(1-3) =
+                // dp(-2)). Margin AM lam phim TRAN ra ngoai ranh gioi hang cua
+                // no, DE LAN/CHE len hang ben canh. Ban dau da them
+                // maxOf(0, ...) de chan margin am, nhung cach do khien phim bi
+                // CLAMP VE DUNG 0 o MOT phia - tuy khong con am/tran nua,
+                // nhung mat het "du dia" nudge that su, dan den cam giac cac
+                // phim dung [verticalNudgeDp] lon (+-3) van "chua ha dung muc"
+                // so voi cac phim khac. GIO DAY dung [baseMarginDp] LON HON
+                // (vd 4 thay vi 1) cho NHUNG CHO can nudge +-3, de phep tinh
+                // 1+nudge/1-nudge KHONG BAO GIO cham nguong 0 nua (vd base=4,
+                // nudge=-3 -> tren=dp(1), duoi=dp(7): van la so DUONG that su,
+                // dung dung TY LE nhu thiet ke ban dau, khong can dung den
+                // maxOf o day nua trong dieu kien binh thuong). Van giu
+                // maxOf(0, ...) lam luoi an toan cuoi cung phong khi co gia
+                // tri nudge/base bat thuong khac duoc truyen vao sau nay.
                 setMargins(
                     dp(1),
-                    maxOf(0, dp(1 + verticalNudgeDp)),
+                    maxOf(0, dp(baseMarginDp + verticalNudgeDp)),
                     dp(1),
-                    maxOf(0, dp(1 - verticalNudgeDp))
+                    maxOf(0, dp(baseMarginDp - verticalNudgeDp))
                 )
             }
             isHapticFeedbackEnabled = true
@@ -1092,12 +1145,18 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         weight: Float = 1f,
         highlight: Boolean = false,
         // Dich phim len/xuong mot chut so voi vi tri mac dinh trong hang
-        // (duong = xuong, am = len), MA KHONG lam doi tong chieu cao ma
-        // hang chiem dung (vi tong margin tren+duoi luon giu nguyen la
-        // dp(2), chi TY LE phan bo giua tren/duoi thay doi) - dung de chinh
-        // tay may phim bi lech vi tri theo phan anh cua nguoi dung (xem cac
-        // noi goi ham nay trong buildLettersBottomRow, buildNumbersBottomRow...).
+        // (duong = xuong, am = len) - dung de chinh tay may phim bi lech vi
+        // tri theo phan anh cua nguoi dung (xem cac noi goi ham nay trong
+        // buildLettersBottomRow, buildNumbersBottomRow...).
         verticalNudgeDp: Int = 0,
+        // Margin GOC (truoc khi cong/tru [verticalNudgeDp]) o ca tren lan
+        // duoi. Mac dinh 1 (giu nguyen hanh vi cu cho da so phim khong
+        // nudge). VOI CAC PHIM DUNG [verticalNudgeDp] LON (+-3, vd hang
+        // duoi cung trang chu cai, hoac Shift/⌫), PHAI truyen baseMarginDp
+        // lon hon (vd 4) de 1+nudge/1-nudge (nay la base+nudge/base-nudge)
+        // khong bi am/cham nguong 0 - xem giai thich chi tiet trong
+        // [buildSpaceKey], noi dung CHUNG chinh xac cong thuc nay.
+        baseMarginDp: Int = 1,
         onRepeat: (() -> Unit)? = null,
         onClick: () -> Unit
     ): Button {
@@ -1167,33 +1226,17 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 // ngang/thap de tranh bi khuat hang tren cung.
                 0, dp(keyHeightDp), weight
             ).apply {
-                // [verticalNudgeDp] dich vi tri phim len/xuong trong o cua no.
-                //
-                // QUAN TRONG (loi da gap): cong thuc CU (dp(1+nudge) va
-                // dp(1-nudge), tong luon = dp(2)) se cho ra margin AM khi
-                // |nudge| >= 2 - vi du nudge=-3 (dung o "?123", ",", ".", phim
-                // cach, Enter trong buildLettersBottomRow) cho margin TREN =
-                // dp(1-3) = dp(-2); hoac nudge=+3 (dung o phim Shift/⌫ o cuoi
-                // hang chu cai cuoi) cho margin DUOI = dp(1-3) = dp(-2).
-                // Margin AM khien phim TRAN ra ngoai ranh gioi hang cua no, DE
-                // LAN/CHE len hang ben canh - dung nguyen nhan loi nguoi dung
-                // phan anh ("hang chot dang lan len hang 2, che 1 phan hang
-                // 2"), va cung la ly do phim cach/Enter (dung chung cong thuc
-                // qua [buildSpaceKey]) tuong nhu "chua ha" xuong dung vi tri:
-                // margin am lam kich thuoc/vi tri thuc te bi bop meo khong
-                // dong bo giua cac phim, du cung mot gia tri nudge.
-                //
-                // GIO DAY dung maxOf(0, ...) de KHONG BAO GIO cho ra margin
-                // am. Voi nudge co gia tri lon (+-3), tong margin tren+duoi
-                // se KHONG con co dinh dp(2) nua (se la dp(4): mot ben = 0,
-                // ben kia = dp(4)) - hang co the cao hon vai dp, nhung DOI
-                // LAI moi phim dung CHUNG mot cong thuc nen luon THANG HANG
-                // TUYET DOI voi nhau va KHONG BAO GIO de/lan len hang khac.
+                // [verticalNudgeDp] dich vi tri phim len/xuong trong o cua
+                // no, tinh quanh [baseMarginDp] (xem giai thich chi tiet
+                // trong [buildSpaceKey], noi dung CHUNG chinh xac cong thuc
+                // nay - hai ham PHAI LUON dung dung mot cong thuc de cac
+                // phim Button va phim cach (FrameLayout) thang hang tuyet
+                // doi voi nhau).
                 setMargins(
                     dp(1),
-                    maxOf(0, dp(1 + verticalNudgeDp)),
+                    maxOf(0, dp(baseMarginDp + verticalNudgeDp)),
                     dp(1),
-                    maxOf(0, dp(1 - verticalNudgeDp))
+                    maxOf(0, dp(baseMarginDp - verticalNudgeDp))
                 )
             }
             gravity = Gravity.CENTER
