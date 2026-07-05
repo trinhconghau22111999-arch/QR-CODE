@@ -401,7 +401,15 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         "1234567890",
         "@#\u0111_&-+()/"
     )
-    private val numberRow3Symbols = "*\"':;!?"
+    // SUA: truoc day chi co 7 ky tu (cong voi "=\<" o dau va "⌫" o cuoi ->
+    // hang nay chi co 9 phim), trong khi 2 hang tren (numberRows) co dung 10
+    // phim moi hang. Vi tat ca deu dung weight = 1 bang nhau, hang co IT phim
+    // hon se bi TU DONG gian RONG HON de lap day dong chieu rong man hinh ->
+    // cot cua hang nay khong con thang voi cot cua 2 hang tren, nhin "lech
+    // hang, khong can doi". Them dau "=" (vua thieu, vua huu ich cho van ban
+    // ky thuat) de du 8 ky tu, cong voi "=\<" + "⌫" thanh dung 10 phim, khop
+    // cot voi 2 hang tren.
+    private val numberRow3Symbols = "*\"':;!?="
 
     /** Danh sach emoji cho hang emoji co the TRUOT NGANG (xem [buildEmojiRow]),
      *  hien tren trang so (trang thu 2). Chi la mot tuyen chon nho cac emoji
@@ -427,7 +435,14 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         "~`|\u2022\u221a\u03c0\u00f7\u00d7\u00b6\u0394",
         "<>$\u00a2^\u00b0={}\\"
     )
-    private val extendedSymbolRow3 = "%\u00a9\u00ae\u2122\u2105[]"
+    // SUA: ky tu \u2105 ("care of", trong nhu chu "c/o" viet tat) o co nho
+    // hien thi TRONG GAN GIONG dau "%" ben canh, khien nguoi dung thay nham
+    // nhu co 2 dau "%" trung nhau tren ban phim. Bo ky tu do, thay bang 2 ky
+    // hieu ro rang, khac biet va huu ich hon (§ dau muc/dieu luat, ± cong-tru)
+    // - vua het nham lan, vua du 8 ky tu (cong voi "?123" + "⌫" thanh dung 10
+    // phim, khop cot voi 2 hang tren, xem [numberRow3Symbols] cho ly do tuong
+    // tu ben trang So).
+    private val extendedSymbolRow3 = "%\u00a9\u00ae\u2122\u00a7\u00b1[]"
 
     private fun dp(value: Int): Int =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics).toInt()
@@ -759,11 +774,16 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             )
         }
 
-        row.addView(buildKey("=\\<") { switchMode(KeyboardMode.SYMBOLS) })
+        // Dung CUNG mot ty le weight (phim bien 1.3f, phim ky tu 1f) nhu
+        // [buildExtendedSymbolsRow3] - truoc day hang nay dung toan weight
+        // mac dinh 1f cho tat ca (ke ca "=\<" va "⌫"), khien cot cua trang So
+        // va trang Ky hieu mo rong LECH nhau du ca hai deu co 10 phim/hang,
+        // vi ty le rong phim bien/phim thuong khac nhau giua 2 trang.
+        row.addView(buildKey("=\\<", weight = 1.3f) { switchMode(KeyboardMode.SYMBOLS) })
         numberRow3Symbols.forEach { ch ->
-            row.addView(buildKey(ch.toString()) { insertText(ch.toString()) })
+            row.addView(buildKey(ch.toString(), weight = 1f) { insertText(ch.toString()) })
         }
-        row.addView(buildKey("\u232b", onRepeat = { deleteChar() }) { deleteChar() })
+        row.addView(buildKey("\u232b", weight = 1.3f, onRepeat = { deleteChar() }) { deleteChar() })
 
         return row
     }
@@ -804,7 +824,8 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     }
 
     /** Hang 3 cua trang ky hieu mo rong: nut "?123" de quay lai trang so,
-     *  cac ky hieu %, ©, ®, ™, ℅, [, ] va nut xoa - cung do rong nhu nhau. */
+     *  cac ky hieu %, ©, ®, ™, §, ±, [, ] va nut xoa - 10 phim, cung ty le
+     *  rong (weight) voi [buildNumbersRow3] de cot thang deu giua 2 trang. */
     private fun buildExtendedSymbolsRow3(): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
