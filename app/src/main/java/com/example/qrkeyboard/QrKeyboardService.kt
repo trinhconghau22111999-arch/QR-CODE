@@ -116,6 +116,26 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
          *  hoac chi cham 1 lan) van giu hanh vi cu: quet duoc 1 ma la tu dong
          *  dong man hinh quet ngay. */
         private const val QR_DOUBLE_TAP_MAX_INTERVAL_MS = 350L
+
+        /** Khoang thoi gian (ms) TRE truoc khi thuc su dong khung quet QR +
+         *  coi la "roi ban phim" sau khi he thong bao [onFinishInputView] voi
+         *  finishingInput = true. LY DO: mot so thong bao/popup thoang qua
+         *  (thong bao he thong keo xuong roi thu lai ngay, popup xin quyen
+         *  cua trinh duyet, hop thoai he thong khac cuop focus trong tich
+         *  tac...) khien he thong bao finishingInput = true NGAY CA KHI
+         *  nguoi dung KHONG thuc su roi khoi o nhap - roi ngay sau do goi lai
+         *  [onStartInputView] binh thuong. TRUOC DAY ham nay dong khung quet
+         *  NGAY LAP TUC moi khi thay finishingInput = true, nen nhung truong
+         *  hop thoang qua nay cung lam camera/khung quet bi tat oan, dung y
+         *  het hien tuong nguoi dung phan anh (khung quet + ban phim bi an
+         *  di khi trang web hien thong bao). GIO DAY: khi finishingInput =
+         *  true, KHONG dong ngay, ma dat mot lenh dong "hoan" sau khoang thoi
+         *  gian nay - neu [onStartInputView] duoc goi lai truoc khi lenh do
+         *  kip chay (dau hieu day chi la gian doan tam thoi), lenh dong se bi
+         *  HUY, khung quet va ban phim duoc giu nguyen nhu cu. Chi khi qua
+         *  het khoang thoi gian nay ma ban phim van chua duoc mo lai, moi coi
+         *  la nguoi dung THAT SU roi di va dong khung quet. */
+        private const val FINISH_INPUT_HIDE_DEBOUNCE_MS = 500L
     }
 
     /** Thoi diem (uptimeMillis) cua lan cham nut [QR] gan nhat, dung de phat
@@ -124,6 +144,22 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
     /** Handler dung rieng cho vong lap xoa lien tuc khi giu phim ⌫. */
     private val deleteRepeatHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    /** Handler + lenh "hoan" dung rieng cho co che TRE truoc khi dong khung
+     *  quet QR sau [onFinishInputView] (xem [FINISH_INPUT_HIDE_DEBOUNCE_MS]).
+     *  [pendingFinishHide] la lenh dong dang cho - null nghia la khong co
+     *  lenh nao dang cho ca (da bi huy hoac da chay xong). */
+    private val finishInputHideHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var pendingFinishHide: Runnable? = null
+
+    /** Huy lenh dong khung quet dang "hoan" (neu co) - goi khi ban phim thuc
+     *  su duoc mo lai ([onStartInputView]), chung minh lan finishingInput =
+     *  true truoc do chi la gian doan tam thoi, khong phai nguoi dung thuc
+     *  su roi o nhap. */
+    private fun cancelPendingFinishHide() {
+        pendingFinishHide?.let { finishInputHideHandler.removeCallbacks(it) }
+        pendingFinishHide = null
+    }
 
     /** Ba "trang" ban phim, dung trinh tu quen thuoc cua cac ban phim khac:
      *  chu cai (mac dinh) <-> so & ky hieu co ban (nut "?123") <-> ky hieu
@@ -348,6 +384,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  trang so/ky hieu tu lan truoc). */
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        // Ban phim vua duoc mo lai (du la lan dau hay do he thong tai tao
+        // sau mot lan finishingInput = true "hu") - huy moi lenh dong khung
+        // quet QR dang cho, giu nguyen khung quet + camera nhu truoc do.
+        cancelPendingFinishHide()
         currentWord.clear()
         val hadPendingSuggestion = pendingSuggestion != null
         clearAutocorrectSuggestion()
@@ -1401,8 +1441,24 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // CHE DO QUET LIEN TUC/dup-tap) bi tu dong tat ngay sau khi quet duoc
         // 1 ma, dung y het hien tuong nguoi dung phan anh. Gio chi dong that
         // su khi finishingInput = true.
+        //
+        // NHUNG: ngay ca khi finishingInput = true, VAN CHUA dong ngay - vi
+        // mot so thong bao/popup thoang qua (thong bao he thong, popup xin
+        // quyen trinh duyet, hop thoai khac cuop focus tam thoi...) cung
+        // khien he thong bao finishingInput = true trong tich tac roi goi
+        // lai onStartInputView ngay sau do, du nguoi dung khong thuc su roi
+        // o nhap. Dat mot lenh dong "hoan" sau FINISH_INPUT_HIDE_DEBOUNCE_MS
+        // - neu onStartInputView duoc goi lai truoc do (xem
+        // [cancelPendingFinishHide]), lenh nay se bi huy, khung quet + ban
+        // phim duoc giu nguyen tren cung nhu nguoi dung mong doi.
         if (finishingInput) {
-            hideQrOverlay()
+            cancelPendingFinishHide()
+            val hideRunnable = Runnable {
+                pendingFinishHide = null
+                hideQrOverlay()
+            }
+            pendingFinishHide = hideRunnable
+            finishInputHideHandler.postDelayed(hideRunnable, FINISH_INPUT_HIDE_DEBOUNCE_MS)
         }
         hideKeyPreview()
         // Huy moi vong lap xoa-lien-tuc dang cho (phong truong hop nguoi
@@ -1412,6 +1468,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
     override fun onDestroy() {
         super.onDestroy()
+        cancelPendingFinishHide()
         hideQrOverlay()
         qrToneGenerator.release()
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
