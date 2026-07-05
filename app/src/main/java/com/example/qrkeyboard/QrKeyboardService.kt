@@ -303,13 +303,55 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  chi phoi boi cai dat do, nen chac chan rung moi lan cham phim, tru khi
      *  chinh may khong co dong co rung (hasVibrator() = false) hoac nguoi
      *  dung tat han quyen rung o cap he thong khac. */
+    /** Danh dau lenh rung la loai "cham/go phim" (USAGE_TOUCH / tuong duong)
+     *  thay vi khong phan loai - MOT SO MAY (dac biet Samsung/OEM tuy bien)
+     *  chi ap dung thanh truot "Rung khi cham" he thong (cai ma ban phim
+     *  MAC DINH dang dung) cho cac lenh rung co gan dung loai nay; lenh rung
+     *  "tran" (khong AudioAttributes/VibrationAttributes) co the bi may xep
+     *  vao muc "Rung he thong" chung - muc nay nhieu may de mac dinh la 0,
+     *  nen goi vibrate() tran khong co tac dung gi ca du hasVibrator() = true
+     *  va may van rung binh thuong voi ban phim mac dinh. */
+    private val touchAudioAttributes: android.media.AudioAttributes by lazy {
+        android.media.AudioAttributes.Builder()
+            .setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
+            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
+    }
+
+    private val touchVibrationAttributes: android.os.VibrationAttributes by lazy {
+        android.os.VibrationAttributes.Builder()
+            .setUsage(android.os.VibrationAttributes.USAGE_TOUCH)
+            .build()
+    }
+
+    private var loggedNoVibrator = false
+
     private fun vibrateKeyPress() {
-        if (!vibrator.hasVibrator()) return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            vibrator.vibrate(VibrationEffect.createOneShot(15L, VibrationEffect.DEFAULT_AMPLITUDE))
-        } else {
-            @Suppress("DEPRECATION")
-            vibrator.vibrate(15L)
+        if (!vibrator.hasVibrator()) {
+            if (!loggedNoVibrator) {
+                loggedNoVibrator = true
+                android.util.Log.w("QrKeyboardService", "Thiet bi khong co dong co rung (hasVibrator = false) - thuong xay ra khi chay tren may ao (emulator)")
+            }
+            return
+        }
+        try {
+            // Do dai 40ms + bien do 200/255 - manh va ro rang hon muc mac
+            // dinh, de dam bao cam nhan duoc ke ca tren may co dong co rung
+            // yeu, nhung van gan dung loai "cham phim" de duoc he thong ap
+            // dung dung thanh truot cuong do "Rung khi cham".
+            val effect = VibrationEffect.createOneShot(40L, 200)
+            when {
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU ->
+                    vibrator.vibrate(effect, touchVibrationAttributes)
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ->
+                    vibrator.vibrate(effect, touchAudioAttributes)
+                else -> {
+                    @Suppress("DEPRECATION")
+                    vibrator.vibrate(40L)
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("QrKeyboardService", "Loi khi goi vibrate(): ${e.message}")
         }
     }
 
@@ -327,16 +369,18 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *     sac, giong duong ke tim trong anh mau.
      *  Dung CHUNG cho moi phim thuong tren CA 3 trang ban phim (chu/so/ky
      *  hieu) - xem [buildKey]. */
-    private fun buildGlowKeyBackground(cornerDp: Int = 6): Drawable {
+    private fun buildGlowKeyBackground(cornerDp: Int = 6, borderColor: Int = glowColor): Drawable {
+        val outerAlphaHex = String.format("%02X", (Color.alpha(borderColor) * 0.25f).toInt().coerceIn(0, 255))
+        val outerColorHex = String.format("%06X", 0xFFFFFF and borderColor)
         val outerGlow = GradientDrawable().apply {
             cornerRadius = dp(cornerDp + 2).toFloat()
             setColor(Color.parseColor("#0A0A0F"))
-            setStroke(dp(4), Color.parseColor("#40B388FF"))
+            setStroke(dp(4), Color.parseColor("#$outerAlphaHex$outerColorHex"))
         }
         val innerLine = GradientDrawable().apply {
             cornerRadius = dp(cornerDp).toFloat()
             setColor(Color.TRANSPARENT)
-            setStroke(dp(1), glowColor)
+            setStroke(dp(1), borderColor)
         }
         return LayerDrawable(arrayOf(outerGlow, innerLine)).apply {
             setLayerInset(1, dp(2), dp(2), dp(2), dp(2))
@@ -416,7 +460,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                         // phai) - giong vi tri quen thuoc tren da so ban phim
                         // khac, thay vi nam ca hai o hang duoi cung nhu truoc.
                         rowView.addView(
-                            buildKey("\u21e7", weight = 1.5f, highlight = isShiftOn) {
+                            buildKey("\u2b06", weight = 1.5f, highlight = isShiftOn) {
                                 isShiftOn = !isShiftOn
                                 redrawKeyboard()
                             },
@@ -657,7 +701,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             // [capitalizeNextLetter].
             capitalizeNextLetter = true
         })
-        row.addView(buildKey("\u23ce", weight = 1.4f, highlight = true) { sendEnter() })
+        row.addView(buildKey("\u21b5", weight = 1.4f, highlight = true) { sendEnter() })
 
         return row
     }
@@ -712,7 +756,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             openQrScanner(continuous = isDoubleTap)
         })
         row.addView(buildSpaceKey(weight = 5.4f))
-        row.addView(buildKey("\u23ce", weight = 1.6f, highlight = true) { sendEnter() })
+        row.addView(buildKey("\u21b5", weight = 1.6f, highlight = true) { sendEnter() })
 
         return row
     }
@@ -749,7 +793,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
         row.addView(buildKey("ABC", weight = 1.4f) { switchMode(KeyboardMode.LETTERS) })
         row.addView(buildSpaceKey(weight = 4.8f))
-        row.addView(buildKey("\u23ce", weight = 1.4f, highlight = true) { sendEnter() })
+        row.addView(buildKey("\u21b5", weight = 1.4f, highlight = true) { sendEnter() })
 
         return row
     }
@@ -869,24 +913,14 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         onRepeat: (() -> Unit)? = null,
         onClick: () -> Unit
     ): Button {
-        // Phim highlight (Enter, Shift dang bat, nut QR): van dung nen kinh +
-        // vien phat sang nhu phim thuong, nhung DOI mau nen ben trong sang
-        // xanh duong nhe de phan biet - vien tim VAN giu nguyen tren CA hai
-        // loai phim, dam bao dong bo mau tren toan bo ban phim.
+        // Phim highlight (Enter, Shift dang bat, nut QR): VAN dung nen kinh
+        // TOI GIONG HET phim thuong (khong con to DAC mot khoi mau xanh nhu
+        // truoc - nhin lac tong so voi cac phim khac), CHI DOI mau VIEN sang
+        // xanh duong (thay vi tim) de van de nhan biet la phim "dang bat"/
+        // dac biet, ma van dong bo phong cach kinh + vien sang voi toan bo
+        // ban phim.
         val bg: Drawable = if (highlight) {
-            val outerGlow = GradientDrawable().apply {
-                cornerRadius = dp(8).toFloat()
-                setColor(Color.parseColor("#1A2A4A"))
-                setStroke(dp(4), Color.parseColor("#40B388FF"))
-            }
-            val innerLine = GradientDrawable().apply {
-                cornerRadius = dp(6).toFloat()
-                setColor(Color.parseColor("#1A73E8"))
-                setStroke(dp(1), glowColor)
-            }
-            LayerDrawable(arrayOf(outerGlow, innerLine)).apply {
-                setLayerInset(1, dp(2), dp(2), dp(2), dp(2))
-            }
+            buildGlowKeyBackground(borderColor = Color.parseColor("#4FC3F7"))
         } else {
             buildGlowKeyBackground()
         }
