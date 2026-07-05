@@ -604,6 +604,9 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 minimumHeight = 0
                 gravity = Gravity.CENTER
                 background = bg
+                stateListAnimator = null
+                elevation = 0f
+                outlineProvider = null
                 isHapticFeedbackEnabled = true
                 layoutParams = LinearLayout.LayoutParams(emojiKeySizePx, emojiKeySizePx).apply {
                     setMargins(dp(3), dp(3), dp(3), dp(3))
@@ -653,6 +656,9 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             isSingleLine = true
             background = bg
             gravity = Gravity.CENTER
+            stateListAnimator = null
+            elevation = 0f
+            outlineProvider = null
             layoutParams = LinearLayout.LayoutParams(0, dp(keyHeightDp - 8), 6f).apply {
                 setMargins(dp(2), dp(2), dp(2), dp(2))
             }
@@ -850,6 +856,9 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val bg = buildGlowKeyBackground()
         val container = FrameLayout(this).apply {
             background = bg
+            stateListAnimator = null
+            elevation = 0f
+            outlineProvider = null
             layoutParams = LinearLayout.LayoutParams(0, dp(keyHeightDp), weight).apply {
                 setMargins(dp(1), dp(1), dp(1), dp(1))
             }
@@ -994,6 +1003,21 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             minHeight = 0
             minimumHeight = 0
             background = bg
+            // LOI nguoi dung phan anh: cac phim trong CUNG MOT HANG nhin
+            // "cao thap khong deu", phim nay nhu bi day len/xuong so voi phim
+            // kia du cung khai bao chieu cao dp(keyHeightDp) y het nhau.
+            // NGUYEN NHAN: Button (khac voi FrameLayout dung cho rieng phim
+            // cach) mac dinh KE THUA elevation/StateListAnimator tu theme he
+            // thong (Material) - tao mot lop BONG DO (shadow) mo o VIEN
+            // DUOI/QUANH moi nut, dich sang mot huong khi nhan. Lop bong nay
+            // VE RA NGOAI ranh gioi thuc cua nut, khien mat thuong thay nut
+            // nhu bi "nhoe/lech" xuong duoi vai px so voi phim cach (FrameLayout,
+            // khong co bong nay) - du kich thuoc THAT SU (do vien tim/xanh)
+            // cua ca hai la HOAN TOAN bang nhau. Tat het elevation/animator
+            // de moi phim phang tuyet doi, dong bo 100% voi phim cach.
+            stateListAnimator = null
+            elevation = 0f
+            outlineProvider = null
             layoutParams = LinearLayout.LayoutParams(
                 // Chieu cao phim GIO CO GIAN theo man hinh thuc te (xem
                 // [keyHeightDp]) thay vi so co dinh 48dp nhu truoc - man hinh
