@@ -837,7 +837,13 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
         row.addView(buildKey("?123", weight = 1.4f, verticalNudgeDp = -3) { switchMode(KeyboardMode.NUMBERS) })
         row.addView(buildKey(",", weight = 1f, verticalNudgeDp = -3) { insertText(",") })
-        row.addView(buildSpaceKey(weight = 4.2f))
+        // HA phim cach xuong NGANG BANG voi "." va "," (theo phan anh nguoi
+        // dung): truoc day phim cach dung margin CO DINH (tuong duong nudge
+        // = 0), trong khi "." va "," da duoc chinh len [-3], nen phim cach
+        // (va ca phim Enter ben duoi) nhin LECH cao hon han so voi hai phim
+        // do. GIO DAY dung CUNG mot gia tri nudge [-3] cho ca 4 phim trong
+        // hang nay (?123/,/ /.) de dam bao chung THANG HANG voi nhau.
+        row.addView(buildSpaceKey(weight = 4.2f, verticalNudgeDp = -3))
         row.addView(buildKey(".", weight = 1f, verticalNudgeDp = -3) {
             insertText(".")
             // Bat co "viet hoa chu tiep theo" - xem giai thich o khai bao
@@ -845,7 +851,9 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             capitalizeNextLetter = true
             showCapitalPreview = true
         })
-        row.addView(buildKey("\u21b5", weight = 1.4f, highlight = true) { sendEnter() })
+        // HA phim Enter xuong NGANG BANG voi "." va "," - cung ly do va cung
+        // gia tri nudge nhu phim cach o tren.
+        row.addView(buildKey("\u21b5", weight = 1.4f, highlight = true, verticalNudgeDp = -3) { sendEnter() })
 
         return row
     }
@@ -960,7 +968,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  cham nhanh 2 lan (double-tap) nhu truoc, vi kieu do de bi kich hoat
      *  nham khi go nhanh lien tiep 2 dau cach gan nhau (vd giua 2 cau), gay
      *  doi ngon ngu ngoai y muon giua chung. */
-    private fun buildSpaceKey(weight: Float): View {
+    private fun buildSpaceKey(weight: Float, verticalNudgeDp: Int = 0): View {
         val bg = buildGlowKeyBackground()
         val container = FrameLayout(this).apply {
             background = bg
@@ -968,7 +976,12 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             elevation = 0f
             outlineProvider = null
             layoutParams = LinearLayout.LayoutParams(0, dp(keyHeightDp), weight).apply {
-                setMargins(dp(1), dp(1), dp(1), dp(1))
+                // Cung cong thuc voi [buildKey]: tong margin tren+duoi luon
+                // la dp(2) khong doi, [verticalNudgeDp] chi doi TY LE phan bo
+                // giua tren/duoi de dich phim len/xuong (duong = xuong, am =
+                // len) - dung khi can dong bo vi tri voi cac phim Button ben
+                // canh (vd "." va "," o cung hang, xem [buildLettersBottomRow]).
+                setMargins(dp(1), dp(1 + verticalNudgeDp), dp(1), dp(1 - verticalNudgeDp))
             }
             isHapticFeedbackEnabled = true
         }
