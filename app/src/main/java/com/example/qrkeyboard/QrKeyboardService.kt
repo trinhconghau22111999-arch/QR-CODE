@@ -173,7 +173,32 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     private enum class KeyboardMode { LETTERS, NUMBERS, SYMBOLS }
 
     private var mode = KeyboardMode.LETTERS
-    private var isShiftOn = false
+
+    /** Shift co 2 muc: [shiftOnce] (bam 1 lan - CHI viet hoa DUY NHAT chu cai
+     *  tiep theo roi tu dong tat) va [shiftLocked] (bam 2 lan LIEN TIEP trong
+     *  [SHIFT_DOUBLE_TAP_WINDOW_MS] - Caps Lock, viet hoa MAI cho den khi
+     *  nguoi dung bam Shift lai de tat, giong hanh vi Caps Lock "hien tai"
+     *  truoc day). [isShiftOn] la gia tri TONG HOP (dang viet hoa, du la vi
+     *  ly do nao) dung o hau het cac noi chi can biet "co dang viet hoa hay
+     *  khong", xem [handleShiftTap]. */
+    private var shiftOnce = false
+    private var shiftLocked = false
+    private val isShiftOn: Boolean get() = shiftOnce || shiftLocked
+
+    /** Vi tri (do dai [currentWord] tai thoi diem kich hoat) ma [shiftOnce]
+     *  dang "nham toi" - chi dung trong che do Tieng Viet, xem
+     *  [insertVietnameseChar]: mot chu cai co dau co the can NHIEU lan go
+     *  Telex de hoan thien (vd "a" roi "a" lan 2 -> "â"), nen khong the coi
+     *  la "da go xong 1 chu cai" ngay sau lan go DAU TIEN - phai doi den khi
+     *  mot lan go THUC SU cham toi vi tri SAU vi tri nay (tuc chu cai o vi
+     *  tri [shiftOnceTargetPos] da "on dinh", khong con bi sua nua) moi that
+     *  su tat [shiftOnce]. */
+    private var shiftOnceTargetPos = 0
+
+    /** Khoang thoi gian toi da (ms) giua 2 lan bam Shift lien tiep de tinh la
+     *  "bam dup" (kich hoat Caps Lock), dung gia tri chuan cua he thong. */
+    private val SHIFT_DOUBLE_TAP_WINDOW_MS = 300L
+    private var lastShiftTapAt = 0L
 
     /** Bat/tat go Tieng Viet kieu Telex, chuyen doi bang cach VUOT ngang tren
      *  phim cach (xem [buildSpaceKey]). */
@@ -460,8 +485,12 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                         // phai) - giong vi tri quen thuoc tren da so ban phim
                         // khac, thay vi nam ca hai o hang duoi cung nhu truoc.
                         rowView.addView(
-                            buildKey("\u2b06", weight = 1.5f, highlight = isShiftOn) {
-                                isShiftOn = !isShiftOn
+                            // Icon doi khac nhau: "⇧" cho shift thuong (bam 1
+                            // lan, hoac chua bam), "⇪" khi Caps Lock dang bat
+                            // (bam 2 lan lien tiep) - de nguoi dung phan biet
+                            // duoc 2 trang thai chi bang mat, khong can go thu.
+                            buildKey(if (shiftLocked) "\u21ea" else "\u2b06", weight = 1.5f, highlight = isShiftOn) {
+                                handleShiftTap()
                                 redrawKeyboard()
                             },
                             0
@@ -496,6 +525,37 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         mode = newMode
         redrawKeyboard()
     }
+
+    /** Xu ly 1 lan bam nut Shift (⇧/⇪):
+     *  - Dang bat Caps Lock ([shiftLocked]): bam (du 1 hay 2 lan) -> TAT het,
+     *    ve trang thai binh thuong (giong da so ban phim khac).
+     *  - Bam 2 lan LIEN TIEP (cach nhau <= [SHIFT_DOUBLE_TAP_WINDOW_MS]) ->
+     *    BAT Caps Lock (viet hoa mai cho den khi bam Shift lai).
+     *  - Bam 1 lan don le (khong phai bam dup) -> BAT/TAT [shiftOnce]: chi
+     *    viet hoa DUY NHAT chu cai tiep theo roi tu dong tro ve thuong, xem
+     *    diem tieu thu [shiftOnce] trong [insertChar] va [insertVietnameseChar]. */
+    private fun handleShiftTap() {
+        val now = android.os.SystemClock.uptimeMillis()
+        val isDoubleTap = (now - lastShiftTapAt) <= SHIFT_DOUBLE_TAP_WINDOW_MS
+        lastShiftTapAt = now
+
+        when {
+            shiftLocked -> {
+                shiftLocked = false
+                shiftOnce = false
+            }
+            isDoubleTap -> {
+                shiftLocked = true
+                shiftOnce = false
+            }
+            else -> {
+                shiftOnce = !shiftOnce
+                if (shiftOnce) shiftOnceTargetPos = currentWord.length
+            }
+        }
+    }
+
+
 
     /** Ve lai ban phim voi [mode] hien tai (dung khi doi trang thai Shift,
      *  doi ngon ngu, ... nhung khong doi trang ban phim). */
@@ -1098,6 +1158,13 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         if (shouldCapitalize) capitalizeNextLetter = false
         val out = if (isShiftOn || shouldCapitalize) ch.uppercaseChar() else ch
         insertText(out.toString())
+        // Che do go thuong: moi ky tu la MOT chu cai hoan chinh ngay lap tuc
+        // (khong co buoc bien doi nhieu-lan-go nhu Telex), nen tieu thu
+        // [shiftOnce] ngay sau ky tu nay neu no la chu cai.
+        if (ch.isLetter() && shiftOnce && !shiftLocked) {
+            shiftOnce = false
+            redrawKeyboard()
+        }
     }
 
     /** Xu ly mot ky tu go theo kieu Telex: doi chieu voi phan "tu" da go tu
@@ -1163,17 +1230,30 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // gap lan go KHONG dong den vi tri dau tu nua (commonPrefixLen > 0)
         // - dau hieu ky tu dau tu da "on dinh", khong con bi ghi de lai.
         val touchesWordStart = commonPrefixLen == 0 && newSuffixLower.isNotEmpty()
+        // [shiftOnce] chi ap dung cho lan go nay neu no CON DANG NHAM TOI vi
+        // tri hien tai (commonPrefixLen <= shiftOnceTargetPos) - tuc chu cai
+        // muc tieu chua "on dinh". [shiftLocked] thi luon ap dung, khong phu
+        // thuoc vi tri (Caps Lock danh cho ca cau/tu).
+        val shiftAppliesNow = shiftLocked || (shiftOnce && commonPrefixLen <= shiftOnceTargetPos)
         val newSuffixDisplay = when {
             capitalizeNextLetter && touchesWordStart -> {
                 val restLower = newSuffixLower.drop(1)
-                val rest = if (isShiftOn) restLower.uppercase() else restLower
+                val rest = if (shiftAppliesNow) restLower.uppercase() else restLower
                 newSuffixLower.first().uppercaseChar() + rest
             }
-            isShiftOn -> newSuffixLower.uppercase()
+            shiftAppliesNow -> newSuffixLower.uppercase()
             else -> newSuffixLower
         }
         if (capitalizeNextLetter && !touchesWordStart) {
             capitalizeNextLetter = false
+        }
+        // Chu cai o vi tri [shiftOnceTargetPos] da "on dinh" (lan go nay dong
+        // toi mot vi tri SAU no) - tat [shiftOnce], chu cai tiep theo tro ve
+        // thuong nhu binh thuong.
+        var shiftOnceJustConsumed = false
+        if (shiftOnce && !shiftLocked && commonPrefixLen > shiftOnceTargetPos) {
+            shiftOnce = false
+            shiftOnceJustConsumed = true
         }
 
         selfInitiatedChange = true
@@ -1195,7 +1275,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             // ky tu cu): khong can xoa gi ca, chi 1 lenh commit duy nhat.
             ic.commitText(newSuffixDisplay, 1)
         }
-        if (hadPendingSuggestion) redrawKeyboard()
+        if (hadPendingSuggestion || shiftOnceJustConsumed) redrawKeyboard()
     }
 
     /** Doc mot doan van ban truoc con tro (qua InputConnection) va, neu doan
