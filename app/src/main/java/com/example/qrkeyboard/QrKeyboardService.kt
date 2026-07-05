@@ -177,6 +177,17 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  phim cach (xem [buildSpaceKey]). */
     private var isVietnameseMode = false
 
+    /** True neu ky tu (CHU CAI) tiep theo can duoc TU DONG VIET HOA - dat
+     *  thanh true ngay sau khi go dau "." (xem nut "." trong
+     *  [buildLettersBottomRow]), giong hanh vi quen thuoc cua hau het ban
+     *  phim khac (tu dong hoa dau cau moi sau khi ket thuc cau). Chi anh
+     *  huong DUY NHAT MOT chu cai (khong phai ca tu, khong phai bat Caps
+     *  Lock) - dau cach/dau cau go giua "." va chu cai do (vd ". " -> vua go
+     *  dau cach) KHONG lam mat co hieu luc cua co nay, chi khi mot CHU CAI
+     *  thuc su duoc go moi tinh la "da dung", xem [insertChar] va
+     *  [insertVietnameseChar]. */
+    private var capitalizeNextLetter = false
+
     /** Bo dem chua cac ky tu (thuong, chua dau) cua "tu" dang go trong che do
      *  Tieng Viet, dung de bo dong bo Telex co the xoa/thay the dung phan da
      *  chen truoc do khi ap dau/mu. Duoc xoa moi khi gap dau cach, dau cau,
@@ -427,6 +438,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // quet QR dang cho, giu nguyen khung quet + camera nhu truoc do.
         cancelPendingFinishHide()
         currentWord.clear()
+        capitalizeNextLetter = false
         val hadPendingSuggestion = pendingSuggestion != null
         clearAutocorrectSuggestion()
         if (mode != KeyboardMode.LETTERS) {
@@ -610,7 +622,12 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         row.addView(buildKey("?123", weight = 1.4f) { switchMode(KeyboardMode.NUMBERS) })
         row.addView(buildKey(",", weight = 1f) { insertText(",") })
         row.addView(buildSpaceKey(weight = 4.2f))
-        row.addView(buildKey(".", weight = 1f) { insertText(".") })
+        row.addView(buildKey(".", weight = 1f) {
+            insertText(".")
+            // Bat co "viet hoa chu tiep theo" - xem giai thich o khai bao
+            // [capitalizeNextLetter].
+            capitalizeNextLetter = true
+        })
         row.addView(buildKey("\u23ce", weight = 1.4f, highlight = true) { sendEnter() })
 
         return row
@@ -997,7 +1014,12 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             insertVietnameseChar(ch)
             return
         }
-        val out = if (isShiftOn) ch.uppercaseChar() else ch
+        // Che do go thuong (khong Telex): moi ky tu la mot lan commit doc
+        // lap, khong co bien doi nhieu buoc nao co the "danh mat" chu hoa da
+        // ap, nen co the ap dung va TIEU THU (tat) co ngay tai day.
+        val shouldCapitalize = capitalizeNextLetter && ch.isLetter()
+        if (shouldCapitalize) capitalizeNextLetter = false
+        val out = if (isShiftOn || shouldCapitalize) ch.uppercaseChar() else ch
         insertText(out.toString())
     }
 
@@ -1053,7 +1075,29 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
         val deleteCount = oldWordLower.length - commonPrefixLen
         val newSuffixLower = newWordLower.substring(commonPrefixLen)
-        val newSuffixDisplay = if (isShiftOn) newSuffixLower.uppercase() else newSuffixLower
+
+        // Neu [capitalizeNextLetter] dang bat VA lan go nay dong den ky tu
+        // O VI TRI DAU TU (commonPrefixLen == 0, tuc dang viet lai tu vi tri
+        // dau), viet hoa DUY NHAT ky tu dau tien cua phan hau to moi, giu
+        // nguyen (theo isShiftOn) cho phan con lai. KHONG tat co ngay - vi
+        // ky tu dau tu CO THE con bi mot phim Telex tiep theo bien doi THEM
+        // (vd go "a" (cap) roi go "a" lan 2 -> "â", hoac "d" (cap) roi "d"
+        // lan 2 -> "đ") ma van phai tiep tuc duoc viet hoa. Chi tat co khi
+        // gap lan go KHONG dong den vi tri dau tu nua (commonPrefixLen > 0)
+        // - dau hieu ky tu dau tu da "on dinh", khong con bi ghi de lai.
+        val touchesWordStart = commonPrefixLen == 0 && newSuffixLower.isNotEmpty()
+        val newSuffixDisplay = when {
+            capitalizeNextLetter && touchesWordStart -> {
+                val restLower = newSuffixLower.drop(1)
+                val rest = if (isShiftOn) restLower.uppercase() else restLower
+                newSuffixLower.first().uppercaseChar() + rest
+            }
+            isShiftOn -> newSuffixLower.uppercase()
+            else -> newSuffixLower
+        }
+        if (capitalizeNextLetter && !touchesWordStart) {
+            capitalizeNextLetter = false
+        }
 
         selfInitiatedChange = true
         // Goi xoa + chen trong CUNG mot batch edit: bao dam ung dung dich
@@ -1175,6 +1219,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
         if (!selfInitiatedChange) {
             currentWord.clear()
+            // Con tro vua doi vi tri KHONG phai do chinh ban phim gay ra (vd
+            // nguoi dung cham sang cho khac) - co "viet hoa chu tiep theo"
+            // (neu dang cho) khong con y nghia gi voi vi tri con tro moi,
+            // huy di de tranh viet hoa nham mot cho khong lien quan.
+            capitalizeNextLetter = false
         }
         selfInitiatedChange = false
     }
@@ -1685,7 +1734,23 @@ private object VietnameseTelex {
      *  GIO DAY: tim NGUYEN AM GOC (chua bien doi) GAN CUOI NHAT trong CA TU
      *  (khong bat buoc phai dung sat cuoi), roi bien doi ngay tai vi tri do,
      *  giu nguyen moi ky tu dung sau no (vd phu am cuoi). Nho vay go "tiep"
-     *  roi go them "e" van ra "tiêp" dung nhu go "tiee" tu dau. */
+     *  roi go them "e" van ra "tiêp" dung nhu go "tiee" tu dau.
+     *
+     *  SUA THEM (2 loi nguoi dung phan anh):
+     *  1) "hạu" (danh sai) + dat con tro truoc "u" + go them "a" TRUOC DAY ra
+     *     "hạau" (sai) vi ham chi tim ky tu 'a' THUAN (khong dau) - trong khi
+     *     ky tu thuc te ngay truoc con tro la 'ạ' (a MANG SAN dau nang), nen
+     *     bi coi la "khong khop", chi chen them chu "a" moi. GIO DAY: tim
+     *     theo NHOM nguyen am goc (vd nhom "a" gom ca a/á/à/ả/ã/ạ) bang
+     *     [lastIndexOfGroup], roi GIU NGUYEN dau thanh da co khi doi nhom (vd
+     *     'ạ' -> 'ậ', khong phai 'ạ' -> 'ạa') - ra dung "hậu" nhu mong doi.
+     *  2) "được" bi go ra "đuợc": phim "w" TRUOC DAY chi doi MOT nguyen am
+     *     gan cuoi nhat trong so {a,o,u} (uu tien "o" vi nam sau "u" trong tu
+     *     "duo"), nen chi "o" -> "ơ", con "u" bi bo qua, giu nguyen. GIO DAY:
+     *     kiem tra rieng cum "uo" LIEN TIEP (dung quy uoc Telex chuan cho cum
+     *     nguyen am doi "ươ") - neu co, doi CA HAI ky tu cung luc (u -> ư VA
+     *     o -> ơ), moi ra dung "được". Chi khi KHONG co cum "uo" moi quay ve
+     *     logic cu (chon 1 trong 3 nguyen am gan cuoi nhat). */
     private fun applyDoubleModifier(word: String, key: Char): String? {
         if (word.isEmpty()) return null
 
@@ -1695,28 +1760,57 @@ private object VietnameseTelex {
             return word.substring(0, idx) + replacement + word.substring(idx + 1)
         }
 
+        // Vi tri GAN CUOI NHAT trong [word] co ky tu thuoc NHOM nguyen am goc
+        // [groupIdx] - BAT KY dang mang dau thanh nao (vd nhom 0 "a" khop ca
+        // voi 'a','á','à','ả','ã','ạ'), khong chi ky tu thuan khong dau.
+        fun lastIndexOfGroup(groupIdx: Int): Int? =
+            word.indices.lastOrNull { i -> charToGroupTone[word[i]]?.first == groupIdx }
+
+        // Doi ky tu tai NHOM [fromGroupIdx] gan cuoi nhat sang NHOM
+        // [toGroupIdx], GIU NGUYEN dau thanh (tone) da co san tren ky tu do.
+        fun replaceGroupPreservingTone(fromGroupIdx: Int, toGroupIdx: Int): String? {
+            val idx = lastIndexOfGroup(fromGroupIdx) ?: return null
+            val toneIdx = charToGroupTone[word[idx]]!!.second
+            val newChar = vowelGroups[toGroupIdx][toneIdx]
+            return word.substring(0, idx) + newChar + word.substring(idx + 1)
+        }
+
         return when (key) {
-            'a' -> replaceLastOccurrence('a', '\u00e2')
-            'e' -> replaceLastOccurrence('e', '\u00ea')
-            'o' -> replaceLastOccurrence('o', '\u00f4')
+            'a' -> replaceGroupPreservingTone(0, 2) // a-family -> â
+            'e' -> replaceGroupPreservingTone(3, 4) // e-family -> ê
+            'o' -> replaceGroupPreservingTone(6, 7) // o-family -> ô
             'w' -> {
-                // Trong 3 nguyen am co the bien doi boi "w" (a->ă, o->ơ,
-                // u->ư), chon nguyen am GAN CUOI TU NHAT (vi tri lon nhat)
-                // - vd tu co ca "o" lan "u" thi uu tien nguyen am nam sau.
-                val idxA = word.lastIndexOf('a')
-                val idxO = word.lastIndexOf('o')
-                val idxU = word.lastIndexOf('u')
-                val bestIdx = maxOf(idxA, idxO, idxU)
-                if (bestIdx < 0) {
-                    null
+                // Cum "uo" LIEN TIEP gan cuoi nhat (ky tu nhom "u" [9] ngay
+                // truoc mot ky tu nhom "o" [6]) - neu co, doi CA HAI thanh
+                // "ươ" cung luc (quy uoc Telex chuan cho cum nguyen am doi).
+                val uoIdx = (0 until word.length - 1).lastOrNull { i ->
+                    charToGroupTone[word[i]]?.first == 9 && charToGroupTone[word[i + 1]]?.first == 6
+                }
+                if (uoIdx != null) {
+                    val toneU = charToGroupTone[word[uoIdx]]!!.second
+                    val toneO = charToGroupTone[word[uoIdx + 1]]!!.second
+                    val newU = vowelGroups[10][toneU]
+                    val newO = vowelGroups[8][toneO]
+                    word.substring(0, uoIdx) + newU + newO + word.substring(uoIdx + 2)
                 } else {
-                    val replacement = when (word[bestIdx]) {
-                        'a' -> '\u0103'
-                        'o' -> '\u01a1'
-                        'u' -> '\u01b0'
-                        else -> null
+                    // Khong co cum "uo": quay ve logic cu - trong 3 nhom
+                    // nguyen am co the bien doi boi "w" (a->ă, o->ơ, u->ư),
+                    // chon nhom co vi tri GAN CUOI TU NHAT.
+                    val hits = listOfNotNull(
+                        lastIndexOfGroup(0)?.let { it to (0 to 1) },   // a -> ă
+                        lastIndexOfGroup(6)?.let { it to (6 to 8) },   // o -> ơ
+                        lastIndexOfGroup(9)?.let { it to (9 to 10) }   // u -> ư
+                    )
+                    val best = hits.maxByOrNull { it.first }
+                    if (best == null) {
+                        null
+                    } else {
+                        val (idx, groupPair) = best
+                        val (_, toGroupIdx) = groupPair
+                        val toneIdx = charToGroupTone[word[idx]]!!.second
+                        val newChar = vowelGroups[toGroupIdx][toneIdx]
+                        word.substring(0, idx) + newChar + word.substring(idx + 1)
                     }
-                    replacement?.let { word.substring(0, bestIdx) + it + word.substring(bestIdx + 1) }
                 }
             }
             'd' -> replaceLastOccurrence('d', '\u0111')
