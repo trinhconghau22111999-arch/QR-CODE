@@ -976,12 +976,27 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             elevation = 0f
             outlineProvider = null
             layoutParams = LinearLayout.LayoutParams(0, dp(keyHeightDp), weight).apply {
-                // Cung cong thuc voi [buildKey]: tong margin tren+duoi luon
-                // la dp(2) khong doi, [verticalNudgeDp] chi doi TY LE phan bo
-                // giua tren/duoi de dich phim len/xuong (duong = xuong, am =
-                // len) - dung khi can dong bo vi tri voi cac phim Button ben
-                // canh (vd "." va "," o cung hang, xem [buildLettersBottomRow]).
-                setMargins(dp(1), dp(1 + verticalNudgeDp), dp(1), dp(1 - verticalNudgeDp))
+                // Cung cong thuc voi [buildKey]: [verticalNudgeDp] doi TY LE
+                // phan bo giua tren/duoi de dich phim len/xuong (duong =
+                // xuong, am = len) - dung khi can dong bo vi tri voi cac phim
+                // Button ben canh (vd "." va "," o cung hang, xem
+                // [buildLettersBottomRow]).
+                //
+                // QUAN TRONG (loi da gap): cong thuc CU la dp(1+nudge)/
+                // dp(1-nudge) - voi |nudge| >= 2 se cho ra margin AM (vd
+                // nudge=-3 -> margin tren = dp(1-3) = dp(-2)). Margin AM lam
+                // phim TRAN ra ngoai ranh gioi hang cua no, DE LAN/CHE len
+                // hang ben canh (dung y nguoi dung phan anh: "hang chot dang
+                // lan len hang 2"). GIO DAY dung maxOf(0, ...) de KHONG BAO
+                // GIO cho ra margin am - phim co the mat bot doi xung (tong
+                // tren+duoi khong con co dinh dp(2) nua khi nudge lon), nhung
+                // khong bao gio tran/de len hang khac nua.
+                setMargins(
+                    dp(1),
+                    maxOf(0, dp(1 + verticalNudgeDp)),
+                    dp(1),
+                    maxOf(0, dp(1 - verticalNudgeDp))
+                )
             }
             isHapticFeedbackEnabled = true
         }
@@ -1152,11 +1167,34 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 // ngang/thap de tranh bi khuat hang tren cung.
                 0, dp(keyHeightDp), weight
             ).apply {
-                // Tong margin tren+duoi LUON la dp(2) khong doi (1+nudge va
-                // 1-nudge cong lai luon bang 2), nen [verticalNudgeDp] CHI
-                // dich vi tri phim len/xuong trong o cua no, KHONG lam thay
-                // doi tong chieu cao ca hang.
-                setMargins(dp(1), dp(1 + verticalNudgeDp), dp(1), dp(1 - verticalNudgeDp))
+                // [verticalNudgeDp] dich vi tri phim len/xuong trong o cua no.
+                //
+                // QUAN TRONG (loi da gap): cong thuc CU (dp(1+nudge) va
+                // dp(1-nudge), tong luon = dp(2)) se cho ra margin AM khi
+                // |nudge| >= 2 - vi du nudge=-3 (dung o "?123", ",", ".", phim
+                // cach, Enter trong buildLettersBottomRow) cho margin TREN =
+                // dp(1-3) = dp(-2); hoac nudge=+3 (dung o phim Shift/⌫ o cuoi
+                // hang chu cai cuoi) cho margin DUOI = dp(1-3) = dp(-2).
+                // Margin AM khien phim TRAN ra ngoai ranh gioi hang cua no, DE
+                // LAN/CHE len hang ben canh - dung nguyen nhan loi nguoi dung
+                // phan anh ("hang chot dang lan len hang 2, che 1 phan hang
+                // 2"), va cung la ly do phim cach/Enter (dung chung cong thuc
+                // qua [buildSpaceKey]) tuong nhu "chua ha" xuong dung vi tri:
+                // margin am lam kich thuoc/vi tri thuc te bi bop meo khong
+                // dong bo giua cac phim, du cung mot gia tri nudge.
+                //
+                // GIO DAY dung maxOf(0, ...) de KHONG BAO GIO cho ra margin
+                // am. Voi nudge co gia tri lon (+-3), tong margin tren+duoi
+                // se KHONG con co dinh dp(2) nua (se la dp(4): mot ben = 0,
+                // ben kia = dp(4)) - hang co the cao hon vai dp, nhung DOI
+                // LAI moi phim dung CHUNG mot cong thuc nen luon THANG HANG
+                // TUYET DOI voi nhau va KHONG BAO GIO de/lan len hang khac.
+                setMargins(
+                    dp(1),
+                    maxOf(0, dp(1 + verticalNudgeDp)),
+                    dp(1),
+                    maxOf(0, dp(1 - verticalNudgeDp))
+                )
             }
             gravity = Gravity.CENTER
             isHapticFeedbackEnabled = true
