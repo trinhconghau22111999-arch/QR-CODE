@@ -558,6 +558,21 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 letterRows.forEachIndexed { index, row ->
                     val rowView = buildCharRow(row, applyShiftCase = true)
                     if (index == letterRows.lastIndex) {
+                        // SUA loi nguoi dung phan anh: hang cuoi (Shift +
+                        // zxcvbnm + ⌫) bi "nhich thap" xuong ro ret so voi
+                        // nhip deu cua cac hang tren (khoang cach PHIA TREN
+                        // hang nay lon hon han khoang cach giua cac hang
+                        // khac, trong khi khoang cach PHIA DUOI - xuong toi
+                        // hang ?123/,/cach/./Enter - lai gan nhu bang 0).
+                        // KEO hang nay LEN bang mot topMargin AM cho CA
+                        // HANG (khong dung cho tung phim rieng le, dam bao
+                        // tat ca phim trong hang van ngang hang tuyet doi voi
+                        // nhau) - phan chieu cao "keo len" duoc nay duoc TRA
+                        // LAI y het cho hang duoi cung bang topMargin duong
+                        // tuong ung (xem [buildLettersBottomRow]), nen TONG
+                        // chieu cao ban phim khong doi, chi phan bo lai cho
+                        // deu giua 2 khoang cach.
+                        (rowView.layoutParams as LinearLayout.LayoutParams).topMargin -= dp(5)
                         // Hang chu cai cuoi cung (zxcvbnm): nut Shift (⇧) o
                         // DAU hang (ben trai), nut xoa (⌫) o CUOI hang (ben
                         // phai) - giong vi tri quen thuoc tren da so ban phim
@@ -874,7 +889,16 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             // co truong hop mot phim "quen" nhich theo hang.
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(keyHeightDp + 2)
-            ).apply { bottomMargin = dp(6) }
+            ).apply {
+                // topMargin = dp(5) day: TRA LAI dung phan chieu cao da
+                // "muon" cua hang tren (xem topMargin -= dp(5) tai hang
+                // Shift/zxcvbnm/⌫ trong buildKeyboardView) - dam bao khoang
+                // cach giua hang do va hang nay khong con bi "gan nhu dinh
+                // sat nhau" nhu truoc, ma deu voi cac khoang cach khac tren
+                // ban phim, ma TONG chieu cao ban phim van khong doi.
+                topMargin = dp(5)
+                bottomMargin = dp(6)
+            }
         }
 
         row.addView(buildKey("?123", weight = 1.4f, fillRowHeight = true) { switchMode(KeyboardMode.NUMBERS) })
