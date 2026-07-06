@@ -394,6 +394,25 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
     private var loggedNoVibrator = false
 
+    /** LOI nguoi dung phan anh: go phim tren MAY THAT khong thay rung, du
+     *  ban phim MAC DINH cua may (khong phai app nay) van rung binh thuong -
+     *  tuc phan cung/quyen VIBRATE/cai dat "Rung khi cham" cua may DEU on,
+     *  chi rieng app nay la khong rung. NGUYEN NHAN thuong gap nhat trong
+     *  truong hop nay: mot so hang may tuy bien ROM sau (dac biet Xiaomi/
+     *  MIUI, Oppo/ColorOS, Vivo/FuntouchOS, mot so dong Samsung cu) AM THAM
+     *  BO QUA lenh vibrate() co gan kem VibrationAttributes/AudioAttributes
+     *  tu mot InputMethodService (khong throw Exception gi ca - ham chay
+     *  "thanh cong" nhung thuc te khong rung), trong khi lenh vibrate() KHONG
+     *  gan attributes (kieu "tran"/deprecated) van hoat dong binh thuong.
+     *
+     *  SUA: thay vi chi thu MOT cach roi thoi, thu LAN LUOT nhieu cach rung
+     *  tu "chuan/hien dai" xuong "don gian/tran" - he dieu hanh/ROM nao chan
+     *  cach nao thi tu dong roi xuong cach ke tiep (khong dung lai giua
+     *  chung du khong co Exception, vi loai loi nay thuong KHONG bao loi).
+     *  Ghi log ro tung buoc (bat_dau/thanh_cong) de kiem tra bang:
+     *    adb logcat -s QrKeyboardService
+     *  neu van con truong hop khong rung o may cu the nao do sau ban sua
+     *  nay, log se cho biet chinh xac buoc nao dang that bai. */
     private fun vibrateKeyPress() {
         if (!vibrator.hasVibrator()) {
             if (!loggedNoVibrator) {
@@ -402,24 +421,49 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             }
             return
         }
-        try {
-            // Do dai 40ms + bien do 200/255 - manh va ro rang hon muc mac
-            // dinh, de dam bao cam nhan duoc ke ca tren may co dong co rung
-            // yeu, nhung van gan dung loai "cham phim" de duoc he thong ap
-            // dung dung thanh truot cuong do "Rung khi cham".
-            val effect = VibrationEffect.createOneShot(40L, 200)
-            when {
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU ->
-                    vibrator.vibrate(effect, touchVibrationAttributes)
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ->
-                    vibrator.vibrate(effect, touchAudioAttributes)
-                else -> {
-                    @Suppress("DEPRECATION")
-                    vibrator.vibrate(40L)
-                }
+        // Do dai 40ms + bien do 200/255 - manh va ro rang hon muc mac dinh,
+        // de dam bao cam nhan duoc ke ca tren may co dong co rung yeu.
+        val effect = VibrationEffect.createOneShot(40L, 200)
+
+        // Buoc 1: cach "chuan" moi nhat - VibrationAttributes (Android 13+).
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            try {
+                vibrator.vibrate(effect, touchVibrationAttributes)
+                android.util.Log.d("QrKeyboardService", "Rung OK (VibrationAttributes)")
+                return
+            } catch (e: Exception) {
+                android.util.Log.w("QrKeyboardService", "VibrationAttributes that bai: ${e.message}, thu cach khac")
             }
+        }
+        // Buoc 2: AudioAttributes (Android 8-12, hoac fallback tu Buoc 1).
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            try {
+                vibrator.vibrate(effect, touchAudioAttributes)
+                android.util.Log.d("QrKeyboardService", "Rung OK (AudioAttributes)")
+                return
+            } catch (e: Exception) {
+                android.util.Log.w("QrKeyboardService", "AudioAttributes that bai: ${e.message}, thu cach khac")
+            }
+        }
+        // Buoc 3: VibrationEffect "tran", khong gan attributes gi ca - mot
+        // so ROM chan rieng cac lenh CO gan attributes nhung van cho qua
+        // lenh khong gan gi (attributes = null).
+        try {
+            vibrator.vibrate(effect, null)
+            android.util.Log.d("QrKeyboardService", "Rung OK (VibrationEffect tran, khong attributes)")
+            return
         } catch (e: Exception) {
-            android.util.Log.w("QrKeyboardService", "Loi khi goi vibrate(): ${e.message}")
+            android.util.Log.w("QrKeyboardService", "VibrationEffect tran that bai: ${e.message}, thu cach cuoi")
+        }
+        // Buoc 4: phuong an cuoi cung - API rung kieu CU (deprecated tu API
+        // 26 nhung van hoat dong xuyen suot cac phien ban, kieu ma ban phim
+        // mac dinh cua nhieu hang may van dung ben duoi).
+        try {
+            @Suppress("DEPRECATION")
+            vibrator.vibrate(40L)
+            android.util.Log.d("QrKeyboardService", "Rung OK (deprecated vibrate(Long))")
+        } catch (e: Exception) {
+            android.util.Log.w("QrKeyboardService", "TAT CA cac cach rung deu that bai: ${e.message}")
         }
     }
 
