@@ -468,20 +468,237 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     private val numberRow3Symbols = "*\"':;!?="
 
     /** Danh sach emoji cho hang emoji co the TRUOT NGANG (xem [buildEmojiRow]),
-     *  hien tren trang so (trang thu 2). Chi la mot tuyen chon nho cac emoji
-     *  thong dung (mat cuoi, tay, tim, do vat, thoi tiet...), khong phai toan
-     *  bo bang emoji Unicode - du dung cho nhu cau go chat thong thuong. */
+     *  hien tren trang so (trang thu 2). Mo rong len ~150 emoji, chia nhom:
+     *  mat cuoi -> cu chi/tay -> cam xuc/tim -> hoat dong -> do an -> dong vat
+     *  -> thien nhien/thoi tiet -> di chuyen/dia diem -> do vat -> ky hieu. */
     private val emojiList = listOf(
-        "\ud83d\ude00", "\ud83d\ude02", "\ud83d\ude0d", "\ud83d\ude18", "\ud83d\ude0a",
-        "\ud83d\ude09", "\ud83d\ude0e", "\ud83e\udd23", "\ud83d\ude22", "\ud83d\ude2d",
-        "\ud83d\ude21", "\ud83d\ude33", "\ud83e\udd14", "\ud83d\ude0c", "\ud83d\ude34",
-        "\ud83d\udc4d", "\ud83d\udc4e", "\ud83d\udc4f", "\ud83d\ude4f", "\u270c\ufe0f",
-        "\ud83d\udcaa", "\u2764\ufe0f", "\ud83d\udc94", "\ud83d\udc96", "\u2b50",
-        "\ud83d\udd25", "\ud83c\udf89", "\ud83c\udf8a", "\ud83d\udc4c", "\ud83e\udd1d",
-        "\u2600\ufe0f", "\u2601\ufe0f", "\ud83c\udf27\ufe0f", "\u26a1", "\ud83c\udf08",
-        "\ud83d\udc36", "\ud83d\udc31", "\ud83d\udc2c", "\ud83c\udf38", "\ud83c\udf7d\ufe0f",
-        "\u2615", "\ud83c\udf82", "\ud83d\ude97", "\u2708\ufe0f", "\ud83c\udfe0",
-        "\ud83d\udcf1", "\ud83d\udcb0", "\u23f0", "\u2705", "\u274c"
+        // --- Mat cuoi / Bieu cam ---
+        "\ud83d\ude00", // 😀 grin
+        "\ud83d\ude01", // 😁 beam
+        "\ud83d\ude02", // 😂 tears of joy
+        "\ud83e\udd23", // 🤣 rofl
+        "\ud83d\ude03", // 😃 big smile
+        "\ud83d\ude04", // 😄 smile eyes
+        "\ud83d\ude05", // 😅 sweat smile
+        "\ud83d\ude06", // 😆 laughing
+        "\ud83d\ude09", // 😉 wink
+        "\ud83d\ude0a", // 😊 blush
+        "\ud83d\ude0d", // 😍 heart eyes
+        "\ud83e\udd70", // 🥰 hearts face
+        "\ud83d\ude18", // 😘 kiss
+        "\ud83d\ude17", // 😗 kissing
+        "\ud83d\ude19", // 😙 kiss smile
+        "\ud83d\ude1a", // 😚 kiss closed
+        "\ud83d\ude0b", // 😋 yum
+        "\ud83d\ude0e", // 😎 sunglasses
+        "\ud83e\udd13", // 🤓 nerd
+        "\ud83e\udd17", // 🤗 hugging
+        "\ud83e\udd14", // 🤔 thinking
+        "\ud83d\ude10", // 😐 neutral
+        "\ud83d\ude11", // 😑 expressionless
+        "\ud83d\ude36", // 😶 no mouth
+        "\ud83d\ude0f", // 😏 smirk
+        "\ud83d\ude0c", // 😌 relieved
+        "\ud83d\ude14", // 😔 pensive
+        "\ud83d\ude2a", // 😪 sleepy
+        "\ud83d\ude34", // 😴 sleeping
+        "\ud83d\ude16", // 😖 confounded
+        "\ud83d\ude1e", // 😞 disappointed
+        "\ud83d\ude15", // 😕 confused
+        "\ud83d\ude22", // 😢 cry
+        "\ud83d\ude2d", // 😭 sob
+        "\ud83d\ude20", // 😠 angry
+        "\ud83d\ude21", // 😡 rage
+        "\ud83e\udd2c", // 🤬 cursing
+        "\ud83e\udd2f", // 🤯 exploding head
+        "\ud83d\ude31", // 😱 scream
+        "\ud83d\ude28", // 😨 fearful
+        "\ud83d\ude30", // 😰 cold sweat
+        "\ud83d\ude33", // 😳 flushed
+        "\ud83e\udd75", // 🥵 hot face
+        "\ud83e\udd76", // 🥶 cold face
+        "\ud83d\ude35", // 😵 dizzy
+        "\ud83e\udd74", // 🥴 woozy
+        "\ud83e\udd22", // 🤢 nauseated
+        "\ud83e\udd27", // 🤧 sneezing
+        "\ud83d\ude37", // 😷 mask
+        "\ud83e\udd12", // 🤒 thermometer face
+        "\ud83e\udd11", // 🤑 money mouth
+        "\ud83e\udd20", // 🤠 cowboy
+        "\ud83e\udd21", // 🤡 clown
+        "\ud83d\ude08", // 😈 devil smile
+        "\ud83d\udc7f", // 👿 angry devil
+        "\ud83d\udc80", // 💀 skull
+        "\ud83d\udc7d", // 👽 alien
+        "\ud83e\udd16", // 🤖 robot
+
+        // --- Cu chi / Tay ---
+        "\ud83d\udc4d", // 👍 thumbs up
+        "\ud83d\udc4e", // 👎 thumbs down
+        "\ud83d\udc4f", // 👏 clap
+        "\ud83d\ude4f", // 🙏 pray/thanks
+        "\ud83e\udd1d", // 🤝 handshake
+        "\u270c\ufe0f", // ✌️ victory
+        "\ud83e\udd1e", // 🤞 crossed fingers
+        "\ud83e\udd1f", // 🤟 love you hand
+        "\ud83e\udd18", // 🤘 rock on
+        "\ud83d\udc4c", // 👌 ok
+        "\ud83e\udd19", // 🤙 call me
+        "\u261d\ufe0f", // ☝️ point up
+        "\ud83d\udc46", // 👆 point up 2
+        "\ud83d\udc47", // 👇 point down
+        "\ud83d\udc48", // 👈 point left
+        "\ud83d\udc49", // 👉 point right
+        "\ud83d\udc4a", // 👊 fist bump
+        "\u270a", // ✊ raised fist
+        "\ud83e\udd1b", // 🤛 left fist
+        "\ud83e\udd1c", // 🤜 right fist
+        "\ud83d\udc4b", // 👋 wave
+        "\ud83e\udd1a", // 🤚 raised back hand
+        "\ud83d\udd90\ufe0f", // 🖐️ hand splayed
+        "\u270b", // ✋ raised hand
+        "\ud83d\udc4e", // 👎 dislike
+        "\ud83d\udcaa", // 💪 muscle
+        "\ud83d\ude4c", // 🙌 celebrate hands
+        "\ud83d\ude4b", // 🙋 hand raise person
+        "\ud83e\udd26", // 🤦 facepalm
+        "\ud83e\udd37", // 🤷 shrug
+
+        // --- Tim / Cam xuc ---
+        "\u2764\ufe0f", // ❤️ red heart
+        "\ud83e\udde1", // 🧡 orange heart
+        "\ud83d\udc9b", // 💛 yellow heart
+        "\ud83d\udc9a", // 💚 green heart
+        "\ud83d\udc99", // 💙 blue heart
+        "\ud83d\udc9c", // 💜 purple heart
+        "\ud83d\udc97", // 💗 growing heart
+        "\ud83d\udc96", // 💖 sparkling heart
+        "\ud83d\udc95", // 💕 two hearts
+        "\ud83d\udc94", // 💔 broken heart
+        "\u2665\ufe0f", // ♥️ heart suit
+        "\ud83d\udcaf", // 💯 100
+        "\u2b50", // ⭐ star
+        "\ud83c\udf1f", // 🌟 glowing star
+        "\ud83d\udd25", // 🔥 fire
+        "\u26a1", // ⚡ lightning
+        "\ud83c\udf89", // 🎉 party popper
+        "\ud83c\udf8a", // 🎊 confetti
+
+        // --- Do an / Uong ---
+        "\ud83c\udf55", // 🍕 pizza
+        "\ud83c\udf54", // 🍔 burger
+        "\ud83c\udf5c", // 🍜 noodles
+        "\ud83c\udf5b", // 🍛 curry
+        "\ud83c\udf63", // 🍣 sushi
+        "\ud83c\udf62", // 🍢 oden
+        "\ud83e\udd6a", // 🥪 sandwich
+        "\ud83c\udf2e", // 🌮 taco
+        "\ud83c\udf2f", // 🌯 burrito
+        "\ud83e\udd57", // 🥗 salad
+        "\ud83c\udf70", // 🎰 cake slice
+        "\ud83c\udf82", // 🎂 birthday cake
+        "\ud83c\udf69", // 🍩 donut
+        "\ud83c\udf6a", // 🍪 cookie
+        "\ud83c\udf6b", // 🍫 chocolate
+        "\ud83c\udf6c", // 🍬 candy
+        "\ud83c\udf6d", // 🍭 lollipop
+        "\ud83e\udd64", // 🥤 cup straw
+        "\ud83c\udf7a", // 🍺 beer
+        "\ud83c\udf77", // 🍷 wine
+        "\u2615", // ☕ coffee
+        "\ud83c\udf75", // 🍵 tea
+        "\ud83c\udf7d\ufe0f", // 🍽️ fork knife plate
+        "\ud83e\udd51", // 🥑 avocado
+        "\ud83c\udf4e", // 🍎 apple
+        "\ud83c\udf4a", // 🍊 orange
+        "\ud83c\udf4b", // 🍋 lemon
+        "\ud83c\udf49", // 🍉 watermelon
+        "\ud83c\udf53", // 🍓 strawberry
+        "\ud83c\udf47", // 🍇 grapes
+
+        // --- Dong vat ---
+        "\ud83d\udc36", // 🐶 dog
+        "\ud83d\udc31", // 🐱 cat
+        "\ud83d\udc2d", // 🐭 mouse
+        "\ud83d\udc39", // 🐹 hamster
+        "\ud83d\udc30", // 🐰 rabbit
+        "\ud83d\udc3b", // 🐻 bear
+        "\ud83d\udc3c", // 🐼 panda
+        "\ud83d\udc28", // 🐨 koala
+        "\ud83d\udc2f", // 🐯 tiger
+        "\ud83e\udd81", // 🦁 lion
+        "\ud83d\udc2e", // 🐮 cow
+        "\ud83d\udc37", // 🐷 pig
+        "\ud83d\udc24", // 🐤 chick
+        "\ud83d\udc27", // 🐧 penguin
+        "\ud83d\udc26", // 🐦 bird
+        "\ud83e\udd85", // 🦅 eagle
+        "\ud83d\udc2c", // 🐬 dolphin
+        "\ud83d\udc33", // 🐳 whale
+        "\ud83d\udc20", // 🐠 tropical fish
+        "\ud83d\udc19", // 🐙 octopus
+        "\ud83e\udd8b", // 🦋 butterfly
+
+        // --- Thien nhien / Thoi tiet ---
+        "\u2600\ufe0f", // ☀️ sun
+        "\ud83c\udf24\ufe0f", // 🌤️ sun behind cloud
+        "\u2601\ufe0f", // ☁️ cloud
+        "\ud83c\udf27\ufe0f", // 🌧️ rain
+        "\u26c4", // ⛄ snowman
+        "\ud83c\udf08", // 🌈 rainbow
+        "\ud83c\udf0a", // 🌊 wave
+        "\ud83c\udf38", // 🌸 cherry blossom
+        "\ud83c\udf39", // 🌹 rose
+        "\ud83c\udf3b", // 🌻 sunflower
+        "\ud83c\udf3c", // 🌼 blossom
+        "\ud83c\udf40", // 🍀 four leaf clover
+        "\ud83c\udf41", // 🍁 maple leaf
+        "\ud83c\udf3f", // 🌿 herb
+        "\ud83c\udf0d", // 🌍 earth africa
+        "\ud83c\udf19", // 🌙 crescent moon
+        "\ud83d\udc4b", // 👋 wave hi
+
+        // --- Di chuyen / Dia diem ---
+        "\ud83d\ude97", // 🚗 car
+        "\ud83d\ude8c", // 🚌 bus
+        "\ud83d\ude82", // 🚂 train
+        "\ud83d\udea2", // 🚢 ship
+        "\u2708\ufe0f", // ✈️ airplane
+        "\ud83d\ude80", // 🚀 rocket
+        "\ud83d\udeb2", // 🚲 bicycle
+        "\ud83c\udfe0", // 🏠 house
+        "\ud83c\udfe2", // 🏢 office
+        "\ud83c\udfd6\ufe0f", // 🏖️ beach
+        "\ud83c\udfd4\ufe0f", // 🏔️ mountain
+        "\ud83d\uddfa\ufe0f", // 🗺️ map
+        "\ud83d\udccd", // 📍 pin
+        "\ud83c\udf0f", // 🌏 earth asia
+
+        // --- Do vat / Cong nghe ---
+        "\ud83d\udcf1", // 📱 phone
+        "\ud83d\udcbb", // 💻 laptop
+        "\u2328\ufe0f", // ⌨️ keyboard
+        "\ud83d\udda5\ufe0f", // 🖥️ desktop
+        "\ud83d\udcf7", // 📷 camera
+        "\ud83c\udfa4", // 🎤 microphone
+        "\ud83c\udfa7", // 🎧 headphone
+        "\ud83d\udcfa", // 📺 tv
+        "\ud83d\udcda", // 📚 books
+        "\ud83d\udcdd", // 📝 memo
+        "\ud83d\udce7", // 📧 email
+        "\ud83d\udd14", // 🔔 bell
+        "\ud83d\udcb0", // 💰 money bag
+        "\ud83d\udcb3", // 💳 credit card
+        "\ud83c\udf81", // 🎁 gift
+        "\ud83d\udd12", // 🔒 lock
+        "\ud83d\udd13", // 🔓 unlock
+        "\ud83d\udd0d", // 🔍 search
+        "\u2705", // ✅ check
+        "\u274c", // ❌ cross
+        "\u23f0", // ⏰ alarm clock
+        "\ud83d\udcca", // 📊 chart
+        "\ud83d\udcc8", // 📈 up chart
+        "\ud83d\udcc9"  // 📉 down chart
     )
 
     /** Trang ky hieu mo rong (nut "=\<"). Truoc day 2 phim dau hang thu 2 la
