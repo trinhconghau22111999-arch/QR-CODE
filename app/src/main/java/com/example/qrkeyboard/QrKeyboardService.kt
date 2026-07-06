@@ -20,6 +20,7 @@ import android.os.VibratorManager
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -1933,8 +1934,24 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *     y nghia o day (o nay khong the hien thi nhieu dong duoc), nen day
      *     la truong hop "KHONG THE Alt-Enter duoc" - quay ve dung hanh vi
      *     Enter THONG THUONG nhu truoc: goi hanh dong ban phim neu co khai
-     *     bao (Gui/Tim kiem/Xong...), neu khong co gi khai bao thi moi chen
-     *     xuong dong nhu mot phuong an du phong cuoi cung. */
+     *     bao (Gui/Tim kiem/Xong...), neu khong co gi khai bao thi gui PHIM
+     *     ENTER THAT (KeyEvent) thay vi tu y chen ky tu "\n".
+     *
+     *  SUA THEM (loi nguoi dung phan anh): o tim kiem cua Google (thanh dia
+     *  chi Chrome, o tim kiem trong app Google...) la mot dong (khong
+     *  multi-line) NHUNG lai KHONG khai bao action ro rang (IME_ACTION_NONE
+     *  hoac IME_ACTION_UNSPECIFIED) - nhieu o nhap kieu WebView/trinh duyet
+     *  nhu vay khong lang nghe performEditorAction(), ma chi lang nghe PHIM
+     *  ENTER VAT LY THAT SU (giong nhu ban phim he thong goc van gui trong
+     *  truong hop nay). TRUOC DAY code roi vao nhanh du phong cuoi cung
+     *  ("khong co gi khai bao thi chen \"\\n\"") nen luon bi xuong dong thay
+     *  vi thuc hien tim kiem. GIO DAY: nhanh du phong nay gui mot cap
+     *  KeyEvent ACTION_DOWN + ACTION_UP cho KEYCODE_ENTER (qua
+     *  [android.view.inputmethod.InputConnection.sendKeyEvent]) thay vi tu y
+     *  chen ky tu xuong dong - dung y nhu hanh vi ban phim he thong mac
+     *  dinh, giup cac o nhap kieu nay (tim kiem Google, nhieu o WebView
+     *  khac...) nhan dung tin hieu "Enter" de thuc hien tim kiem/gui thay vi
+     *  bi hieu nham thanh xuong dong. */
     private fun sendEnter() {
         val ic = currentInputConnection ?: return
         currentWord.clear()
@@ -1951,7 +1968,9 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         if (action != null && action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
             ic.performEditorAction(action)
         } else {
-            ic.commitText("\n", 1)
+            val now = System.currentTimeMillis()
+            ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER, 0))
+            ic.sendKeyEvent(KeyEvent(now, now, KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER, 0))
         }
     }
 
