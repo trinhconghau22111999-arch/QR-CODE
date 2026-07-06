@@ -567,21 +567,19 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 letterRows.forEachIndexed { index, row ->
                     val rowView = buildCharRow(row, applyShiftCase = true)
                     if (index == letterRows.lastIndex) {
-                        // SUA loi nguoi dung phan anh: hang cuoi (Shift +
-                        // zxcvbnm + ⌫) bi "nhich thap" xuong ro ret so voi
-                        // nhip deu cua cac hang tren (khoang cach PHIA TREN
-                        // hang nay lon hon han khoang cach giua cac hang
-                        // khac, trong khi khoang cach PHIA DUOI - xuong toi
-                        // hang ?123/,/cach/./Enter - lai gan nhu bang 0).
-                        // KEO hang nay LEN bang mot topMargin AM cho CA
-                        // HANG (khong dung cho tung phim rieng le, dam bao
-                        // tat ca phim trong hang van ngang hang tuyet doi voi
-                        // nhau) - phan chieu cao "keo len" duoc nay duoc TRA
-                        // LAI y het cho hang duoi cung bang topMargin duong
-                        // tuong ung (xem [buildLettersBottomRow]), nen TONG
-                        // chieu cao ban phim khong doi, chi phan bo lai cho
-                        // deu giua 2 khoang cach.
-                        (rowView.layoutParams as LinearLayout.LayoutParams).topMargin -= dp(5)
+                        // SUA loi nguoi dung phan anh (lan 2): ban vá truoc day
+                        // (topMargin -= dp(5) o day, cong topMargin = dp(5) o
+                        // [buildLettersBottomRow]) tuy giu TONG chieu cao ban
+                        // phim khong doi, nhung lai lam 2 khoang cach quanh
+                        // hang nay LECH NHAU ro ret: khoang cach PHIA TREN
+                        // (voi hang asdfghjkl) bi am (-3dp, tuc la CHONG LEN
+                        // nhau/"sat vao nhau"), trong khi khoang cach PHIA
+                        // DUOI (voi hang ?123/,/cach/./Enter) lai thanh +7dp -
+                        // gap hon 3 lan khoang cach binh thuong (2dp) giua cac
+                        // hang khac. KHONG con chinh topMargin rieng cho hang
+                        // nay nua - de no dung khoang cach MAC DINH (giong het
+                        // cac hang chu cai khac o tren), tu do deu voi ca hang
+                        // tren lan hang duoi.
                         // Hang chu cai cuoi cung (zxcvbnm): nut Shift (⇧) o
                         // DAU hang (ben trai), nut xoa (⌫) o CUOI hang (ben
                         // phai) - giu nguyen vi tri nay (KHONG chuyen xuong
@@ -881,13 +879,12 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(keyHeightDp + 2)
             ).apply {
-                // topMargin = dp(5) day: TRA LAI dung phan chieu cao da
-                // "muon" cua hang tren (xem topMargin -= dp(5) tai hang
-                // Shift/zxcvbnm/⌫ trong buildKeyboardView) - dam bao khoang
-                // cach giua hang do va hang nay khong con bi "gan nhu dinh
-                // sat nhau" nhu truoc, ma deu voi cac khoang cach khac tren
-                // ban phim, ma TONG chieu cao ban phim van khong doi.
-                topMargin = dp(5)
+                // KHONG con dat topMargin rieng o day nua (xem giai thich
+                // chi tiet tai [buildKeyboardView], cho nhanh xu ly hang
+                // Shift/zxcvbnm/⌫) - phep "tra lai" topMargin = dp(5) truoc
+                // day thuc ra lam khoang cach hang nay QUA XA so voi hang
+                // tren no, trong khi hang tren lai bi keo CHONG LEN hang
+                // TREN NO NUA. Bo ca hai cho khoang cach mac dinh, deu nhau.
                 bottomMargin = dp(6)
             }
         }
