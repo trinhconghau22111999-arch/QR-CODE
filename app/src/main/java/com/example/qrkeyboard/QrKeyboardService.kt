@@ -1328,7 +1328,12 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
             includeFontPadding = true
-            setPadding(dp(14), dp(8), dp(14), dp(8))
+            // Tang padding TREN len dp(16) (tu dp(8)) de cac chu Tieng Viet
+            // co 2 dau chong nhau (vd "Ầ", "Ổ", "Ẫ" - dau thanh dat TREN
+            // dau mu/moc) khong bi cat mat phan dinh nhat - Android tinh
+            // chieu cao WRAP_CONTENT cua TextView dua tren font metrics
+            // thong thuong, khong luon tinh du cho ky tu co dau cao bat thuong.
+            setPadding(dp(14), dp(16), dp(14), dp(8))
             background = GradientDrawable().apply {
                 cornerRadius = dp(6).toFloat()
                 setColor(Color.parseColor("#3C4043"))
