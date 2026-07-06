@@ -3,6 +3,14 @@
 
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- CHI can cho Android 9 (API 28) tro xuong, dung de luu anh "Chup anh
+         nhanh" vao thu vien qua MediaStore - tu Android 10 (API 29) tro di,
+         Scoped Storage cho phep ghi vao MediaStore.Images ma KHONG can xin
+         quyen nay, nen gioi han maxSdkVersion de khong lam nguoi dung may
+         moi bi hoi quyen luu tru khong can thiet. -->
+    <uses-permission
+        android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
     <uses-feature android:name="android.hardware.camera.any" android:required="true" />
 
     <application
