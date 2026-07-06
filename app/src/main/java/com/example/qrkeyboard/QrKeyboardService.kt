@@ -277,6 +277,17 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  loi kieu chen lai/nhac lai chu vua go truoc do. */
     private var selfInitiatedChange = false
 
+    /** Cache View cho trang So va trang Ky hieu - build MOT LAN duy nhat
+     *  khi switchMode lan dau, tai su dung cho nhung lan sau bang cach
+     *  doi visibility - tranh rebuild toan bo View tree moi lan chuyen trang. */
+    private var cachedNumbersView: View? = null
+    private var cachedSymbolsView: View? = null
+
+    /** FrameLayout boc toan bo ban phim, setInputView chi goi 1 lan voi no.
+     *  Khi chuyen trang, chi can doi visibility cua cac trang ben trong. */
+    private var keyboardRootContainer: FrameLayout? = null
+    private var lettersPageView: View? = null
+
     /** AudioManager dung de phat am thanh gõ phim (xem [playKeyClickTone]).
      *  TRUOC DAY dung ToneGenerator phat mot tieng "tin" (beep dien tu tong
      *  hop) - nguoi dung phan anh nghe khong hay VA moi lan goi startTone()
@@ -749,37 +760,68 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             }
         }
 
-    override fun onCreateInputView(): View = buildKeyboardView()
+    override fun onCreateInputView(): View {
+        // Xoa cache de build lai trang LETTERS tuoi moi khi ban phim duoc
+        // mo (co the da doi man hinh xoay/chieu cao, can tinh lai keyHeightDp).
+        // Cache NUMBERS/SYMBOLS van giu de dung lai ngay neu nguoi dung
+        // chuyen trang ngay sau khi mo ban phim.
+        cachedNumbersView = null
+        cachedSymbolsView = null
+        keyboardRootContainer = null
+        lettersPageView = null
+        return buildKeyboardContainer()
+    }
 
-    /** Ve lai toan bo ban phim theo [mode] hien tai. */
-    private fun buildKeyboardView(): View {
-        // Vien tren/duoi cua toan bo ban phim cung co giam theo [keyHeightDp]
-        // de danh them chut khong gian doc khi man hinh thap (xem [keyHeightDp]).
+    /** Tao container boc 3 trang ban phim. Moi trang la mot LinearLayout
+     *  rieng, tat ca nam trong cung mot FrameLayout - khi chuyen trang chi
+     *  can doi VISIBLE/GONE, khong rebuild View nao ca. */
+    private fun buildKeyboardContainer(): View {
+        val container = FrameLayout(this).apply {
+            setBackgroundColor(Color.parseColor("#050507"))
+        }
+        keyboardRootContainer = container
+
+        // Trang LETTERS: luon build moi (co trang thai dong: Shift, ngon ngu)
+        val letters = buildLettersPage()
+        lettersPageView = letters
+        container.addView(letters)
+
+        // Trang NUMBERS: dung cache neu co
+        val numbers = cachedNumbersView ?: buildNumbersPage().also { cachedNumbersView = it }
+        container.addView(numbers)
+
+        // Trang SYMBOLS: dung cache neu co
+        val symbols = cachedSymbolsView ?: buildSymbolsPage().also { cachedSymbolsView = it }
+        container.addView(symbols)
+
+        // Hien dung trang theo mode hien tai, an 2 trang con lai
+        applyModeVisibility(container, letters, numbers, symbols)
+        return container
+    }
+
+    private fun applyModeVisibility(
+        container: FrameLayout,
+        letters: View, numbers: View, symbols: View
+    ) {
+        letters.visibility = if (mode == KeyboardMode.LETTERS) View.VISIBLE else View.GONE
+        numbers.visibility = if (mode == KeyboardMode.NUMBERS) View.VISIBLE else View.GONE
+        symbols.visibility = if (mode == KeyboardMode.SYMBOLS) View.VISIBLE else View.GONE
+    }
+
+    /** Build trang chu cai (LETTERS). Ham nay duoc goi moi khi can cap nhat
+     *  trang thai dong (Shift on/off, ngon ngu, pendingSuggestion). */
+    private fun buildLettersPage(): View {
         val verticalPaddingDp = if (keyHeightDp < 48) 2 else 6
-        // NHICH CA BAN PHIM LEN mot chut (theo phan anh nguoi dung): them
-        // rieng vao vien DUOI CUNG (khong dong vao vien tren) mot khoang dem
-        // nho [EXTRA_BOTTOM_LIFT_DP]. Vi cua so ban phim (IME) tu dong tinh
-        // chieu cao theo WRAP_CONTENT va luon dinh (neo) o SAT DAY man hinh,
-        // them khoang dem o DUOI se day toan bo cac hang phim len cao hon
-        // mot chut so voi day man hinh/thanh dieu huong, ma KHONG lam xe dich
-        // vi tri tuong doi giua cac hang voi nhau (khac voi viec doi
-        // [verticalPaddingDp] o tren, vi do la vien CHUNG ca tren lan duoi).
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#050507"))
             setPadding(dp(4), dp(verticalPaddingDp), dp(4), dp(verticalPaddingDp + EXTRA_BOTTOM_LIFT_DP))
         }
 
         when (mode) {
             KeyboardMode.LETTERS -> {
-                // Neu dang co goi y sua loi Tieng Viet dang cho (xem
-                // [pendingSuggestion]), hien thanh goi y NGAY TREN CUNG,
-                // truoc ca hang so, de de thay va cham vao ngay.
                 if (pendingSuggestion != null) {
                     root.addView(buildAutocorrectSuggestionRow())
                 }
-                // Hang so (1234567890) luon hien thi co dinh phia tren cac hang
-                // chu cai, khong can chuyen trang moi go duoc so.
                 root.addView(buildCharRow(numberRows[0]))
                 letterRows.forEachIndexed { index, row ->
                     val rowView = buildCharRow(row, applyShiftCase = true)
@@ -836,35 +878,75 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 }
                 root.addView(buildLettersBottomRow())
             }
-            KeyboardMode.NUMBERS -> {
-                // Hang emoji co the TRUOT NGANG, nam TREN CUNG trang so, de
-                // nguoi dung luot tim emoji mong muon ma khong can chuyen
-                // trang hay mo ban phim emoji rieng cua he thong.
-                root.addView(buildEmojiRow())
-                numberRows.forEach { row -> root.addView(buildCharRow(row)) }
-                root.addView(buildNumbersRow3())
-                root.addView(buildNumbersBottomRow())
-            }
-            KeyboardMode.SYMBOLS -> {
-                extendedSymbolRows.forEach { row -> root.addView(buildCharRow(row)) }
-                root.addView(buildExtendedSymbolsRow3())
-                root.addView(buildExtendedSymbolsBottomRow())
-            }
+            else -> { /* NUMBERS/SYMBOLS duoc xu ly o buildNumbersPage/buildSymbolsPage */ }
         }
 
         return root
     }
 
-    /** Chuyen sang trang [newMode] va ve lai ban phim ngay lap tuc. */
-    private fun switchMode(newMode: KeyboardMode) {
-        mode = newMode
-        redrawKeyboard()
+    /** Build trang so (NUMBERS) - chi goi 1 lan, ket qua duoc cache lai. */
+    private fun buildNumbersPage(): View {
+        val verticalPaddingDp = if (keyHeightDp < 48) 2 else 6
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(4), dp(verticalPaddingDp), dp(4), dp(verticalPaddingDp + EXTRA_BOTTOM_LIFT_DP))
+            addView(buildEmojiRow())
+            numberRows.forEach { row -> addView(buildCharRow(row)) }
+            addView(buildNumbersRow3())
+            addView(buildNumbersBottomRow())
+        }
     }
 
-    /** Ve lai ban phim voi [mode] hien tai (dung khi doi trang thai Shift,
-     *  doi ngon ngu, ... nhung khong doi trang ban phim). */
+    /** Build trang ky hieu (SYMBOLS) - chi goi 1 lan, ket qua duoc cache lai. */
+    private fun buildSymbolsPage(): View {
+        val verticalPaddingDp = if (keyHeightDp < 48) 2 else 6
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(4), dp(verticalPaddingDp), dp(4), dp(verticalPaddingDp + EXTRA_BOTTOM_LIFT_DP))
+            extendedSymbolRows.forEach { row -> addView(buildCharRow(row)) }
+            addView(buildExtendedSymbolsRow3())
+            addView(buildExtendedSymbolsBottomRow())
+        }
+    }
+
+    /** Chuyen sang trang [newMode]: chi doi visibility, KHONG rebuild View.
+     *  Neu container chua duoc tao (hiem gap), fallback ve setInputView. */
+    private fun switchMode(newMode: KeyboardMode) {
+        mode = newMode
+        val container = keyboardRootContainer
+        val letters = lettersPageView
+        val numbers = cachedNumbersView
+        val symbols = cachedSymbolsView
+        if (container != null && letters != null && numbers != null && symbols != null) {
+            applyModeVisibility(container, letters, numbers, symbols)
+        } else {
+            setInputView(buildKeyboardContainer())
+        }
+    }
+
+    /** Ve lai trang LETTERS (Shift/ngon ngu doi) va cap nhat visibility.
+     *  Trang NUMBERS/SYMBOLS van giu nguyen cache, khong bi rebuild. */
     private fun redrawKeyboard() {
-        setInputView(buildKeyboardView())
+        val container = keyboardRootContainer
+        if (container != null && mode == KeyboardMode.LETTERS) {
+            // Xoa trang LETTERS cu, build trang moi co trang thai cap nhat
+            lettersPageView?.let { container.removeView(it) }
+            val newLetters = buildLettersPage()
+            lettersPageView = newLetters
+            // Chen trang LETTERS moi vao index 0 (duoi cung stack FrameLayout
+            // de NUMBERS/SYMBOLS van nam phia tren nhung dang GONE)
+            container.addView(newLetters, 0)
+            val numbers = cachedNumbersView ?: buildNumbersPage().also {
+                cachedNumbersView = it; container.addView(it)
+            }
+            val symbols = cachedSymbolsView ?: buildSymbolsPage().also {
+                cachedSymbolsView = it; container.addView(it)
+            }
+            applyModeVisibility(container, newLetters, numbers, symbols)
+        } else {
+            // Fallback: rebuild toan bo (vd chua co container)
+            setInputView(buildKeyboardContainer())
+        }
     }
 
     /** Moi lan mo lai ban phim o mot o nhap moi, luon quay ve trang chu cai,
@@ -2240,6 +2322,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         previewPopup?.let { if (it.isShowing) it.dismiss() }
         previewPopup = null
         previewBubble = null
+        cachedNumbersView = null
+        cachedSymbolsView = null
+        keyboardRootContainer = null
+        lettersPageView = null
     }
 }
 
