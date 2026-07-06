@@ -348,6 +348,43 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  lien tuc nhieu lan lam xep hang nhieu lenh takePicture() cung luc. */
     private var qrCaptureInProgress = false
 
+    /** View goc (FrameLayout) cua khung quet, GIU THEM mot tham chieu kieu
+     *  FrameLayout (cung chinh la [qrOverlayView], chi khac kieu) de co the
+     *  addView/removeView anh xem truoc anh vua chup ([qrCapturedPhotoView])
+     *  len tren no bat cu luc nao, khong can build lai ca khung quet. */
+    private var qrOverlayRootLayout: FrameLayout? = null
+
+    /** ImageView hien anh vua chup, PHU KIN toan bo khung quet (che luon
+     *  camera preview + cac nut) cho toi khi nguoi dung cham vao de dong -
+     *  xem [showCapturedPhotoPreview]/[dismissCapturedPhotoPreview]. null
+     *  nghia la dang khong xem anh nao (camera preview binh thuong). */
+    private var qrCapturedPhotoView: android.widget.ImageView? = null
+
+    /** True trong luc anh vua chup dang duoc hien ([qrCapturedPhotoView] !=
+     *  null) - dung de [processQrFrame] TAM DUNG viec nhan dien QR trong luc
+     *  nay, tranh vua xem anh vua chup xong lai bi tu dong quet/nhay sang ma
+     *  QR khac ngay ben duoi anh dang xem. */
+    private var qrShowingCapturedPhoto = false
+
+    /** "Chia khoa" nhan dang phien nhap lieu (o nhap + ung dung) tai thoi
+     *  diem khung quet QR duoc MO ([showQrOverlay]) - xem [editorSessionKey]
+     *  va cach dung o [onStartInputView]. Dung de phan biet: khung quet dang
+     *  mo do nguoi dung THAT SU roi sang mot o nhap/ung dung KHAC (can dong
+     *  khung quet, chi con lai ban phim) hay chi la he thong tai tao lai
+     *  View ban phim tam thoi cho CHINH o nhap cu (vd WebView refresh - can
+     *  giu nguyen khung quet nhu truoc gio). */
+    private var qrOverlaySessionKey: String? = null
+
+    /** Sinh "chia khoa" dinh danh mot phien nhap lieu tu EditorInfo he thong
+     *  cung cap, dung de so sanh xem nguoi dung co dang o LAI o nhap/ung
+     *  dung cu hay khong (xem [qrOverlaySessionKey]). Ghep ca ten goi ung
+     *  dung, fieldId lan inputType de giam kha nang trung lap gia (vd nhieu
+     *  o nhap cung fieldId = 0 trong cac view tuy chinh). */
+    private fun editorSessionKey(info: EditorInfo?): String {
+        if (info == null) return "null"
+        return "${info.packageName}:${info.fieldId}:${info.inputType}"
+    }
+
     /** Tuong tu `handled` truoc day o QrScanActivity: chan viec xu ly nhieu
      *  frame camera cung luc trong khoang thoi gian tu luc tim thay 1 ma QR
      *  toi luc phat xong tieng bip/dong khung (xem [onQrFound]). */
@@ -1017,6 +1054,21 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  trang so/ky hieu tu lan truoc). */
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+
+        // SUA LOI nguoi dung phan anh: chon nhap lieu o mot o khac (hoac
+        // chuyen sang ung dung khac) trong luc khung quet QR dang mo lai
+        // KHONG dong khung quet do - khung quet "dinh" theo qua o nhap moi,
+        // du no khong con lien quan gi. So sanh "chia khoa" phien nhap lieu
+        // luc khung quet duoc mo ([qrOverlaySessionKey]) voi o nhap MOI vua
+        // duoc bao qua day: neu khac nhau, tuc nguoi dung THAT SU da chuyen
+        // sang o nhap/ung dung khac - dong khung quet NGAY, RESET lai chi
+        // con ban phim binh thuong. Neu giong nhau (cung o nhap cu, chi la
+        // he thong tai tao View tam thoi vd WebView refresh), giu nguyen
+        // khung quet nhu truoc gio (khong reset oan).
+        if (qrOverlayView != null && editorSessionKey(info) != qrOverlaySessionKey) {
+            hideQrOverlay()
+        }
+
         // Ban phim vua duoc mo lai (du la lan dau hay do he thong tai tao
         // sau mot lan finishingInput = true "hu") - huy moi lenh dong khung
         // quet QR dang cho, giu nguyen khung quet + camera nhu truoc do.
@@ -2122,6 +2174,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             return
         }
         qrOverlayView = view
+        qrOverlaySessionKey = editorSessionKey(currentInputEditorInfo)
         lifecycleRegistry.currentState = Lifecycle.State.RESUMED
         startQrCamera()
     }
@@ -2135,6 +2188,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             try { qrWindowManager.removeView(it) } catch (e: Exception) { /* da bi go truoc do */ }
         }
         qrOverlayView = null
+        qrOverlayRootLayout = null
+        qrCapturedPhotoView = null
+        qrShowingCapturedPhoto = false
+        qrOverlaySessionKey = null
         qrPreviewView = null
         qrFlashButton = null
         qrFlashOn = false
@@ -2150,6 +2207,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  chua no la mot View thuong, khong con la mot Activity/Window rieng. */
     private fun buildQrOverlayContentView(): View {
         val root = FrameLayout(this)
+        qrOverlayRootLayout = root
 
         val preview = PreviewView(this).apply {
             layoutParams = FrameLayout.LayoutParams(
@@ -2199,22 +2257,30 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // voi hai nut do. Dung Gravity.CENTER_VERTICAL or END + KHONG dat
         // margin doc (chi margin ngang) de no tu nam giua chieu cao khung,
         // tuc dung giua khoang cach flash/huy ve mat thi giac.
-        val captureBg = GradientDrawable().apply {
-            cornerRadius = dp(8).toFloat()
-            setColor(Color.parseColor("#CC202124"))
-        }
+        //
+        // SUA giao dien theo yeu cau nguoi dung: THAY hinh may anh (emoji
+        // 📷 tren nen chu nhat bo goc) BANG mot VONG TRON mau TRANG DAY (kieu
+        // nut chup chuan cua may anh/may quay - chi la duong VIEN tron day,
+        // KHONG chu, KHONG nen dac, giong nut chup quen thuoc tren cac ung
+        // dung camera). Dung GradientDrawable.OVAL + setStroke (day net vien)
+        // thay vi chu/emoji.
         val captureBtn = Button(this).apply {
-            text = "\ud83d\udcf7"
+            text = ""
             isAllCaps = false
-            setTextColor(Color.WHITE)
-            textSize = 18f
-            includeFontPadding = true
-            background = captureBg
-            setPadding(dp(10), dp(6), dp(10), dp(6))
+            minWidth = 0
+            minHeight = 0
+            minimumWidth = 0
+            minimumHeight = 0
+            stateListAnimator = null
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.TRANSPARENT)
+                setStroke(dp(5), Color.WHITE)
+            }
             layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                dp(52), dp(52),
                 Gravity.CENTER_VERTICAL or Gravity.END
-            ).apply { setMargins(0, 0, dp(12), 0) }
+            ).apply { setMargins(0, 0, dp(16), 0) }
             setOnClickListener { captureQrPhoto() }
         }
         qrCaptureButton = captureBtn
@@ -2390,6 +2456,14 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                                 else "\u0110\u00e3 l\u01b0u \u1ea3nh v\u00e0o thi\u1ebft b\u1ecb (\u1ee9ng d\u1ee5ng n\u00e0y kh\u00f4ng nh\u1eadn \u1ea3nh tr\u1ef1c ti\u1ebfp t\u1eeb b\u00e0n ph\u00edm)",
                                 Toast.LENGTH_LONG
                             ).show()
+                            // SUA LOI nguoi dung phan anh: TRUOC DAY sau khi
+                            // chup + gui xong, khung quet lap tuc quay lai
+                            // quet lien tuc, khong he cho xem lai anh vua
+                            // chup. GIO DAY: hien NGAY anh vua chup phu kin
+                            // khung quet, tam dung quet (xem
+                            // [qrShowingCapturedPhoto]), cho toi khi nguoi
+                            // dung tu cham vao anh de dong va tro lai quet.
+                            showCapturedPhotoPreview(savedUri)
                         } else {
                             Toast.makeText(this@QrKeyboardService, "\u0110\u00e3 ch\u1ee5p \u1ea3nh nh\u01b0ng kh\u00f4ng l\u1ea5y \u0111\u01b0\u1ee3c \u0111\u01b0\u1eddng d\u1eabn \u1ea3nh \u0111\u00e3 l\u01b0u", Toast.LENGTH_LONG).show()
                         }
@@ -2441,10 +2515,104 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
     }
 
+    /** Hien anh VUA CHUP phu kin toan bo khung quet (che camera preview +
+     *  cac nut Flash/Huy/Chup), tam dung nhan dien QR ([qrShowingCapturedPhoto])
+     *  cho toi khi nguoi dung cham vao anh de dong ([dismissCapturedPhotoPreview]).
+     *  Giai ma anh o LUONG PHU (khong phai luong chinh) va thu nho truoc
+     *  (xem [decodeSampledBitmap]) de tranh giat/lag hoac OOM voi anh chup
+     *  full-size tren cac may co camera do phan giai cao. */
+    private fun showCapturedPhotoPreview(uri: Uri) {
+        val root = qrOverlayRootLayout ?: return
+
+        // Phong truong hop (hiem) view cu chua kip don dep xong.
+        qrCapturedPhotoView?.let { root.removeView(it) }
+
+        val imageView = android.widget.ImageView(this).apply {
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
+            )
+            scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
+            setBackgroundColor(Color.BLACK)
+            contentDescription = "\u1ea2nh v\u1eeba ch\u1ee5p - ch\u1ea1m \u0111\u1ec3 ti\u1ebfp t\u1ee5c qu\u00e9t"
+            setOnClickListener { dismissCapturedPhotoPreview() }
+        }
+        root.addView(imageView)
+        qrCapturedPhotoView = imageView
+        qrShowingCapturedPhoto = true
+
+        val executor = qrCameraExecutor ?: Executors.newSingleThreadExecutor()
+        executor.execute {
+            val bitmap = try {
+                decodeSampledBitmap(uri, 1080)
+            } catch (e: Exception) {
+                null
+            }
+            Handler(Looper.getMainLooper()).post {
+                // Chi ap dung neu day VAN CON DUNG ImageView dang hien (nguoi
+                // dung co the da cham dong truoc khi giai ma xong).
+                if (qrCapturedPhotoView === imageView) {
+                    if (bitmap != null) {
+                        imageView.setImageBitmap(bitmap)
+                    } else {
+                        Toast.makeText(
+                            this@QrKeyboardService,
+                            "Kh\u00f4ng hi\u1ec3n th\u1ecb \u0111\u01b0\u1ee3c \u1ea3nh v\u1eeba ch\u1ee5p, nh\u01b0ng \u1ea3nh v\u1eabn \u0111\u00e3 \u0111\u01b0\u1ee3c l\u01b0u",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        dismissCapturedPhotoPreview()
+                    }
+                }
+            }
+        }
+    }
+
+    /** Dong anh xem truoc, quay lai camera preview + tiep tuc nhan dien QR
+     *  binh thuong (goi khi nguoi dung cham vao anh, xem [showCapturedPhotoPreview]). */
+    private fun dismissCapturedPhotoPreview() {
+        qrCapturedPhotoView?.let { qrOverlayRootLayout?.removeView(it) }
+        qrCapturedPhotoView = null
+        qrShowingCapturedPhoto = false
+        // Cho phep nhan mot ma QR moi ngay sau khi tro lai quet, khong bi
+        // ket dinh vao ma cu (qrLastDeliveredText giu nguyen de tranh nhan
+        // lai CHINH ma vua quet truoc do lien tuc).
+        qrFrameHandled.set(false)
+    }
+
+    /** Giai ma anh tu [uri] voi kich thuoc TOI DA [maxDim] px (theo canh dai
+     *  hon), dung 2 lan decode (lan 1 chi doc kich thuoc that, lan 2 moi giai
+     *  ma that voi inSampleSize phu hop) - tranh tai toan bo anh goc (co the
+     *  rat lon) vao bo nho chi de hien thi mot khung xem truoc nho. */
+    private fun decodeSampledBitmap(uri: Uri, maxDim: Int): android.graphics.Bitmap? {
+        // Lan 1: chi do KICH THUOC that (inJustDecodeBounds = true luon lam
+        // decodeStream() tra ve null - KHONG dung gia tri tra ve nay de
+        // kiem tra loi, chi dung de biet co mo duoc stream hay khong).
+        val boundsOptions = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        val boundsStream = contentResolver.openInputStream(uri) ?: return null
+        boundsStream.use { android.graphics.BitmapFactory.decodeStream(it, null, boundsOptions) }
+
+        var sampleSize = 1
+        while (boundsOptions.outWidth / sampleSize > maxDim || boundsOptions.outHeight / sampleSize > maxDim) {
+            sampleSize *= 2
+        }
+
+        // Lan 2: giai ma THAT voi inSampleSize da tinh - can mo LAI stream vi
+        // stream lan 1 da doc/dong xong.
+        val decodeOptions = android.graphics.BitmapFactory.Options().apply { inSampleSize = sampleSize }
+        val decodeStream = contentResolver.openInputStream(uri) ?: return null
+        return decodeStream.use { android.graphics.BitmapFactory.decodeStream(it, null, decodeOptions) }
+    }
+
     /** Y het logic cu o QrScanActivity.processFrame(): chi nhan mot ma QR
      *  hop le (khong ky tu dac biet, khac ma vua xuat gan nhat) trong luc
      *  chua co ma nao dang cho xu ly ([qrFrameHandled]). */
     private fun processQrFrame(imageProxy: ImageProxy, scanner: BarcodeScanner) {
+        // Dang xem anh vua chup ([showCapturedPhotoPreview]) - TAM DUNG nhan
+        // dien QR, tranh vua xem anh xong bi tu dong nhay/quet ma khac ngay
+        // ben duoi anh dang hien (xem [qrShowingCapturedPhoto]).
+        if (qrShowingCapturedPhoto) {
+            imageProxy.close()
+            return
+        }
         val mediaImage = imageProxy.image
         if (mediaImage == null) {
             imageProxy.close()
