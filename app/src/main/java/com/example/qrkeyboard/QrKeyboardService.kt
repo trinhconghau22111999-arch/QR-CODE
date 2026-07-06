@@ -33,14 +33,22 @@ import android.widget.LinearLayout
 import android.widget.PopupWindow
 import android.widget.TextView
 import android.widget.Toast
+import android.content.ContentValues
+import android.content.ClipDescription
+import android.net.Uri
+import android.provider.MediaStore
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
+import androidx.core.view.inputmethod.InputConnectionCompat
+import androidx.core.view.inputmethod.InputContentInfoCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -328,6 +336,17 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     private var qrCamera: Camera? = null
     private var qrFlashOn = false
     private var qrFlashButton: Button? = null
+
+    /** UseCase ChUP ANH (rieng biet voi [ImageAnalysis] dung de quet QR) -
+     *  duoc bind CUNG LUC voi preview + imageAnalysis trong [startQrCamera],
+     *  chi giu lai anh khi thuc su nguoi dung bam nut chup (xem
+     *  [captureQrPhoto]), khong lien quan gi den qua trinh quet QR tu dong. */
+    private var qrImageCapture: ImageCapture? = null
+    private var qrCaptureButton: Button? = null
+
+    /** Chan spam: dang chup mot tam thi khoa nut lai, tranh nguoi dung bam
+     *  lien tuc nhieu lan lam xep hang nhieu lenh takePicture() cung luc. */
+    private var qrCaptureInProgress = false
 
     /** Tuong tu `handled` truoc day o QrScanActivity: chan viec xu ly nhieu
      *  frame camera cung luc trong khoang thoi gian tu luc tim thay 1 ma QR
@@ -2119,6 +2138,9 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         qrPreviewView = null
         qrFlashButton = null
         qrFlashOn = false
+        qrImageCapture = null
+        qrCaptureInProgress = false
+        qrCaptureButton = null
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
     }
 
@@ -2172,6 +2194,32 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         qrFlashButton = flashBtn
         root.addView(flashBtn)
 
+        // Nut "Chup anh nhanh" - theo yeu cau nguoi dung, nam GIUA nut Flash
+        // (goc tren-phai) va nut Huy (goc duoi-phai), CUNG mot canh ben phai
+        // voi hai nut do. Dung Gravity.CENTER_VERTICAL or END + KHONG dat
+        // margin doc (chi margin ngang) de no tu nam giua chieu cao khung,
+        // tuc dung giua khoang cach flash/huy ve mat thi giac.
+        val captureBg = GradientDrawable().apply {
+            cornerRadius = dp(8).toFloat()
+            setColor(Color.parseColor("#CC202124"))
+        }
+        val captureBtn = Button(this).apply {
+            text = "\ud83d\udcf7"
+            isAllCaps = false
+            setTextColor(Color.WHITE)
+            textSize = 18f
+            includeFontPadding = true
+            background = captureBg
+            setPadding(dp(10), dp(6), dp(10), dp(6))
+            layoutParams = FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER_VERTICAL or Gravity.END
+            ).apply { setMargins(0, 0, dp(12), 0) }
+            setOnClickListener { captureQrPhoto() }
+        }
+        qrCaptureButton = captureBtn
+        root.addView(captureBtn)
+
         return root
     }
 
@@ -2214,11 +2262,21 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 processQrFrame(imageProxy, scanner)
             }
 
+            // UseCase rieng cho tinh nang "Chup anh nhanh" (nut giua Flash va
+            // Huy) - hoan toan doc lap voi imageAnalysis dung de quet QR o
+            // tren, chi chup ANH THAT khi nguoi dung chu dong bam nut, KHONG
+            // anh huong den luong quet QR tu dong dang chay song song.
+            val imageCaptureUseCase = ImageCapture.Builder()
+                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                .build()
+
             try {
                 cameraProvider.unbindAll()
                 qrCamera = cameraProvider.bindToLifecycle(
-                    this, CameraSelector.DEFAULT_BACK_CAMERA, previewUseCase, imageAnalysis
+                    this, CameraSelector.DEFAULT_BACK_CAMERA,
+                    previewUseCase, imageAnalysis, imageCaptureUseCase
                 )
+                qrImageCapture = imageCaptureUseCase
             } catch (e: Exception) {
                 Toast.makeText(this, "Kh\u00f4ng m\u1edf \u0111\u01b0\u1ee3c camera: ${e.message}", Toast.LENGTH_SHORT).show()
                 hideQrOverlay()
@@ -2236,6 +2294,151 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         qrCameraExecutor?.shutdown()
         qrCameraExecutor = null
         qrCamera = null
+        qrImageCapture = null
+    }
+
+    /** TINH NANG "CHUP ANH NHANH": nguoi dung bam nut chup (giua Flash va
+     *  Huy) trong luc khung quet QR dang mo -> chup MOT tam anh THAT (khac
+     *  hoan toan voi luong quet QR tu dong o [processQrFrame]) bang UseCase
+     *  [qrImageCapture] rieng, lam HAI viec:
+     *   1) LUON luu anh vao thu vien may (MediaStore) truoc tien, du app
+     *      dang go co nhan duoc anh hay khong - dam bao nguoi dung khong
+     *      bao gio mat anh vua chup.
+     *   2) SAU DO thu gui THANG anh do vao o nhap dang mo qua commitContent
+     *      (giong co che ban phim GIF/sticker gui anh) - CHI hoat dong neu
+     *      app dang go (Zalo/Messenger/...) co khai bao ho tro nhan noi
+     *      dung dang anh qua ban phim (EditorInfo.contentMimeTypes). Neu
+     *      app do KHONG ho tro, bao cho nguoi dung biet anh van da duoc luu
+     *      vao may, chi rieng buoc gui thang la khong lam duoc. */
+    private fun captureQrPhoto() {
+        val imageCapture = qrImageCapture
+        if (imageCapture == null) {
+            Toast.makeText(this, "Camera ch\u01b0a s\u1eb5n s\u00e0ng, th\u1eed l\u1ea1i sau", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (qrCaptureInProgress) return // chan bam lien tuc nhieu lan
+
+        // CHI may Android 9 (API 28) tro xuong moi can quyen nay (xem chu
+        // thich tai AndroidManifest.xml) - Android 10+ dung Scoped Storage
+        // nen khong bao gio roi vao nhanh nay. Vi day la truong hop rat
+        // hiem (may qua cu) va IME KHONG the tu hien hop thoai xin quyen
+        // runtime (giong ly do can QrCameraPermissionActivity rieng cho
+        // Camera), don gian chi bao nguoi dung tu vao Cai dat cap quyen,
+        // thay vi xay dung them mot Activity xin quyen nua chi cho truong
+        // hop ngay cang hiem gap nay.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            Toast.makeText(
+                this,
+                "H\u00e3y c\u1ea5p quy\u1ec1n L\u01b0u tr\u1eef cho \u1ee9ng d\u1ee5ng trong C\u00e0i \u0111\u1eb7t \u0111\u1ec3 d\u00f9ng ch\u1ee5p \u1ea3nh",
+                Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+
+        qrCaptureInProgress = true
+        qrCaptureButton?.isEnabled = false
+
+        val fileName = "QR_${System.currentTimeMillis()}.jpg"
+        val contentValues = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                // Tu Android 10: luu vao thu muc rieng "Pictures/QrKeyboard"
+                // trong bo nho dung chung, khong can xin quyen luu tru nao
+                // ca (Scoped Storage tu quan ly qua MediaStore).
+                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/QrKeyboard")
+                put(MediaStore.Images.Media.IS_PENDING, 1)
+            }
+        }
+        val outputOptions = ImageCapture.OutputFileOptions.Builder(
+            contentResolver, MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues
+        ).build()
+
+        val executor = qrCameraExecutor ?: Executors.newSingleThreadExecutor()
+        imageCapture.takePicture(
+            outputOptions,
+            executor,
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                    val savedUri = output.savedUri
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && savedUri != null) {
+                        // Go co "IS_PENDING" de anh chinh thuc hien trong
+                        // thu vien (truoc do dang o trang thai "an", chi
+                        // may thu tao ra moi thay, tranh app khac doc phai
+                        // file dang ghi do).
+                        val doneValues = ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }
+                        try {
+                            contentResolver.update(savedUri, doneValues, null, null)
+                        } catch (e: Exception) {
+                            android.util.Log.w("QrKeyboardService", "Khong go duoc IS_PENDING: ${e.message}")
+                        }
+                    }
+                    val mainHandler = Handler(Looper.getMainLooper())
+                    mainHandler.post {
+                        qrCaptureInProgress = false
+                        qrCaptureButton?.isEnabled = true
+                        vibrateKeyPress()
+                        qrToneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP2, 120)
+                        if (savedUri != null) {
+                            val sentToChat = tryCommitPhotoToChat(savedUri)
+                            Toast.makeText(
+                                this@QrKeyboardService,
+                                if (sentToChat) "\u0110\u00e3 l\u01b0u \u1ea3nh v\u00e0 g\u1eedi v\u00e0o khung chat"
+                                else "\u0110\u00e3 l\u01b0u \u1ea3nh v\u00e0o thi\u1ebft b\u1ecb (\u1ee9ng d\u1ee5ng n\u00e0y kh\u00f4ng nh\u1eadn \u1ea3nh tr\u1ef1c ti\u1ebfp t\u1eeb b\u00e0n ph\u00edm)",
+                                Toast.LENGTH_LONG
+                            ).show()
+                        } else {
+                            Toast.makeText(this@QrKeyboardService, "\u0110\u00e3 ch\u1ee5p \u1ea3nh nh\u01b0ng kh\u00f4ng l\u1ea5y \u0111\u01b0\u1ee3c \u0111\u01b0\u1eddng d\u1eabn \u1ea3nh \u0111\u00e3 l\u01b0u", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+
+                override fun onError(exception: ImageCaptureException) {
+                    val mainHandler = Handler(Looper.getMainLooper())
+                    mainHandler.post {
+                        qrCaptureInProgress = false
+                        qrCaptureButton?.isEnabled = true
+                        Toast.makeText(this@QrKeyboardService, "Ch\u1ee5p \u1ea3nh th\u1ea5t b\u1ea1i: ${exception.message}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+        )
+    }
+
+    /** Thu gui anh vua chup THANG vao o nhap dang mo, dung API chinh thuc
+     *  cua Android danh cho ban phim gui noi dung phong phu (anh/GIF...):
+     *  InputConnectionCompat.commitContent. Tra ve true neu app dang go
+     *  XAC NHAN da nhan (chap nhan mime "image/jpeg" trong EditorInfo);
+     *  tra ve false neu app do khong khai bao ho tro (rat nhieu app - vd
+     *  cac o nhap thong thuong/form dang nhap - se khong ho tro, day la
+     *  DIEU BINH THUONG, khong phai loi). */
+    private fun tryCommitPhotoToChat(uri: Uri): Boolean {
+        val ic = currentInputConnection ?: return false
+        val editorInfo = currentInputEditorInfo ?: return false
+        val supportedMimeTypes = androidx.core.view.inputmethod.EditorInfoCompat.getContentMimeTypes(editorInfo)
+        val mimeType = "image/jpeg"
+        val isSupported = supportedMimeTypes.any { ClipDescription.compareMimeTypes(mimeType, it) }
+        if (!isSupported) return false
+
+        val contentInfo = InputContentInfoCompat(
+            uri,
+            ClipDescription("QR Keyboard photo", arrayOf(mimeType)),
+            null
+        )
+        return try {
+            selfInitiatedChange = true
+            InputConnectionCompat.commitContent(
+                ic, editorInfo, contentInfo,
+                InputConnectionCompat.INPUT_CONTENT_GRANT_READ_URI_PERMISSION,
+                null
+            )
+        } catch (e: Exception) {
+            android.util.Log.w("QrKeyboardService", "commitContent that bai: ${e.message}")
+            false
+        }
     }
 
     /** Y het logic cu o QrScanActivity.processFrame(): chi nhan mot ma QR
