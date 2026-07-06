@@ -140,8 +140,17 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
          *  huong, theo phan anh cua nguoi dung. Chi tang vien DUOI (khong
          *  dong vien tren) vi cua so IME neo o day man hinh - them vien duoi
          *  se day toan bo noi dung len cao hon ma khong lam xe lech vi tri
-         *  tuong doi giua cac hang phim voi nhau. */
-        private const val EXTRA_BOTTOM_LIFT_DP = 4
+         *  tuong doi giua cac hang phim voi nhau.
+         *
+         *  SUA (theo phan anh moi cua nguoi dung): gia tri 4 truoc day nhich
+         *  ban phim LEN QUA NHIEU, khien hang cuoi cung (hang co dau cach)
+         *  nam CACH XA 3 phim dieu huong he thong (Back/Home/Recent) o cả 3
+         *  trang ban phim (vi day la padding o cap ROOT, dung CHUNG cho moi
+         *  che do LETTERS/NUMBERS/SYMBOLS). GIAM xuong con 1 de hang cuoi
+         *  ha THAP XUONG mot chut, gan lai voi 3 phim dieu huong hon, ma
+         *  van con giu mot khoang cach nho (khac 0) de khong dinh sat vao
+         *  thanh dieu huong. */
+        private const val EXTRA_BOTTOM_LIFT_DP = 1
 
         /** Khoang thoi gian (ms) TRE truoc khi thuc su dong khung quet QR +
          *  coi la "roi ban phim" sau khi he thong bao [onFinishInputView] voi
@@ -575,60 +584,28 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                         (rowView.layoutParams as LinearLayout.LayoutParams).topMargin -= dp(5)
                         // Hang chu cai cuoi cung (zxcvbnm): nut Shift (⇧) o
                         // DAU hang (ben trai), nut xoa (⌫) o CUOI hang (ben
-                        // phai) - giong vi tri quen thuoc tren da so ban phim
-                        // khac, thay vi nam ca hai o hang duoi cung nhu truoc.
+                        // phai) - giu nguyen vi tri nay (KHONG chuyen xuong
+                        // hang duoi cung), chi sua loi "Shift bi lech cao"
+                        // bang isBaselineAligned = false o [buildCharRow].
                         rowView.addView(
                             buildKey(
                                 "\u2b06", weight = 1.5f,
                                 highlight = isShiftOn || showCapitalPreview
-                                // KHONG con dung verticalNudgeDp o day nua: truoc
-                                // day phim nay bi nhich rieng +3 (khac voi cac
-                                // phim chu z/x/c/v...m va phim ⌫ CUNG HANG, tat
-                                // ca deu de mac dinh 0) - vi pham dung yeu cau
-                                // "cac phim CUNG HANG phai NGANG NHAU het". Bo
-                                // nhich di de Shift level tuyet doi voi phan con
-                                // lai cua hang. Khoang cach xuong hang duoi (xem
-                                // [buildLettersBottomRow]) van dam bao khong
-                                // chong/de nhau, vi hang duoi da dung baseMarginDp
-                                // = 4 rieng, cho margin tren = 1dp - khop voi
-                                // margin duoi mac dinh 1dp cua CA hang chu cai
-                                // nay (bao gom ca Shift), tao khoang cach DEU
-                                // NHAU dp(2) tren toan bo chieu rong.
                             ) {
                                 val now = android.os.SystemClock.uptimeMillis()
                                 val isDoubleTap = now - lastShiftTapTime <= SHIFT_DOUBLE_TAP_MAX_INTERVAL_MS
-                                // Dat lai ve 0 sau khi da tinh la dup-tap, de
-                                // mot cham thu 3 lien ngay sau do khong bi
-                                // hieu nham la dup-tap cua cap tiep theo.
                                 lastShiftTapTime = if (isDoubleTap) 0L else now
                                 when {
-                                    // Dup-tap: bat/tat CAPS LOCK (giu hoa lien
-                                    // tuc). Lan cham dau tien cua cap dup-tap
-                                    // nay co the da tam thoi bat
-                                    // [capitalizeNextLetter] (nhanh nhu chop,
-                                    // xem nhanh "else" ben duoi) - xoa no di
-                                    // vi Caps Lock da du hieu luc, khong can
-                                    // co "mot chu" rieng nua.
                                     isDoubleTap -> {
                                         isShiftOn = !isShiftOn
                                         capitalizeNextLetter = false
                                         showCapitalPreview = false
                                     }
-                                    // Dang bat Caps Lock san (tu lan dup-tap
-                                    // truoc) va nguoi dung cham THEM mot lan
-                                    // don (khong phai dup-tap) nua: tat Caps
-                                    // Lock di, giong hanh vi quen thuoc tren
-                                    // cac ban phim khac.
                                     isShiftOn -> {
                                         isShiftOn = false
                                         capitalizeNextLetter = false
                                         showCapitalPreview = false
                                     }
-                                    // Cham 1 lan don binh thuong: dao trang
-                                    // thai "viet hoa CHU CAI KE TIEP roi tu
-                                    // tat" - cham lai lan nua (van la don, chua
-                                    // du nhanh de tinh la dup-tap) se HUY bo
-                                    // y dinh viet hoa do di.
                                     else -> {
                                         capitalizeNextLetter = !capitalizeNextLetter
                                         showCapitalPreview = capitalizeNextLetter
@@ -703,6 +680,20 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     private fun buildCharRow(chars: String, applyShiftCase: Boolean = false): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
+            // SUA loi nguoi dung phan anh: phim Shift (⇧, textSize 28f) nam
+            // "cao hon" han cac phim chu thuong (z, x, c... textSize 16f)
+            // CUNG HANG, DU tat ca deu khai bao chieu cao dp(keyHeightDp) y
+            // het nhau. NGUYEN NHAN: LinearLayout mac dinh (isBaselineAligned
+            // = true) CANH cac phim con theo BASELINE CHU (duong ke chan
+            // chu), khong phai theo KHUNG phim - chu cang to (28f) thi
+            // baseline cang nam THAP hon trong khung phim (de danh cho phan
+            // "duoi dong" - descent), buoc Android phai DAY LECH VI TRI ca
+            // khung phim do de baseline khop voi cac phim chu nho hon, dan
+            // toi hien tuong "phim to chu bi day cao/thap hon" nhu phan anh.
+            // TAT han (isBaselineAligned = false) de MOI phim duoc dat ngay
+            // ngan theo dung KHUNG (top/height thuc te, giong het nhau) -
+            // khong con phu thuoc kich thuoc chu ben trong nua.
+            isBaselineAligned = false
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             )
