@@ -2987,12 +2987,28 @@ private object VietnameseTelex {
                 val uoIdx = (0 until word.length - 1).lastOrNull { i ->
                     charToGroupTone[word[i]]?.first == 9 && charToGroupTone[word[i + 1]]?.first == 6
                 }
+                // SUA LOI nguoi dung phan anh: go "uu" (hai chu "u" LIEN
+                // TIEP) roi go "w" TRUOC DAY ra "uư" (bien doi nham chu "u"
+                // THU HAI/gan cuoi nhat thanh "ư", giu nguyen chu "u" dau) -
+                // trong khi dung phai la "ưu" (chu "u" DAU TIEN cua cap moi
+                // la nguyen am chinh duoc bien doi thanh "ư", chu "u" con
+                // lai GIU NGUYEN dung sau no, giong quy uoc go tat "uw" + "u"
+                // = "ưu" nhung go theo thu tu nguoc "uu" + "w"). Tim cap "uu"
+                // LIEN TIEP gan cuoi nhat (ca hai deu thuoc nhom "u" [9]),
+                // uu tien kiem tra TRUOC cap tong quat o nhanh else ben duoi.
+                val uuIdx = (0 until word.length - 1).lastOrNull { i ->
+                    charToGroupTone[word[i]]?.first == 9 && charToGroupTone[word[i + 1]]?.first == 9
+                }
                 if (uoIdx != null) {
                     val toneU = charToGroupTone[word[uoIdx]]!!.second
                     val toneO = charToGroupTone[word[uoIdx + 1]]!!.second
                     val newU = vowelGroups[10][toneU]
                     val newO = vowelGroups[8][toneO]
                     word.substring(0, uoIdx) + newU + newO + word.substring(uoIdx + 2)
+                } else if (uuIdx != null) {
+                    val toneFirstU = charToGroupTone[word[uuIdx]]!!.second
+                    val newFirstU = vowelGroups[10][toneFirstU]
+                    word.substring(0, uuIdx) + newFirstU + word.substring(uuIdx + 1)
                 } else {
                     // Khong co cum "uo": trong 3 cap nhom co the bien doi/huy
                     // boi "w" (a<->ă, o<->ơ, u<->ư), chon cap co vi tri GAN
