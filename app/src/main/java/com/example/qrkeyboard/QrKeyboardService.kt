@@ -3107,8 +3107,19 @@ private object VietnameseTelex {
         // VI TRI DAU, xem "bảo" o comment cua ham nay), nen khong lam anh
         // huong toi cac truong hop dang dung khac.
         val oGroupIdx = 6
-        val startsWithOGlide = clusterIndices.isNotEmpty() &&
-            charToGroupTone[word[clusterIndices.first()]]?.first == oGroupIdx
+        val aGroupIdx = 0
+        val eGroupIdx = 3
+        // "o" o dau cum CHI dong vai tro ban am dem (glide) khi ky tu NGAY
+        // SAU no thuoc nhom "a" hoac "e" (dung cho cac cum "oa", "oe", "oai",
+        // "oay"). Voi cac cum khac bat dau bang "o" nhung theo sau la nguyen
+        // am khac (vd "oi" - nhu "voi", "moi", "hoi") thi "o" chinh la
+        // NGUYEN AM CHINH cua van (giong cum "ao", "eo"), KHONG phai glide -
+        // SUA LOI nguoi dung phan anh: "oi" + r (hoi) truoc day sai ra "oỉ"
+        // (dau tren "i") do bi ap dung nham quy tac glide nay, dung phai la
+        // "ỏi" (dau tren "o").
+        val startsWithOGlide = clusterIndices.size >= 2 &&
+            charToGroupTone[word[clusterIndices.first()]]?.first == oGroupIdx &&
+            charToGroupTone[word[clusterIndices[1]]]?.first.let { it == aGroupIdx || it == eGroupIdx }
         val oGlideNucleus: Int? = when {
             !startsWithOGlide -> null
             clusterIndices.size == 3 -> clusterIndices[1] // "oai", "oay" -> dau o ky tu GIUA
