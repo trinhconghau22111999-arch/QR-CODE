@@ -2640,7 +2640,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     }
 
     /** Tap ky tu duoc coi la hop le (khong phai "dac biet") - y het truoc day. */
-    private val qrAllowedCharacterRegex = Regex("^[\\p{L}\\p{N}\\s.,!?:;'\"()/@-]*$")
+    private val qrAllowedCharacterRegex = Regex("^[\\p{L}\\p{N}\\s.,!?:;'\"()/@_-]*$")
 
     private fun containsQrSpecialCharacter(text: String): Boolean =
         !qrAllowedCharacterRegex.matches(text)
