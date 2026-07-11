@@ -179,6 +179,16 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
          *  het khoang thoi gian nay ma ban phim van chua duoc mo lai, moi coi
          *  la nguoi dung THAT SU roi di va dong khung quet. */
         private const val FINISH_INPUT_HIDE_DEBOUNCE_MS = 500L
+
+        /** Khoang thoi gian toi da (ms) ke tu luc khung quet QR TU DONG dong
+         *  (sau khi quet duoc 1 ma, che do BINH THUONG - xem [onQrFound]) cho
+         *  toi luc ban phim mo lai ([onStartInputView]), de con duoc coi la
+         *  "tu mo lai khung quet" (xem [reopenQrScannerOnNextStart] va
+         *  [reopenQrScannerDeadline]). Qua khoang thoi gian nay ma ban phim
+         *  moi mo lai (vd nguoi dung da lam viec khac vai phut), KHONG con tu
+         *  dong bat camera len nua - luc do coi nhu nguoi dung khong con y
+         *  dinh quet tiep. */
+        private const val QR_AUTO_REOPEN_WINDOW_MS = 4000L
     }
 
     /** Thoi diem (uptimeMillis) cua lan cham nut [QR] gan nhat, dung de phat
@@ -254,6 +264,21 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  nguoi dung mong doi, ma khong lam sai lech kha nang Telex tiep tuc
      *  bien doi dung chu cai vua go hoa do. */
     private var showCapitalPreview = false
+
+    /** Vi tri (commonPrefixLen, xem [insertVietnameseChar]) tai do
+     *  [capitalizeNextLetter] VUA duoc AP DUNG (viet hoa) LAN GAN NHAT -
+     *  null nghia la CHUA ap dung lan nao (dang cho ky tu KE TIEP go vao de
+     *  viet hoa, co the o BAT KY vi tri nao trong tu - vd nguoi dung CHAM 1
+     *  LAN nut Shift ngay GIUA tu dang go, khong chi luc dau tu). Dung de:
+     *  sau khi da ap dung 1 lan tai 1 vi tri, CHI tiep tuc ap dung o cac lan
+     *  go KE TIEP neu chung VAN dong den DUNG vi tri do (vd bien doi dau
+     *  Telex tren CHINH ky tu vua go, nhu "a"+"a" -> "â") - neu lan go tiep
+     *  theo dong den vi tri KHAC (tuc chu vua viet hoa da "chot", nguoi dung
+     *  chuyen sang go chu tiep theo), coi nhu da dung xong, TAT
+     *  [capitalizeNextLetter] ma KHONG ap dung gi them (tranh loi viet hoa
+     *  "lan" sang ca cac chu cai go SAU do, ma truoc day chi kiem tra dung
+     *  vi tri 0/dau tu nen bi bo sot truong hop Shift don giua tu). */
+    private var capitalizeAppliedAtPrefixLen: Int? = null
 
     /** Bo dem chua cac ky tu (thuong, chua dau) cua "tu" dang go trong che do
      *  Tieng Viet, dung de bo dong bo Telex co the xoa/thay the dung phan da
@@ -398,6 +423,34 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  QR): quet duoc 1 ma xong KHONG tu dong dong, tiep tuc quet ma tiep
      *  theo cho den khi nguoi dung tu bam "Huy". */
     private var qrContinuousMode = false
+
+    /** True neu khung quet QR VUA bi dong lai KHONG PHAI do nguoi dung tu bam
+     *  "Huy", ma do MOT TRONG HAI nguyen nhan sau: (1) tu dong dong ngay sau
+     *  khi quet duoc 1 ma o che do BINH THUONG - xem [onQrFound]; hoac (2)
+     *  ban phim THAT SU mat focus (finishingInput = true qua het thoi gian
+     *  debounce) trong luc khung quet dang mo, du dang o che do nao (thuong
+     *  hay lien tuc) - xem [onFinishInputView]. Dung o [onStartInputView]:
+     *  neu co [reopenQrScannerOnNextStart] = true (vd trang web tu an/hien
+     *  lai ban phim ngay sau do), tu dong MO LAI khung quet luon, khong bat
+     *  nguoi dung phai bam nut [QR] lan nua. */
+    private var reopenQrScannerOnNextStart = false
+
+    /** Thoi diem (uptimeMillis) [reopenQrScannerOnNextStart] duoc bat len -
+     *  dung de gioi han "cua so" tu mo lai (xem [QR_AUTO_REOPEN_WINDOW_MS]):
+     *  neu ban phim mai sau do (vd vai phut, chuc phut) moi mo lai o mot o
+     *  nhap khac, KHONG con hop ly de tu dong bat camera len nua - luc do
+     *  cu coi nhu "het han", tranh camera tu bat len bat ngo o tinh huong
+     *  nguoi dung khong con lien quan gi den lan quet cu. */
+    private var reopenQrScannerDeadline = 0L
+
+    /** "Chia khoa" phien nhap lieu ([editorSessionKey]) tai lan [onStartInputView]
+     *  GAN NHAT (bat ke lan do co lien quan gi den QR hay khong) - dung de
+     *  phan biet: ban phim vua mo lai o CUNG mot o nhap/ung dung nhu truoc do
+     *  (vd bi thong bao he thong lam tat/bat lai bat ngo) hay THAT SU chuyen
+     *  sang mot o nhap/ung dung KHAC. Xem cach dung o [onStartInputView]:
+     *  neu la CUNG o nhap cu, GIU NGUYEN trang phim hien tai (chu cai/so/ky
+     *  hieu) thay vi luon reset ve trang chu cai nhu truoc day. */
+    private var lastEditorSessionKey: String? = null
 
     private val qrToneGenerator: ToneGenerator by lazy {
         ToneGenerator(AudioManager.STREAM_NOTIFICATION, 100)
@@ -957,15 +1010,18 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                                         isShiftOn = !isShiftOn
                                         capitalizeNextLetter = false
                                         showCapitalPreview = false
+                                        capitalizeAppliedAtPrefixLen = null
                                     }
                                     isShiftOn -> {
                                         isShiftOn = false
                                         capitalizeNextLetter = false
                                         showCapitalPreview = false
+                                        capitalizeAppliedAtPrefixLen = null
                                     }
                                     else -> {
                                         capitalizeNextLetter = !capitalizeNextLetter
                                         showCapitalPreview = capitalizeNextLetter
+                                        capitalizeAppliedAtPrefixLen = null
                                     }
                                 }
                                 redrawKeyboard()
@@ -1049,11 +1105,18 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
     }
 
-    /** Moi lan mo lai ban phim o mot o nhap moi, luon quay ve trang chu cai,
-     *  giong hanh vi quen thuoc cua cac ban phim khac (khong "ket dinh" o
-     *  trang so/ky hieu tu lan truoc). */
+    /** Ban phim mo lai o mot o nhap THAT SU MOI (khac ung dung/o nhap truoc
+     *  do) se quay ve trang chu cai, giong hanh vi quen thuoc cua cac ban
+     *  phim khac. NHUNG neu chi la ban phim tu tat/bat lai bat ngo tren CUNG
+     *  mot o nhap cu (vd bi thong bao he thong che khuat trong tich tac) thi
+     *  GIU NGUYEN trang phim (chu cai/so/ky hieu) dang dung truoc do - xem
+     *  [lastEditorSessionKey]. */
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+
+        val sessionKey = editorSessionKey(info)
+        val isSameFieldAsBefore = sessionKey == lastEditorSessionKey
+        lastEditorSessionKey = sessionKey
 
         // SUA LOI nguoi dung phan anh: chon nhap lieu o mot o khac (hoac
         // chuyen sang ung dung khac) trong luc khung quet QR dang mo lai
@@ -1065,7 +1128,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // con ban phim binh thuong. Neu giong nhau (cung o nhap cu, chi la
         // he thong tai tao View tam thoi vd WebView refresh), giu nguyen
         // khung quet nhu truoc gio (khong reset oan).
-        if (qrOverlayView != null && editorSessionKey(info) != qrOverlaySessionKey) {
+        if (qrOverlayView != null && sessionKey != qrOverlaySessionKey) {
             hideQrOverlay()
         }
 
@@ -1073,14 +1136,56 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // sau mot lan finishingInput = true "hu") - huy moi lenh dong khung
         // quet QR dang cho, giu nguyen khung quet + camera nhu truoc do.
         cancelPendingFinishHide()
+
+        // Khung quet QR VUA tu dong dong ngay sau khi quet xong 1 ma (xem
+        // [onQrFound] + [reopenQrScannerOnNextStart]), va ban phim nay dang
+        // mo lai TRONG KHOANG THOI GIAN cho phep ([QR_AUTO_REOPEN_WINDOW_MS])
+        // - tu dong bat lai camera/khung quet luon, y het truoc luc bi dong,
+        // khong bat nguoi dung phai bam nut [QR] them lan nua.
+        if (reopenQrScannerOnNextStart) {
+            reopenQrScannerOnNextStart = false
+            if (android.os.SystemClock.uptimeMillis() <= reopenQrScannerDeadline) {
+                openQrScanner(continuous = qrContinuousMode)
+            }
+        }
+
         currentWord.clear()
         capitalizeNextLetter = false
         showCapitalPreview = false
+        capitalizeAppliedAtPrefixLen = null
         val hadPendingSuggestion = pendingSuggestion != null
         clearAutocorrectSuggestion()
-        if (mode != KeyboardMode.LETTERS) {
-            switchMode(KeyboardMode.LETTERS)
+        if (!isSameFieldAsBefore) {
+            // O nhap/ung dung THAT SU khac truoc - ve trang chu cai mac dinh.
+            if (mode != KeyboardMode.LETTERS) {
+                switchMode(KeyboardMode.LETTERS)
+            }
+
+            // TU DONG VIET HOA chu cai dau tien cua o nhap MOI, giong hanh vi
+            // quen thuoc cua hau het ban phim khac - CHI ap dung khi o nhap
+            // dang THAT SU TRONG (chua co ky tu nao truoc con tro), tranh viet
+            // hoa oan khi nguoi dung quay lai o nhap DA CO SAN noi dung (vd
+            // sua lai mot o nhap cu). Tai dung [capitalizeNextLetter] (co san,
+            // "viet hoa 1 chu ke tiep") nen nguoi dung van co the CHAM 1 LAN
+            // nut Shift TRUOC khi go de HUY viet hoa, neu muon go chu thuong
+            // ngay tu dau (xem xu ly nut Shift o [buildLettersBottomRow]).
+            val textBeforeCursor = currentInputConnection?.getTextBeforeCursor(1, 0)
+            val didAutoCapitalize = textBeforeCursor.isNullOrEmpty()
+            if (didAutoCapitalize) {
+                capitalizeNextLetter = true
+                showCapitalPreview = true
+            }
+
+            // Ve lai trang LETTERS neu can phan anh trang thai moi: vua tu
+            // viet hoa o tren, HOAC dang co goi y autocorrect can xoa. Goi
+            // SAU khi [mode] da chac chan la LETTERS (switchMode o tren da
+            // dat mode truoc do neu can) de [redrawKeyboard] rebuild dung.
+            if (didAutoCapitalize || hadPendingSuggestion) {
+                redrawKeyboard()
+            }
         } else if (hadPendingSuggestion) {
+            // Cung o nhap cu (vd ban phim tu tat/bat lai) - giu nguyen trang
+            // phim hien tai, chi can ve lai neu vua xoa goi y autocorrect.
             redrawKeyboard()
         }
     }
@@ -1312,6 +1417,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             // [capitalizeNextLetter].
             capitalizeNextLetter = true
             showCapitalPreview = true
+            capitalizeAppliedAtPrefixLen = null
         })
         row.addView(buildKey("\u21b5", weight = 1.4f, highlight = true, fillRowHeight = true) { sendEnter() })
 
@@ -1807,6 +1913,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         if (shouldCapitalize) {
             capitalizeNextLetter = false
             showCapitalPreview = false
+            capitalizeAppliedAtPrefixLen = null
         }
         val out = if (isShiftOn || shouldCapitalize) ch.uppercaseChar() else ch
         insertText(out.toString())
@@ -1891,17 +1998,24 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val deleteCount = oldWordLower.length - commonPrefixLen
         val newSuffixLower = newWordLower.substring(commonPrefixLen)
 
-        // Neu [capitalizeNextLetter] dang bat VA lan go nay dong den ky tu
-        // O VI TRI DAU TU (commonPrefixLen == 0, tuc dang viet lai tu vi tri
-        // dau), viet hoa DUY NHAT ky tu dau tien cua phan hau to moi, giu
-        // nguyen (theo isShiftOn) cho phan con lai. KHONG tat co ngay - vi
-        // ky tu dau tu CO THE con bi mot phim Telex tiep theo bien doi THEM
-        // (vd go "a" (cap) roi go "a" lan 2 -> "â", hoac "d" (cap) roi "d"
-        // lan 2 -> "đ") ma van phai tiep tuc duoc viet hoa. Chi tat co khi
-        // gap lan go KHONG dong den vi tri dau tu nua (commonPrefixLen > 0)
-        // - dau hieu ky tu dau tu da "on dinh", khong con bi ghi de lai.
-        val touchesWordStart = commonPrefixLen == 0 && newSuffixLower.isNotEmpty()
-        val wasCapitalizingWordStart = capitalizeNextLetter && touchesWordStart
+        // Neu [capitalizeNextLetter] dang bat VA lan go nay dong den DUNG VI
+        // TRI dang cho viet hoa - HOAC vi day la lan go DAU TIEN ke tu luc
+        // Shift "don" duoc bat ([capitalizeAppliedAtPrefixLen] con null, nen
+        // vi tri do co the la BAT KY dau (dau tu HOAC giua tu, vd nguoi dung
+        // cham Shift roi go tiep 1 chu giua cau) - viet hoa DUY NHAT ky tu
+        // dau tien cua phan hau to moi, giu nguyen (theo isShiftOn) cho phan
+        // con lai. KHONG tat co ngay - vi ky tu vua go CO THE con bi mot phim
+        // Telex tiep theo bien doi THEM tai CHINH vi tri do (vd go "a" (hoa)
+        // roi go "a" lan 2 -> "â", hoac "d" (hoa) roi "d" lan 2 -> "Đ") ma
+        // van phai tiep tuc duoc viet hoa. Chi tat khi gap lan go dong den
+        // MOT VI TRI KHAC (commonPrefixLen khac lan truoc) - dau hieu ky tu
+        // vua viet hoa da "on dinh", khong con bi ghi de lai.
+        val touchesCapitalizeTarget = newSuffixLower.isNotEmpty() &&
+            (capitalizeAppliedAtPrefixLen?.let { it == commonPrefixLen } ?: true)
+        val wasCapitalizingWordStart = capitalizeNextLetter && touchesCapitalizeTarget
+        if (wasCapitalizingWordStart) {
+            capitalizeAppliedAtPrefixLen = commonPrefixLen
+        }
         val newSuffixDisplay = when {
             wasCapitalizingWordStart -> {
                 val restLower = newSuffixLower.drop(1)
@@ -1917,9 +2031,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // cho toi khi co ly do khac lam ban phim ve lai (xem [buildCharRow]
         // - gio co kiem tra ca [capitalizeNextLetter] de hien preview chu hoa
         // ngay khi Shift "don" dang bat).
-        val justConsumedSingleShift = capitalizeNextLetter && !touchesWordStart
+        val justConsumedSingleShift = capitalizeNextLetter && !touchesCapitalizeTarget
         if (justConsumedSingleShift) {
             capitalizeNextLetter = false
+            capitalizeAppliedAtPrefixLen = null
         }
         // SUA THEM (theo yeu cau nguoi dung): ngay khi CHU CAI DAU TIEN sau
         // Shift "don" da duoc chen xong (wasCapitalizingWordStart == true),
@@ -2095,6 +2210,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             // huy di de tranh viet hoa nham mot cho khong lien quan.
             capitalizeNextLetter = false
             showCapitalPreview = false
+            capitalizeAppliedAtPrefixLen = null
         }
         selfInitiatedChange = false
     }
@@ -2231,7 +2347,13 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.BOTTOM or Gravity.END
             ).apply { setMargins(0, 0, dp(12), dp(12)) }
-            setOnClickListener { hideQrOverlay() }
+            setOnClickListener {
+                // Nguoi dung CHU DONG bam "Huy" - khong phai tu dong dong sau
+                // khi quet xong, nen KHONG duoc tu mo lai camera o lan
+                // [onStartInputView] tiep theo nua (xem [reopenQrScannerOnNextStart]).
+                reopenQrScannerOnNextStart = false
+                hideQrOverlay()
+            }
         }
         root.addView(cancelBtn)
 
@@ -2685,6 +2807,15 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             if (qrContinuousMode) {
                 qrFrameHandled.set(false)
             } else {
+                // Danh dau: khung quet dang TU DONG dong do quet xong (khong
+                // phai nguoi dung tu bam "Huy") - neu ban phim som mo lai
+                // ([onStartInputView], vd trang web tu an/hien lai ngay sau
+                // khi nhan duoc noi dung quet), tu dong MO LAI khung quet
+                // luon trong khoang [QR_AUTO_REOPEN_WINDOW_MS], khong bat
+                // nguoi dung phai bam nut [QR] them lan nua.
+                reopenQrScannerOnNextStart = true
+                reopenQrScannerDeadline =
+                    android.os.SystemClock.uptimeMillis() + QR_AUTO_REOPEN_WINDOW_MS
                 hideQrOverlay()
             }
         }, (beepDurationMs + 100).toLong())
@@ -2717,6 +2848,16 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             cancelPendingFinishHide()
             val hideRunnable = Runnable {
                 pendingFinishHide = null
+                // Khung quet dang MO (o CA hai che do - thuong lan lien tuc)
+                // vao dung luc ban phim THAT SU mat focus (khong phai do
+                // nguoi dung tu bam "Huy") - danh dau de tu mo lai neu ban
+                // phim som bat len lai (xem [reopenQrScannerOnNextStart] va
+                // cach dung o [onStartInputView]).
+                if (qrOverlayView != null) {
+                    reopenQrScannerOnNextStart = true
+                    reopenQrScannerDeadline =
+                        android.os.SystemClock.uptimeMillis() + QR_AUTO_REOPEN_WINDOW_MS
+                }
                 hideQrOverlay()
             }
             pendingFinishHide = hideRunnable
