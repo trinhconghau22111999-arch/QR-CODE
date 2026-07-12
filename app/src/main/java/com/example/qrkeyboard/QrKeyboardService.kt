@@ -2027,7 +2027,26 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         resyncCurrentWordFromInputConnection(ic)
 
         val oldWordLower = currentWord.toString()
-        val newWordLower = VietnameseTelex.processKey(oldWordLower, lower)
+        // THEM (theo yeu cau nguoi dung): "f" va "w" KHONG phai chu cai
+        // Tieng Viet thuan (chi la PHIM tat Telex - "f" = dau huyen, "w" =
+        // bien doi a/o/u thanh ă/ơ/ư). Neu ca hai phim do deu KHONG tim duoc
+        // muc tieu hop le de bien doi (vd go "w" khi tu dang trong, hoac go
+        // "f" khi tu chua co nguyen am nao) thi chung se bi CHEN THANG vao tu
+        // dang CHU THO (xem [VietnameseTelex.processKey] - roi vao nhanh
+        // "khong bien doi duoc" o cuoi ham). Mot khi tu dang go DA CHUA san
+        // ky tu "f" hoac "w" o dang chu tho nhu vay, gan nhu chac chan day
+        // KHONG con la mot tu Tieng Viet nua (vd dang go "wifi", "file",
+        // "show", ma ban phim lo dang o che do Tieng Viet) - TUYET DOI KHONG
+        // con ap dung bat ky bien doi Telex nao (them dau thanh s/f/r/x/j,
+        // hay bien doi aa/aw/ee/oo/ow/uw/dd) cho PHAN CON LAI cua tu do nua,
+        // chi chen NGUYEN VAN ky tu nguoi dung go, tranh cac loi "bo dau oan"
+        // kieu "pow" -> "pơ", "flow" -> "flơ", v.v.
+        val wordAlreadyHasLiteralFOrW = oldWordLower.any { it == 'f' || it == 'w' }
+        val newWordLower = if (wordAlreadyHasLiteralFOrW) {
+            oldWordLower + lower
+        } else {
+            VietnameseTelex.processKey(oldWordLower, lower)
+        }
         currentWord = StringBuilder(newWordLower)
 
         var commonPrefixLen = 0
