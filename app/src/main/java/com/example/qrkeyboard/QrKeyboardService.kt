@@ -61,10 +61,53 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Dich vu ban phim ao (Input Method Service). Hien thi mot ban phim QWERTY
- * don gian dung code (khong phu thuoc file layout XML), kem nut [QR] de mo
- * khung quet QR noi (xem [showQrOverlay]) va chen ket qua thang vao o nhap
- * lieu dang mo.
+ * Dich vu ban phim ao (Input Method Service).
+ *
+ * PHIEN BAN NAY (toi uu hoa hieu nang + sua loi, theo yeu cau nguoi dung
+ * "toi uu cho phim nhanh hon, sua loi het"): xem cac ghi chu danh dau
+ * "TOI UU"/"SUA LOI" ranh rot trong tung ham lien quan de biet CHINH XAC
+ * cho nao da doi va TAI SAO - tom tat cac thay doi chinh:
+ *
+ *  1) LAZY-BUILD tung trang ban phim (SUA LOI HIEU NANG QUAN TRONG NHAT):
+ *     TRUOC DAY, moi khi [onCreateInputView] duoc goi (xay ra RAT THUONG
+ *     XUYEN - moi lan chuyen o nhap/ung dung, he thong co the tao lai View
+ *     ban phim), ham nay XOA SACH cache cua CA 3 trang con lai (So, Ky
+ *     hieu, So-rieng) roi [buildKeyboardContainer] LAP TUC xay dung lai TAT
+ *     CA 4 trang cung luc - bao gom trang So voi HANG EMOJI ~150 nut rieng
+ *     le (moi nut lai tao rieng GradientDrawable+LayerDrawable) - DU nguoi
+ *     dung dang go tren trang Chu cai va CO THE khong bao gio cham toi may
+ *     trang kia trong ca phien go do. Day chinh la nguyen nhan gay "khung/
+ *     giat nhe" (qua nhieu View duoc dung/huy lien tuc tren luong chinh) VA
+ *     "thinh thoang khong len ban phim" (dung khong du thoi luong he thong
+ *     danh cho viec ve khung hinh dau tien cua IME). GIO DAY: chi build
+ *     TRANG LETTERS (luon can, vi mang trang thai dong) + DUY NHAT trang
+ *     TRUNG voi [mode] hien tai; 3 trang con lai CHI duoc xay dung that su
+ *     khi nguoi dung THAT SU chuyen toi (qua [switchMode]).
+ *  2) TAI SU DUNG View da cache XUYEN SUOT nhieu lan [onCreateInputView]
+ *     (thay vi xoa cache MOI LAN goi nhu truoc): chi xoa cache khi kich
+ *     thuoc phim ([keyHeightDp]) THAT SU doi (xoay man hinh, chia doi cua
+ *     so...) - xem [lastBuiltKeyHeightDp]. Truong hop PHO BIEN NHAT (chi
+ *     chuyen o nhap/ung dung, man hinh khong doi) gio KHONG can xay dung lai
+ *     hang emoji/cac phim So/Ky hieu tu dau nua.
+ *  3) Cache san CHUOI MAU vien da tinh (tranh goi String.format/parseColor
+ *     lap lai tren MOI phim moi lan build trang) - xem [outerGlowColorFor].
+ *  4) Hang emoji (~150 nut): DUNG CHUNG mot Drawable nen duy nhat cho ca
+ *     hang (thay vi 150 Drawable rieng biet) - xem [buildEmojiRow].
+ *  5) [vibrateKeyPress]: nho lai (cache) BUOC rung nao da thanh cong o lan
+ *     truoc, lan sau di THANG vao buoc do thay vi phai thu lai tu dau (voi
+ *     try/catch + log) tren MOI phim go - xem [resolvedVibrationStep].
+ *  6) Bo bot [View.performHapticFeedback] (goi rung qua co che co san cua
+ *     Android, phu thuoc cai dat he thong hay khong on dinh - ly do ban dau
+ *     phai them [vibrateKeyPress] rung TRUC TIEP) tren MOI lan cham phim -
+ *     giu lai DUY NHAT [vibrateKeyPress] (dang tin cay hon), tranh ban phim
+ *     phai goi 2 co che rung khac nhau (2 lan IPC toi he thong) cho CUNG
+ *     mot lan cham.
+ *
+ * ---- Tai lieu goc (giu nguyen, khong doi noi dung mo ta chuc nang) ----
+ *
+ * Hien thi mot ban phim QWERTY don gian dung code (khong phu thuoc file
+ * layout XML), kem nut [QR] de mo khung quet QR noi (xem [showQrOverlay])
+ * va chen ket qua thang vao o nhap lieu dang mo.
  * Ho tro go tieng Viet kieu Telex (chuyen doi tu ban phim QWERTY chuan). Bat/
  * tat che do Tieng Viet bang cach VUOT tren phim cach: vuot TU TRAI SANG PHAI
  * de chuyen ve Tieng Anh, vuot TU PHAI SANG TRAI de chuyen sang Tieng Viet
@@ -72,19 +115,32 @@ import java.util.concurrent.atomic.AtomicBoolean
  * day, vi double-tap de bi kich hoat nham khi go nhanh lien tuc 2 dau cach
  * gan nhau (vd giua 2 cau), gay doi ngon ngu ngoai y muon.
  *
- * KHUNG QUET QR: TRUOC DAY duoc thuc hien bang cach mo QrScanActivity nhu mot
- * "cua so noi" (Activity trong suot, dat FLAG_NOT_FOCUSABLE) de co gang khong
- * cuop focus ban phim. Cach do van la mot Activity that - ve ly thuyet he
- * thong van co the coi day la chuyen "mat focus" trong mot so tinh huong/dong
- * may (mot so ROM nhu MIUI, One UI), khien onFinishInputView() bi goi oan.
+ * KHUNG QUET QR: mot VIEW NOI duoc add thang vao cua so cua CHINH
+ * InputMethodService nay bang WindowManager (xem [showQrOverlay]), khong
+ * dung Activity nao de quet ca. Vi cua so chu (cua so ban phim) khong doi,
+ * he thong khong bao gio coi la mat focus, nen ban phim va khung quet chac
+ * chan cung ton tai, InputConnection voi o nhap khong bi gian doan. CameraX
+ * can mot LifecycleOwner de bind/unbind camera dung luc, nen Service nay tu
+ * implement LifecycleOwner (xem [lifecycle]).
  *
- * GIO DAY: khung quet (preview camera + nut Huy/Flash) la MOT VIEW NOI duoc
- * add thang vao cua so cua CHINH InputMethodService nay bang WindowManager
- * (xem [showQrOverlay]), khong con Activity nao dung de quet nua. Vi cua so
- * chu (cua so ban phim) khong doi, he thong khong bao gio coi la mat focus,
- * nen ban phim va khung quet chac chan cung ton tai, InputConnection voi o
- * nhap khong bi gian doan. CameraX can mot LifecycleOwner de bind/unbind camera
- * dung luc, nen Service nay tu implement LifecycleOwner (xem [lifecycle]).
+ * Nut QR: CA cham 1 lan LAN cham 2 lan (dup-tap) deu mo khung quet o CHE DO
+ * QUET LIEN TUC (quet xong 1 ma khong tu dong dong, tiep tuc quet ma tiep
+ * theo) - CHI dong khi nguoi dung tu bam nut "Huy" tren khung quet (xem
+ * [buildNumbersBottomRow]). Co che PHAT HIEN dup-tap van con (dung lam
+ * "cong tac du phong" cho tuong lai) nhung ca hai nhanh gio dan toi CUNG
+ * mot ket qua continuous = true.
+ *
+ * BAN PHIM SO RIENG (NUMPAD): tu dong duoc chon khi mo mot o nhap CHI NHAN
+ * SO (ma PIN/OTP, so dien thoai - xem [isNumericOnlyField]), dang 3 hang so
+ * + 1 hang hanh dong (ABC/0/xoa/Enter) dong bo kieu voi 3 trang con lai -
+ * xem [buildNumpadPage].
+ *
+ * TU DONG VE TIENG ANH KHI GO MAT KHAU: mo mot o nhap MAT KHAU (password) se
+ * tu dong tat che do Telex Tieng Viet neu dang bat - xem [isPasswordField].
+ *
+ * THANH CAI DAT MAU + SANG/TOI: hien san (khong can nut bat/tat rieng) tren
+ * trang Ky hieu mo rong - 8 o mau vien dang dung chon lam mau vien CHUNG cho
+ * ca ban phim, 1 nut tron doi nen sang<->toi - xem [buildKeyboardSettingsBar].
  */
 class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
@@ -125,77 +181,50 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         private const val DELETE_REPEAT_INTERVAL_MS = 50L
 
         /** Khoang thoi gian toi da (ms) giua 2 lan cham nut [QR] de tinh la
-         *  mot cu DUP-TAP (cham dup 2 lan) - mo che do QUET LIEN TUC (quet
-         *  hoai, khong tu dong dong, cho den khi nguoi dung tu bam "Huy").
-         *  Cham 1 lan binh thuong (qua khoang thoi gian nay moi cham lan 2,
-         *  hoac chi cham 1 lan) van giu hanh vi cu: quet duoc 1 ma la tu dong
-         *  dong man hinh quet ngay. */
+         *  mot cu DUP-TAP (cham dup 2 lan) - CO CHE PHAT HIEN nay VAN GIU
+         *  NGUYEN (du phong cho tuong lai), nhung theo yeu cau nguoi dung,
+         *  CA cham 1 lan LAN dup-tap gio deu dan toi CUNG mot ket qua (mo
+         *  khung quet o CHE DO LIEN TUC) - xem [buildNumbersBottomRow]. */
         private const val QR_DOUBLE_TAP_MAX_INTERVAL_MS = 350L
 
         /** Khoang thoi gian (ms) toi da giua 2 lan cham nut Shift (⇧) de tinh
-         *  la mot cu DUP-TAP (cham 2 lan lien tiep) - dung de phan biet:
-         *   - Cham 1 lan (don): chi VIET HOA CHU CAI KE TIEP, sau do TU DONG
-         *     tat, giong hanh vi Shift thuong tren cac ban phim khac.
-         *   - Dup-tap (2 lan lien tiep, trong khoang thoi gian nay): bat CAPS
-         *     LOCK - giu viet hoa LIEN TUC cho toi khi nguoi dung tu cham lai
-         *     nut Shift mot lan nua de tat (hanh vi Caps Lock cu, khong doi).
-         *  Xem [buildKeyboardView], phan xu ly nut Shift trong trang chu cai. */
+         *  la mot cu DUP-TAP (cham 2 lan lien tiep, trong khoang thoi gian
+         *  nay). Xem [buildKeyboardView] (buildLettersPage), phan xu ly nut
+         *  Shift trong trang chu cai. */
         private const val SHIFT_DOUBLE_TAP_MAX_INTERVAL_MS = 350L
 
         /** Khoang thoi gian (ms) toi da giua 2 lan cham nut "Chup anh" (giua
          *  Flash va Huy trong khung quet QR) de tinh la mot cu DUP-TAP - dung
          *  de BAT/TAT che do "TU DONG CHUP ANH THEO MA QUET" (xem
-         *  [qrAutoCapturePerScan]): dup-tap se BAT/TAT che do nay, thay vi
-         *  chup anh ngay nhu cham 1 lan binh thuong. */
+         *  [qrAutoCapturePerScan]). */
         private const val CAPTURE_DOUBLE_TAP_MAX_INTERVAL_MS = 350L
 
-        /** So dp them vao vien DUOI CUNG cua toan bo ban phim (ngoai vien
-         *  [verticalPaddingDp] mac dinh trong [buildKeyboardView]) de NHICH
-         *  CA BAN PHIM LEN cao hon mot chut so voi day man hinh/thanh dieu
-         *  huong, theo phan anh cua nguoi dung. Chi tang vien DUOI (khong
-         *  dong vien tren) vi cua so IME neo o day man hinh - them vien duoi
-         *  se day toan bo noi dung len cao hon ma khong lam xe lech vi tri
-         *  tuong doi giua cac hang phim voi nhau.
-         *
-         *  SUA (theo phan anh moi cua nguoi dung): gia tri 4 truoc day nhich
-         *  ban phim LEN QUA NHIEU, khien hang cuoi cung (hang co dau cach)
-         *  nam CACH XA 3 phim dieu huong he thong (Back/Home/Recent) o cả 3
-         *  trang ban phim (vi day la padding o cap ROOT, dung CHUNG cho moi
-         *  che do LETTERS/NUMBERS/SYMBOLS). GIAM xuong con 1 de hang cuoi
-         *  ha THAP XUONG mot chut, gan lai voi 3 phim dieu huong hon, ma
-         *  van con giu mot khoang cach nho (khac 0) de khong dinh sat vao
-         *  thanh dieu huong. */
+        /** So dp them vao vien DUOI CUNG cua toan bo ban phim de NHICH CA
+         *  BAN PHIM LEN cao hon mot chut so voi day man hinh/thanh dieu
+         *  huong, theo phan anh cua nguoi dung. */
         private const val EXTRA_BOTTOM_LIFT_DP = 1
 
         /** Khoang thoi gian (ms) TRE truoc khi thuc su dong khung quet QR +
          *  coi la "roi ban phim" sau khi he thong bao [onFinishInputView] voi
-         *  finishingInput = true. LY DO: mot so thong bao/popup thoang qua
-         *  (thong bao he thong keo xuong roi thu lai ngay, popup xin quyen
-         *  cua trinh duyet, hop thoai he thong khac cuop focus trong tich
-         *  tac...) khien he thong bao finishingInput = true NGAY CA KHI
-         *  nguoi dung KHONG thuc su roi khoi o nhap - roi ngay sau do goi lai
-         *  [onStartInputView] binh thuong. TRUOC DAY ham nay dong khung quet
-         *  NGAY LAP TUC moi khi thay finishingInput = true, nen nhung truong
-         *  hop thoang qua nay cung lam camera/khung quet bi tat oan, dung y
-         *  het hien tuong nguoi dung phan anh (khung quet + ban phim bi an
-         *  di khi trang web hien thong bao). GIO DAY: khi finishingInput =
-         *  true, KHONG dong ngay, ma dat mot lenh dong "hoan" sau khoang thoi
-         *  gian nay - neu [onStartInputView] duoc goi lai truoc khi lenh do
-         *  kip chay (dau hieu day chi la gian doan tam thoi), lenh dong se bi
-         *  HUY, khung quet va ban phim duoc giu nguyen nhu cu. Chi khi qua
-         *  het khoang thoi gian nay ma ban phim van chua duoc mo lai, moi coi
-         *  la nguoi dung THAT SU roi di va dong khung quet. */
+         *  finishingInput = true. */
         private const val FINISH_INPUT_HIDE_DEBOUNCE_MS = 500L
 
         /** Khoang thoi gian toi da (ms) ke tu luc khung quet QR TU DONG dong
-         *  (sau khi quet duoc 1 ma, che do BINH THUONG - xem [onQrFound]) cho
-         *  toi luc ban phim mo lai ([onStartInputView]), de con duoc coi la
-         *  "tu mo lai khung quet" (xem [reopenQrScannerOnNextStart] va
-         *  [reopenQrScannerDeadline]). Qua khoang thoi gian nay ma ban phim
-         *  moi mo lai (vd nguoi dung da lam viec khac vai phut), KHONG con tu
-         *  dong bat camera len nua - luc do coi nhu nguoi dung khong con y
-         *  dinh quet tiep. */
+         *  cho toi luc ban phim mo lai, de con duoc coi la "tu mo lai khung
+         *  quet" - xem [reopenQrScannerOnNextStart]. */
         private const val QR_AUTO_REOPEN_WINDOW_MS = 4000L
+
+        /** Ten file SharedPreferences + cac khoa dung de LUU lai lua chon
+         *  mau vien va che do sang/toi cua nguoi dung - xem [setAccentColor]/
+         *  [toggleTheme] - de mo lai ban phim (thoat app, khoi dong lai may)
+         *  van giu nguyen cai dat da chon, khong bi reset ve mac dinh. */
+        private const val PREFS_NAME = "qr_keyboard_prefs"
+        private const val PREF_ACCENT_COLOR = "accent_color"
+        private const val PREF_IS_DARK_THEME = "is_dark_theme"
+
+        /** Mau tim neon MAC DINH (giu nguyen y het mau glowColor cu truoc
+         *  khi co tinh nang doi mau). */
+        private val DEFAULT_ACCENT_COLOR = Color.parseColor("#B388FF")
     }
 
     /** Thoi diem (uptimeMillis) cua lan cham nut [QR] gan nhat, dung de phat
@@ -225,10 +254,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         pendingFinishHide = null
     }
 
-    /** Ba "trang" ban phim, dung trinh tu quen thuoc cua cac ban phim khac:
-     *  chu cai (mac dinh) <-> so & ky hieu co ban (nut "?123") <-> ky hieu
-     *  mo rong (nut "=\<" tren trang so, quay lai bang nut "?123"). */
-    private enum class KeyboardMode { LETTERS, NUMBERS, SYMBOLS }
+    /** Bon "trang" ban phim: chu cai (mac dinh) <-> so & ky hieu co ban (nut
+     *  "?123") <-> ky hieu mo rong (nut "=\<" tren trang so) <-> ban phim SO
+     *  RIENG (NUMPAD, dang PIN/dien thoai - tu dong chon cho o nhap chi nhan
+     *  so, xem [isNumericOnlyField]). */
+    private enum class KeyboardMode { LETTERS, NUMBERS, SYMBOLS, NUMPAD }
 
     private var mode = KeyboardMode.LETTERS
     private var isShiftOn = false
@@ -250,41 +280,13 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
     /** CHI dung de quyet dinh HIEN THI (nhan chu tren cac phim + highlight
      *  nut Shift) - TACH RIENG khoi [capitalizeNextLetter] (co chuc nang,
-     *  anh huong toi CHU THAT SU se duoc chen).
-     *
-     *  LY DO can tach: o che do Tieng Viet, [capitalizeNextLetter] PHAI duoc
-     *  GIU NGUYEN la true ngay sau khi da go xong 1 chu cai dau tu (xem
-     *  [insertVietnameseChar]) - vi phim Telex TIEP THEO co the con tiep tuc
-     *  bien doi DUNG vi tri chu cai do (vd go "A" (hoa) roi go them "a" ->
-     *  phai ra "Â" hoa, khong phai "âa" hay "aA"), nen chua the "tat" that su
-     *  luc nay. NHUNG neu dung chinh [capitalizeNextLetter] de quyet dinh
-     *  hien thi ban phim, cac phim se bi "ket dinh" hien chu HOA lau hon can
-     *  thiet: nguoi dung go xong 1 chu (vd "Anh") thi ban phim VAN con hien
-     *  toan chu hoa cho toi khi ho go THEM 1 chu cai nua moi chiu ve lai chu
-     *  thuong - tao cam giac "cham tre 1 nhip" rat de gay hieu lam la Shift
-     *  chua tat.
-     *
-     *  GIO DAY: [showCapitalPreview] duoc TAT ngay lap tuc ngay sau khi CHU
-     *  CAI DAU TIEN da duoc chen xong (xem [insertVietnameseChar]), bat ke
-     *  [capitalizeNextLetter] (logic) co con duoc giu true hay khong - nen
-     *  ban phim luon quay ve hien chu THUONG ngay sau 1 lan go, dung nhu
-     *  nguoi dung mong doi, ma khong lam sai lech kha nang Telex tiep tuc
-     *  bien doi dung chu cai vua go hoa do. */
+     *  anh huong toi CHU THAT SU se duoc chen). Xem giai thich chi tiet o
+     *  ban goc: tach ra de ban phim quay ve hien chu THUONG ngay sau 1 lan
+     *  go, khong bi "ket dinh" hien hoa lau hon can thiet. */
     private var showCapitalPreview = false
 
-    /** Vi tri (commonPrefixLen, xem [insertVietnameseChar]) tai do
-     *  [capitalizeNextLetter] VUA duoc AP DUNG (viet hoa) LAN GAN NHAT -
-     *  null nghia la CHUA ap dung lan nao (dang cho ky tu KE TIEP go vao de
-     *  viet hoa, co the o BAT KY vi tri nao trong tu - vd nguoi dung CHAM 1
-     *  LAN nut Shift ngay GIUA tu dang go, khong chi luc dau tu). Dung de:
-     *  sau khi da ap dung 1 lan tai 1 vi tri, CHI tiep tuc ap dung o cac lan
-     *  go KE TIEP neu chung VAN dong den DUNG vi tri do (vd bien doi dau
-     *  Telex tren CHINH ky tu vua go, nhu "a"+"a" -> "â") - neu lan go tiep
-     *  theo dong den vi tri KHAC (tuc chu vua viet hoa da "chot", nguoi dung
-     *  chuyen sang go chu tiep theo), coi nhu da dung xong, TAT
-     *  [capitalizeNextLetter] ma KHONG ap dung gi them (tranh loi viet hoa
-     *  "lan" sang ca cac chu cai go SAU do, ma truoc day chi kiem tra dung
-     *  vi tri 0/dau tu nen bi bo sot truong hop Shift don giua tu). */
+    /** Vi tri (commonPrefixLen) tai do [capitalizeNextLetter] VUA duoc AP
+     *  DUNG (viet hoa) LAN GAN NHAT - null nghia la CHUA ap dung lan nao. */
     private var capitalizeAppliedAtPrefixLen: Int? = null
 
     /** Bo dem chua cac ky tu (thuong, chua dau) cua "tu" dang go trong che do
@@ -296,47 +298,37 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     private var previewPopup: PopupWindow? = null
     private var previewBubble: TextView? = null
 
-    /** Goi y sua loi Tieng Viet (xem [VietnameseAutocorrect]): sau khi go
-     *  xong mot "tu" (bang dau cach) ma tu do KHONG co trong tu dien va tim
-     *  duoc mot tu rat gan (sai lech 1 ky tu) trong tu dien, hien mot thanh
-     *  goi y phia tren ban phim de nguoi dung cham vao sua nhanh, thay vi tu
-     *  dong sua (de tranh sua nham nhung tu dung nhung hiem/khong co trong
-     *  tu dien). [pendingSuggestionOriginalWord] la tu (chu thuong) NGUOI
-     *  DUNG DA GO (dung de biet xoa bao nhieu ky tu khi cham nhan goi y). */
+    /** Goi y sua loi Tieng Viet (xem [VietnameseAutocorrect]). */
     private var pendingSuggestion: String? = null
     private var pendingSuggestionOriginalWord: String? = null
 
     /** Danh dau lan thay doi selection/con tro SAP TOI trong o nhap lieu la
-     *  do CHINH ban phim nay gay ra (qua commitText/deleteSurroundingText),
-     *  duoc dat true ngay TRUOC moi lan ban phim tu goi cac ham do, roi
-     *  onUpdateSelection() se doc co nay de phan biet: neu con tro doi vi tri
-     *  vi mot ly do KHAC (nguoi dung cham vao van ban de doi cho, dung phim
-     *  mui ten, ung dung tu thay doi noi dung, chuyen o nhap, ...) thi phai
-     *  xoa bo dem [currentWord] - neu khong, lan go tiep theo se bi ap dung
-     *  bien doi Telex nham vao "tu" cu (khong con nam canh con tro nua), gay
-     *  loi kieu chen lai/nhac lai chu vua go truoc do. */
+     *  do CHINH ban phim nay gay ra (qua commitText/deleteSurroundingText). */
     private var selfInitiatedChange = false
 
-    /** Cache View cho trang So va trang Ky hieu - build MOT LAN duy nhat
-     *  khi switchMode lan dau, tai su dung cho nhung lan sau bang cach
-     *  doi visibility - tranh rebuild toan bo View tree moi lan chuyen trang. */
+    /** Cache View cho trang So, Ky hieu va So-rieng (NUMPAD) - xem giai
+     *  thich chi tiet o dau file (phan "TOI UU") va o [buildKeyboardContainer]/
+     *  [switchMode]: CHI duoc xay dung THAT SU khi nguoi dung THAT SU chuyen
+     *  toi trang do, va duoc GIU LAI xuyen suot nhieu lan [onCreateInputView]
+     *  min la kich thuoc phim ([keyHeightDp]) khong doi - xem
+     *  [lastBuiltKeyHeightDp]. */
     private var cachedNumbersView: View? = null
     private var cachedSymbolsView: View? = null
+    private var cachedNumpadView: View? = null
+
+    /** Kich thuoc phim ([keyHeightDp]) tai lan GAN NHAT cac trang duoc xay
+     *  dung - dung de [onCreateInputView] biet co CAN xoa cache (xoay man
+     *  hinh/doi chia doi cua so lam kich thuoc phim doi that su) hay KHONG
+     *  can (truong hop pho bien nhat: chi chuyen o nhap/ung dung, kich thuoc
+     *  man hinh khong doi) - xem giai thich "TOI UU" o dau file. */
+    private var lastBuiltKeyHeightDp: Int = -1
 
     /** FrameLayout boc toan bo ban phim, setInputView chi goi 1 lan voi no.
      *  Khi chuyen trang, chi can doi visibility cua cac trang ben trong. */
     private var keyboardRootContainer: FrameLayout? = null
     private var lettersPageView: View? = null
 
-    /** AudioManager dung de phat am thanh gõ phim (xem [playKeyClickTone]).
-     *  TRUOC DAY dung ToneGenerator phat mot tieng "tin" (beep dien tu tong
-     *  hop) - nguoi dung phan anh nghe khong hay VA moi lan goi startTone()
-     *  la mot lenh dong bo toi audio HAL, lam CHAM luc go nhanh (tich luy dan
-     *  qua tung phim, gay cam giac "khong theo kip"/mat chu). GIO DAY doi
-     *  sang AudioManager.playSoundEffect(FX_KEYPRESS_STANDARD) - day CHINH LA
-     *  am thanh "tach" nhe chuan he thong Android dung cho ban phim (khac
-     *  han tieng "tin" truoc do), va ban than API nay duoc thiet ke de goi
-     *  LIEN TUC, TAN SO CAO (moi lan go phim) ma khong lam nghen luong UI. */
+    /** AudioManager dung de phat am thanh gõ phim (xem [playKeyClickTone]). */
     private val audioManager: AudioManager by lazy {
         getSystemService(AUDIO_SERVICE) as AudioManager
     }
@@ -346,8 +338,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             audioManager.playSoundEffect(AudioManager.FX_KEYPRESS_STANDARD)
         } catch (e: Exception) {
             // Bo qua neu audio chua san sang (hiem gap), hoac nguoi dung da
-            // tat "am thanh cham" trong Settings he thong (khi do API nay se
-            // tu im lang, khong throw, nhung bat try/catch de an toan).
+            // tat "am thanh cham" trong Settings he thong.
         }
     }
 
@@ -359,9 +350,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         getSystemService(WINDOW_SERVICE) as WindowManager
     }
 
-    /** View goc (FrameLayout chua preview camera + nut Huy/Flash) dang duoc
-     *  add vao cua so he thong; null khi khung quet dang dong. Dung de biet
-     *  khung quet co dang mo hay khong, va de go (removeView) khi dong lai. */
     private var qrOverlayView: View? = null
     private var qrPreviewView: PreviewView? = null
     private var qrCameraExecutor: ExecutorService? = null
@@ -369,138 +357,34 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     private var qrFlashOn = false
     private var qrFlashButton: Button? = null
 
-    /** UseCase ChUP ANH (rieng biet voi [ImageAnalysis] dung de quet QR) -
-     *  duoc bind CUNG LUC voi preview + imageAnalysis trong [startQrCamera],
-     *  chi giu lai anh khi thuc su nguoi dung bam nut chup (xem
-     *  [captureQrPhoto]), khong lien quan gi den qua trinh quet QR tu dong. */
     private var qrImageCapture: ImageCapture? = null
     private var qrCaptureButton: Button? = null
-
-    /** Chan spam: dang chup mot tam thi khoa nut lai, tranh nguoi dung bam
-     *  lien tuc nhieu lan lam xep hang nhieu lenh takePicture() cung luc. */
     private var qrCaptureInProgress = false
-
-    /** True neu dang o CHE DO "TU DONG CHUP ANH THEO MA QUET": moi lan quet
-     *  duoc 1 ma QR va xuat du lieu ra o nhap ([onQrFound]) THI TU DONG chup
-     *  luon 1 tam anh gan lien voi ma do (quet ma nao chup anh ma do, khong
-     *  can bam nut Chup thu cong nua) - dung cho truong hop go don hang lien
-     *  tuc, moi don can 1 anh bang chung rieng. Anh chup theo che do nay CHI
-     *  luu vao thu vien may (MediaStore), KHONG gui/chen vao o nhap dang go
-     *  (khac voi chup thu cong bang cham 1 lan - xem [captureQrPhoto]) va
-     *  KHONG hien man hinh xem truoc anh (khong lam gian doan qua trinh quet
-     *  lien tuc). BAT/TAT bang cach CHAM DUP (2 lan lien tiep) vao nut Chup -
-     *  xem [buildQrOverlayContentView] va [CAPTURE_DOUBLE_TAP_MAX_INTERVAL_MS].
-     *  Cham 1 lan (khong phai dup-tap) van LUON chup anh thu cong binh
-     *  thuong nhu cu, du che do nay dang BAT hay TAT.
-     *
-     *  Che do nay DUY TRI xuyen suot nhieu lan khung quet TU DONG dong/mo lai
-     *  (vd tu dong dong ngay sau khi quet xong 1 ma roi tu mo lai qua
-     *  [reopenQrScannerOnNextStart]) - KHONG bi tat boi [hideQrOverlay]. CHI
-     *  tat khi nguoi dung THAT SU CHU DONG bam nut "Huy" (xem [cancelBtn]). */
     private var qrAutoCapturePerScan = false
-
-    /** Thoi diem (uptimeMillis) lan cham gan nhat vao nut Chup - dung de
-     *  phat hien cu DUP-TAP (xem [CAPTURE_DOUBLE_TAP_MAX_INTERVAL_MS]). */
     private var lastCaptureTapTime = 0L
-
-    /** Handler + lenh "cham 1 lan" (chup anh thu cong) DANG CHO xac nhan -
-     *  xem giai thich chi tiet o [buildQrOverlayContentView] (phan nut Chup):
-     *  MOI lan cham nut Chup, KHONG chup ngay lap tuc, ma dat mot lenh chup
-     *  "hoan" trong khoang [CAPTURE_DOUBLE_TAP_MAX_INTERVAL_MS] - neu cham
-     *  lan 2 kip toi TRONG khoang do (thanh dup-tap), lenh chup "hoan" nay bi
-     *  HUY (khong chup anh oan tren lan cham dau cua 1 cu dup-tap), thay vao
-     *  do dup-tap se BAT/TAT che do [qrAutoCapturePerScan]. */
     private val captureButtonTapHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var pendingCaptureTap: Runnable? = null
-
-    /** View goc (FrameLayout) cua khung quet, GIU THEM mot tham chieu kieu
-     *  FrameLayout (cung chinh la [qrOverlayView], chi khac kieu) de co the
-     *  addView/removeView anh xem truoc anh vua chup ([qrCapturedPhotoView])
-     *  len tren no bat cu luc nao, khong can build lai ca khung quet. */
     private var qrOverlayRootLayout: FrameLayout? = null
-
-    /** ImageView hien anh vua chup, PHU KIN toan bo khung quet (che luon
-     *  camera preview + cac nut) cho toi khi nguoi dung cham vao de dong -
-     *  xem [showCapturedPhotoPreview]/[dismissCapturedPhotoPreview]. null
-     *  nghia la dang khong xem anh nao (camera preview binh thuong). */
     private var qrCapturedPhotoView: android.widget.ImageView? = null
-
-    /** True trong luc anh vua chup dang duoc hien ([qrCapturedPhotoView] !=
-     *  null) - dung de [processQrFrame] TAM DUNG viec nhan dien QR trong luc
-     *  nay, tranh vua xem anh vua chup xong lai bi tu dong quet/nhay sang ma
-     *  QR khac ngay ben duoi anh dang xem. */
     private var qrShowingCapturedPhoto = false
-
-    /** "Chia khoa" nhan dang phien nhap lieu (o nhap + ung dung) tai thoi
-     *  diem khung quet QR duoc MO ([showQrOverlay]) - xem [editorSessionKey]
-     *  va cach dung o [onStartInputView]. Dung de phan biet: khung quet dang
-     *  mo do nguoi dung THAT SU roi sang mot o nhap/ung dung KHAC (can dong
-     *  khung quet, chi con lai ban phim) hay chi la he thong tai tao lai
-     *  View ban phim tam thoi cho CHINH o nhap cu (vd WebView refresh - can
-     *  giu nguyen khung quet nhu truoc gio). */
     private var qrOverlaySessionKey: String? = null
 
-    /** Sinh "chia khoa" dinh danh mot phien nhap lieu tu EditorInfo he thong
-     *  cung cap, dung de so sanh xem nguoi dung co dang o LAI o nhap/ung
-     *  dung cu hay khong (xem [qrOverlaySessionKey]). Ghep ca ten goi ung
-     *  dung, fieldId lan inputType de giam kha nang trung lap gia (vd nhieu
-     *  o nhap cung fieldId = 0 trong cac view tuy chinh). */
     private fun editorSessionKey(info: EditorInfo?): String {
         if (info == null) return "null"
         return "${info.packageName}:${info.fieldId}:${info.inputType}"
     }
 
-    /** Tuong tu `handled` truoc day o QrScanActivity: chan viec xu ly nhieu
-     *  frame camera cung luc trong khoang thoi gian tu luc tim thay 1 ma QR
-     *  toi luc phat xong tieng bip/dong khung (xem [onQrFound]). */
     private val qrFrameHandled = AtomicBoolean(false)
-
-    /** Ma QR VUA xuat ra o nhap gan nhat - chan xuat LAP LIEN TIEP cung mot
-     *  noi dung (xem giai thich chi tiet o [processQrFrame]). */
     private var qrLastDeliveredText: String? = null
-
-    /** True neu khung quet dang o CHE DO QUET LIEN TUC (mo bang dup-tap nut
-     *  QR): quet duoc 1 ma xong KHONG tu dong dong, tiep tuc quet ma tiep
-     *  theo cho den khi nguoi dung tu bam "Huy". */
     private var qrContinuousMode = false
-
-    /** True neu khung quet QR VUA bi dong lai KHONG PHAI do nguoi dung tu bam
-     *  "Huy", ma do MOT TRONG HAI nguyen nhan sau: (1) tu dong dong ngay sau
-     *  khi quet duoc 1 ma o che do BINH THUONG - xem [onQrFound]; hoac (2)
-     *  ban phim THAT SU mat focus (finishingInput = true qua het thoi gian
-     *  debounce) trong luc khung quet dang mo, du dang o che do nao (thuong
-     *  hay lien tuc) - xem [onFinishInputView]. Dung o [onStartInputView]:
-     *  neu co [reopenQrScannerOnNextStart] = true (vd trang web tu an/hien
-     *  lai ban phim ngay sau do), tu dong MO LAI khung quet luon, khong bat
-     *  nguoi dung phai bam nut [QR] lan nua. */
     private var reopenQrScannerOnNextStart = false
-
-    /** Thoi diem (uptimeMillis) [reopenQrScannerOnNextStart] duoc bat len -
-     *  dung de gioi han "cua so" tu mo lai (xem [QR_AUTO_REOPEN_WINDOW_MS]):
-     *  neu ban phim mai sau do (vd vai phut, chuc phut) moi mo lai o mot o
-     *  nhap khac, KHONG con hop ly de tu dong bat camera len nua - luc do
-     *  cu coi nhu "het han", tranh camera tu bat len bat ngo o tinh huong
-     *  nguoi dung khong con lien quan gi den lan quet cu. */
     private var reopenQrScannerDeadline = 0L
-
-    /** "Chia khoa" phien nhap lieu ([editorSessionKey]) tai lan [onStartInputView]
-     *  GAN NHAT (bat ke lan do co lien quan gi den QR hay khong) - dung de
-     *  phan biet: ban phim vua mo lai o CUNG mot o nhap/ung dung nhu truoc do
-     *  (vd bi thong bao he thong lam tat/bat lai bat ngo) hay THAT SU chuyen
-     *  sang mot o nhap/ung dung KHAC. Xem cach dung o [onStartInputView]:
-     *  neu la CUNG o nhap cu, GIU NGUYEN trang phim hien tai (chu cai/so/ky
-     *  hieu) thay vi luon reset ve trang chu cai nhu truoc day. */
     private var lastEditorSessionKey: String? = null
 
     private val qrToneGenerator: ToneGenerator by lazy {
         ToneGenerator(AudioManager.STREAM_NOTIFICATION, 100)
     }
 
-    /** Vibrator cua thiet bi, dung de RUNG THAT (goi truc tiep, khong qua
-     *  performHapticFeedback) moi khi nguoi dung nham mot phim - xem
-     *  [vibrateKeyPress]. Lay theo cach phu hop voi tung phien ban Android:
-     *  tu API 31 (Android 12) tro di phai qua VibratorManager, cac ban truoc
-     *  do lay truc tiep tu Context. */
     private val vibrator: Vibrator by lazy {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val manager = getSystemService(VibratorManager::class.java)
@@ -511,23 +395,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
     }
 
-    /** Rung nhe (~15ms) khi nham phim - goi TRUC TIEP vao Vibrator cua may
-     *  thay vi chi dua vao View.performHapticFeedback(). LY DO: performHapticFeedback
-     *  phu thuoc cai dat he thong "Rung khi cham" (Settings.System.HAPTIC_FEEDBACK_ENABLED)
-     *  - neu nguoi dung (hoac mac dinh cua may) tat cai dat do, phim se KHONG
-     *  rung du code da goi dung ham, gay hien tuong "bam phim khong thay
-     *  rung" nguoi dung phan anh. Goi truc tiep Vibrator.vibrate() KHONG bi
-     *  chi phoi boi cai dat do, nen chac chan rung moi lan cham phim, tru khi
-     *  chinh may khong co dong co rung (hasVibrator() = false) hoac nguoi
-     *  dung tat han quyen rung o cap he thong khac. */
-    /** Danh dau lenh rung la loai "cham/go phim" (USAGE_TOUCH / tuong duong)
-     *  thay vi khong phan loai - MOT SO MAY (dac biet Samsung/OEM tuy bien)
-     *  chi ap dung thanh truot "Rung khi cham" he thong (cai ma ban phim
-     *  MAC DINH dang dung) cho cac lenh rung co gan dung loai nay; lenh rung
-     *  "tran" (khong AudioAttributes/VibrationAttributes) co the bi may xep
-     *  vao muc "Rung he thong" chung - muc nay nhieu may de mac dinh la 0,
-     *  nen goi vibrate() tran khong co tac dung gi ca du hasVibrator() = true
-     *  va may van rung binh thuong voi ban phim mac dinh. */
     private val touchAudioAttributes: android.media.AudioAttributes by lazy {
         android.media.AudioAttributes.Builder()
             .setUsage(android.media.AudioAttributes.USAGE_ASSISTANCE_SONIFICATION)
@@ -543,25 +410,20 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
     private var loggedNoVibrator = false
 
-    /** LOI nguoi dung phan anh: go phim tren MAY THAT khong thay rung, du
-     *  ban phim MAC DINH cua may (khong phai app nay) van rung binh thuong -
-     *  tuc phan cung/quyen VIBRATE/cai dat "Rung khi cham" cua may DEU on,
-     *  chi rieng app nay la khong rung. NGUYEN NHAN thuong gap nhat trong
-     *  truong hop nay: mot so hang may tuy bien ROM sau (dac biet Xiaomi/
-     *  MIUI, Oppo/ColorOS, Vivo/FuntouchOS, mot so dong Samsung cu) AM THAM
-     *  BO QUA lenh vibrate() co gan kem VibrationAttributes/AudioAttributes
-     *  tu mot InputMethodService (khong throw Exception gi ca - ham chay
-     *  "thanh cong" nhung thuc te khong rung), trong khi lenh vibrate() KHONG
-     *  gan attributes (kieu "tran"/deprecated) van hoat dong binh thuong.
-     *
-     *  SUA: thay vi chi thu MOT cach roi thoi, thu LAN LUOT nhieu cach rung
-     *  tu "chuan/hien dai" xuong "don gian/tran" - he dieu hanh/ROM nao chan
-     *  cach nao thi tu dong roi xuong cach ke tiep (khong dung lai giua
-     *  chung du khong co Exception, vi loai loi nay thuong KHONG bao loi).
-     *  Ghi log ro tung buoc (bat_dau/thanh_cong) de kiem tra bang:
-     *    adb logcat -s QrKeyboardService
-     *  neu van con truong hop khong rung o may cu the nao do sau ban sua
-     *  nay, log se cho biet chinh xac buoc nao dang that bai. */
+    /** TOI UU (theo yeu cau nguoi dung "toi uu cho phim nhanh hon"): TRUOC
+     *  DAY, MOI LAN go phim deu phai thu LAN LUOT tu buoc 1 (VibrationAttributes)
+     *  xuong buoc 4 (deprecated vibrate(Long)) - tren cac may/ROM chan cac
+     *  buoc dau (khong throw Exception, chi "khong rung"), dieu nay co nghia
+     *  la MOI LAN go phim deu phai chiu chi phi cua 2-3 lan goi ham + log
+     *  that bai truoc khi toi duoc buoc THAT SU hoat dong - lap lai HANG
+     *  TRAM lan trong mot phien go nhanh, la mot phan nguyen nhan gay cam
+     *  giac "chậm". GIO DAY: nho lai (cache) CHINH XAC buoc nao da THANH
+     *  CONG o lan go truoc ([resolvedVibrationStep]) - tu lan go TIEP THEO,
+     *  di THANG vao buoc do, KHONG thu lai cac buoc truoc nua. Chi khi buoc
+     *  da luu bat ngo that bai (hiem gap, vd doi cai dat he thong giua
+     *  chung) moi quay lai do tim tu dau va cache lai buoc moi. */
+    private var resolvedVibrationStep = 0 // 0 = chua xac dinh, 1..4 = buoc da biet hoat dong
+
     private fun vibrateKeyPress() {
         if (!vibrator.hasVibrator()) {
             if (!loggedNoVibrator) {
@@ -570,78 +432,154 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             }
             return
         }
-        // Do dai 40ms + bien do 200/255 - manh va ro rang hon muc mac dinh,
-        // de dam bao cam nhan duoc ke ca tren may co dong co rung yeu.
         val effect = VibrationEffect.createOneShot(40L, 200)
 
-        // Buoc 1: cach "chuan" moi nhat - VibrationAttributes (Android 13+).
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        fun tryStep1(): Boolean {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return false
+            return try {
+                vibrator.vibrate(effect, touchVibrationAttributes); true
+            } catch (e: Exception) { false }
+        }
+        fun tryStep2(): Boolean {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return false
+            return try {
+                vibrator.vibrate(effect, touchAudioAttributes); true
+            } catch (e: Exception) { false }
+        }
+        fun tryStep3(): Boolean = try {
+            vibrator.vibrate(effect, null); true
+        } catch (e: Exception) { false }
+        fun tryStep4() {
             try {
-                vibrator.vibrate(effect, touchVibrationAttributes)
-                android.util.Log.d("QrKeyboardService", "Rung OK (VibrationAttributes)")
-                return
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(40L)
             } catch (e: Exception) {
-                android.util.Log.w("QrKeyboardService", "VibrationAttributes that bai: ${e.message}, thu cach khac")
+                android.util.Log.w("QrKeyboardService", "TAT CA cac cach rung deu that bai: ${e.message}")
             }
         }
-        // Buoc 2: AudioAttributes (Android 8-12, hoac fallback tu Buoc 1).
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            try {
-                vibrator.vibrate(effect, touchAudioAttributes)
-                android.util.Log.d("QrKeyboardService", "Rung OK (AudioAttributes)")
-                return
-            } catch (e: Exception) {
-                android.util.Log.w("QrKeyboardService", "AudioAttributes that bai: ${e.message}, thu cach khac")
-            }
+
+        // Neu da biet buoc nao hoat dong tu lan truoc, di THANG vao do.
+        when (resolvedVibrationStep) {
+            1 -> if (tryStep1()) return else resolvedVibrationStep = 0
+            2 -> if (tryStep2()) return else resolvedVibrationStep = 0
+            3 -> if (tryStep3()) return else resolvedVibrationStep = 0
+            4 -> { tryStep4(); return }
         }
-        // Buoc 3: VibrationEffect "tran", khong gan attributes gi ca - mot
-        // so ROM chan rieng cac lenh CO gan attributes nhung van cho qua
-        // lenh khong gan gi (attributes = null).
-        try {
-            vibrator.vibrate(effect, null)
+
+        // Chua biet (lan dau) hoac buoc cu vua that bai - do tim lai tu dau,
+        // CHI LOG mot lan duy nhat khi vua XAC DINH duoc buoc hoat dong
+        // (khong log lien tuc moi phim nhu truoc).
+        if (tryStep1()) {
+            resolvedVibrationStep = 1
+            android.util.Log.d("QrKeyboardService", "Rung OK (VibrationAttributes)")
+            return
+        }
+        if (tryStep2()) {
+            resolvedVibrationStep = 2
+            android.util.Log.d("QrKeyboardService", "Rung OK (AudioAttributes)")
+            return
+        }
+        if (tryStep3()) {
+            resolvedVibrationStep = 3
             android.util.Log.d("QrKeyboardService", "Rung OK (VibrationEffect tran, khong attributes)")
             return
-        } catch (e: Exception) {
-            android.util.Log.w("QrKeyboardService", "VibrationEffect tran that bai: ${e.message}, thu cach cuoi")
         }
-        // Buoc 4: phuong an cuoi cung - API rung kieu CU (deprecated tu API
-        // 26 nhung van hoat dong xuyen suot cac phien ban, kieu ma ban phim
-        // mac dinh cua nhieu hang may van dung ben duoi).
-        try {
-            @Suppress("DEPRECATION")
-            vibrator.vibrate(40L)
-            android.util.Log.d("QrKeyboardService", "Rung OK (deprecated vibrate(Long))")
-        } catch (e: Exception) {
-            android.util.Log.w("QrKeyboardService", "TAT CA cac cach rung deu that bai: ${e.message}")
-        }
+        resolvedVibrationStep = 4
+        tryStep4()
+        android.util.Log.d("QrKeyboardService", "Rung OK (deprecated vibrate(Long))")
     }
 
+    // ---------------------------------------------------------------------
+    // MAU SAC: vien phat sang (co the doi) + nen sang/toi (co the doi)
+    // ---------------------------------------------------------------------
 
-    /** Mau tim neon dung CHUNG cho VIEN phat sang cua tat ca cac phim, tren
-     *  CA BA trang (chu cai, so, ky hieu) - xem [buildGlowKeyBackground]. */
-    private val glowColor = Color.parseColor("#B388FF")
+    /** Mau VIEN PHAT SANG dung CHUNG cho MOI phim, tren CA 4 trang (chu cai,
+     *  so, ky hieu, so-rieng NUMPAD) - xem [buildGlowKeyBackground]. TRUOC
+     *  DAY la hang so co dinh (luon la mau tim) - GIO DAY la BIEN, nguoi
+     *  dung co the doi sang 1 trong 8 mau qua [buildKeyboardSettingsBar]
+     *  (xem [setAccentColor]). Gia tri KHOI TAO se duoc GHI DE lai trong
+     *  [onCreate] bang mau da luu tu lan truoc (neu co). */
+    private var glowColor: Int = DEFAULT_ACCENT_COLOR
+
+    /** True = NEN toi (den), chu TRANG (mac dinh, giu nguyen giao dien cu).
+     *  False = NEN sang (trang), chu DEN. Doi qua nut tron trong
+     *  [buildKeyboardSettingsBar] - xem [toggleTheme]. */
+    private var isDarkTheme: Boolean = true
+
+    /** SharedPreferences dung de luu/doc lai mau vien + che do sang toi da
+     *  chon - xem [PREFS_NAME]. */
+    private val keyboardPrefs: android.content.SharedPreferences by lazy {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+    }
+
+    /** Danh sach 8 mau nguoi dung co the chon cho vien phim, hien duoi dang
+     *  8 o vuong trong [buildKeyboardSettingsBar]. */
+    private val keyboardAccentColors = listOf(
+        Color.parseColor("#FF3B30"), // Do
+        Color.parseColor("#3B82F6"), // Xanh duong
+        Color.parseColor("#34C759"), // Luc (xanh la)
+        Color.parseColor("#FFD60A"), // Vang
+        Color.parseColor("#FF2D8A"), // Hong
+        Color.parseColor("#FF9500"), // Cam
+        DEFAULT_ACCENT_COLOR,        // Tim neon (mac dinh)
+        Color.parseColor("#8B5E3C")  // Nau
+    )
+
+    private fun keyboardBackgroundColor(): Int =
+        if (isDarkTheme) Color.parseColor("#050507") else Color.parseColor("#FAFAFA")
+
+    private fun keyFillColor(): Int =
+        if (isDarkTheme) Color.parseColor("#0A0A0F") else Color.parseColor("#F1F1F4")
+
+    private fun primaryTextColor(): Int =
+        if (isDarkTheme) Color.WHITE else Color.BLACK
+
+    /** TOI UU: cache CHUOI MAU VIEN NGOAI (lop "bloom" mo) da tinh san cho
+     *  MAU HIEN TAI - tranh phai goi String.format() + parseColor() (tuong
+     *  doi ton chi phi) tren MOI LAN xay dung MOI phim (co hang chuc, hang
+     *  tram phim duoc build moi lan mo trang). Chi tinh LAI khi mau nguon
+     *  ([borderColor]) khac lan truoc. */
+    private var cachedOuterGlowSourceColor: Int = 0
+    private var cachedOuterGlowResultColor: Int = 0
+    private var hasCachedOuterGlow = false
+
+    private fun outerGlowColorFor(borderColor: Int): Int {
+        if (hasCachedOuterGlow && borderColor == cachedOuterGlowSourceColor) {
+            return cachedOuterGlowResultColor
+        }
+        val alpha = (Color.alpha(borderColor) * 0.25f).toInt().coerceIn(0, 255)
+        val rgb = borderColor and 0x00FFFFFF
+        val result = (alpha shl 24) or rgb
+        cachedOuterGlowSourceColor = borderColor
+        cachedOuterGlowResultColor = result
+        hasCachedOuterGlow = true
+        return result
+    }
 
     /** Nen phim kieu "kinh toi + vien tim phat sang", gom 2 lop GradientDrawable
      *  chong len nhau (dung LayerDrawable):
-     *   - Lop NGOAI: nen gan den (hoi anh xanh), vien DAY hon nhung alpha THAP
-     *     (~25%) -> tao cam giac quang sang lan ra ngoai (bloom gia lap, vi
-     *     Android khong co blur re cho hang chuc phim ve cung luc).
-     *   - Lop TRONG: vien MANH (1dp), mau tim DAM (khong alpha) -> duong net
-     *     sac, giong duong ke tim trong anh mau.
-     *  Dung CHUNG cho moi phim thuong tren CA 3 trang ban phim (chu/so/ky
-     *  hieu) - xem [buildKey]. */
-    private fun buildGlowKeyBackground(cornerDp: Int = 6, borderColor: Int = glowColor): Drawable {
-        val outerAlphaHex = String.format("%02X", (Color.alpha(borderColor) * 0.25f).toInt().coerceIn(0, 255))
-        val outerColorHex = String.format("%06X", 0xFFFFFF and borderColor)
+     *   - Lop NGOAI: nen theo [keyFillColor], vien DAY hon nhung alpha THAP
+     *     (~25%) -> tao cam giac quang sang lan ra ngoai (bloom gia lap).
+     *   - Lop TRONG: vien MANH (mac dinh 1dp), mau [borderColor] (khong
+     *     alpha) -> duong net sac.
+     *  Dung CHUNG cho moi phim thuong tren CA 4 trang ban phim. */
+    private fun buildGlowKeyBackground(
+        cornerDp: Int = 6,
+        borderColor: Int = glowColor,
+        // Do day (dp) cua VIEN TRONG - dp(1) mac dinh nhu truoc. Chi cac O
+        // MAU trong [buildKeyboardSettingsBar] truyen gia tri lon hon cho o
+        // DANG DUOC CHON, de nguoi dung nhan biet ngay minh dang chon mau nao.
+        borderWidthDp: Int = 1
+    ): Drawable {
         val outerGlow = GradientDrawable().apply {
             cornerRadius = dp(cornerDp + 2).toFloat()
-            setColor(Color.parseColor("#0A0A0F"))
-            setStroke(dp(4), Color.parseColor("#$outerAlphaHex$outerColorHex"))
+            setColor(keyFillColor())
+            setStroke(dp(borderWidthDp + 3), outerGlowColorFor(borderColor))
         }
         val innerLine = GradientDrawable().apply {
             cornerRadius = dp(cornerDp).toFloat()
             setColor(Color.TRANSPARENT)
-            setStroke(dp(1), borderColor)
+            setStroke(dp(borderWidthDp), borderColor)
         }
         return LayerDrawable(arrayOf(outerGlow, innerLine)).apply {
             setLayerInset(1, dp(2), dp(2), dp(2), dp(2))
@@ -654,351 +592,173 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         "zxcvbnm"
     )
 
-    /** Trang so & ky hieu co ban (nut "?123"). Hang 3 duoc dung rieng
-     *  (buildNumbersRow3) vi phim dau tien la nut chuyen sang trang ky hieu
-     *  mo rong, khong phai mot ky tu de chen. */
     private val numberRows = listOf(
         "1234567890",
         "@#\u0111_&-+()/"
     )
-    // SUA: truoc day chi co 7 ky tu (cong voi "=\<" o dau va "⌫" o cuoi ->
-    // hang nay chi co 9 phim), trong khi 2 hang tren (numberRows) co dung 10
-    // phim moi hang. Vi tat ca deu dung weight = 1 bang nhau, hang co IT phim
-    // hon se bi TU DONG gian RONG HON de lap day dong chieu rong man hinh ->
-    // cot cua hang nay khong con thang voi cot cua 2 hang tren, nhin "lech
-    // hang, khong can doi". Them dau "=" (vua thieu, vua huu ich cho van ban
-    // ky thuat) de du 8 ky tu, cong voi "=\<" + "⌫" thanh dung 10 phim, khop
-    // cot voi 2 hang tren.
     private val numberRow3Symbols = "*\"':;!?="
 
     /** Danh sach emoji cho hang emoji co the TRUOT NGANG (xem [buildEmojiRow]),
-     *  hien tren trang so (trang thu 2). Mo rong len ~150 emoji, chia nhom:
-     *  mat cuoi -> cu chi/tay -> cam xuc/tim -> hoat dong -> do an -> dong vat
-     *  -> thien nhien/thoi tiet -> di chuyen/dia diem -> do vat -> ky hieu. */
+     *  hien tren trang so (trang thu 2). */
     private val emojiList = listOf(
         // --- Mat cuoi / Bieu cam ---
-        "\ud83d\ude00", // 😀 grin
-        "\ud83d\ude01", // 😁 beam
-        "\ud83d\ude02", // 😂 tears of joy
-        "\ud83e\udd23", // 🤣 rofl
-        "\ud83d\ude03", // 😃 big smile
-        "\ud83d\ude04", // 😄 smile eyes
-        "\ud83d\ude05", // 😅 sweat smile
-        "\ud83d\ude06", // 😆 laughing
-        "\ud83d\ude09", // 😉 wink
-        "\ud83d\ude0a", // 😊 blush
-        "\ud83d\ude0d", // 😍 heart eyes
-        "\ud83e\udd70", // 🥰 hearts face
-        "\ud83d\ude18", // 😘 kiss
-        "\ud83d\ude17", // 😗 kissing
-        "\ud83d\ude19", // 😙 kiss smile
-        "\ud83d\ude1a", // 😚 kiss closed
-        "\ud83d\ude0b", // 😋 yum
-        "\ud83d\ude0e", // 😎 sunglasses
-        "\ud83e\udd13", // 🤓 nerd
-        "\ud83e\udd17", // 🤗 hugging
-        "\ud83e\udd14", // 🤔 thinking
-        "\ud83d\ude10", // 😐 neutral
-        "\ud83d\ude11", // 😑 expressionless
-        "\ud83d\ude36", // 😶 no mouth
-        "\ud83d\ude0f", // 😏 smirk
-        "\ud83d\ude0c", // 😌 relieved
-        "\ud83d\ude14", // 😔 pensive
-        "\ud83d\ude2a", // 😪 sleepy
-        "\ud83d\ude34", // 😴 sleeping
-        "\ud83d\ude16", // 😖 confounded
-        "\ud83d\ude1e", // 😞 disappointed
-        "\ud83d\ude15", // 😕 confused
-        "\ud83d\ude22", // 😢 cry
-        "\ud83d\ude2d", // 😭 sob
-        "\ud83d\ude20", // 😠 angry
-        "\ud83d\ude21", // 😡 rage
-        "\ud83e\udd2c", // 🤬 cursing
-        "\ud83e\udd2f", // 🤯 exploding head
-        "\ud83d\ude31", // 😱 scream
-        "\ud83d\ude28", // 😨 fearful
-        "\ud83d\ude30", // 😰 cold sweat
-        "\ud83d\ude33", // 😳 flushed
-        "\ud83e\udd75", // 🥵 hot face
-        "\ud83e\udd76", // 🥶 cold face
-        "\ud83d\ude35", // 😵 dizzy
-        "\ud83e\udd74", // 🥴 woozy
-        "\ud83e\udd22", // 🤢 nauseated
-        "\ud83e\udd27", // 🤧 sneezing
-        "\ud83d\ude37", // 😷 mask
-        "\ud83e\udd12", // 🤒 thermometer face
-        "\ud83e\udd11", // 🤑 money mouth
-        "\ud83e\udd20", // 🤠 cowboy
-        "\ud83e\udd21", // 🤡 clown
-        "\ud83d\ude08", // 😈 devil smile
-        "\ud83d\udc7f", // 👿 angry devil
-        "\ud83d\udc80", // 💀 skull
-        "\ud83d\udc7d", // 👽 alien
-        "\ud83e\udd16", // 🤖 robot
-
+        "\ud83d\ude00", "\ud83d\ude01", "\ud83d\ude02", "\ud83e\udd23", "\ud83d\ude03",
+        "\ud83d\ude04", "\ud83d\ude05", "\ud83d\ude06", "\ud83d\ude09", "\ud83d\ude0a",
+        "\ud83d\ude0d", "\ud83e\udd70", "\ud83d\ude18", "\ud83d\ude17", "\ud83d\ude19",
+        "\ud83d\ude1a", "\ud83d\ude0b", "\ud83d\ude0e", "\ud83e\udd13", "\ud83e\udd17",
+        "\ud83e\udd14", "\ud83d\ude10", "\ud83d\ude11", "\ud83d\ude36", "\ud83d\ude0f",
+        "\ud83d\ude0c", "\ud83d\ude14", "\ud83d\ude2a", "\ud83d\ude34", "\ud83d\ude16",
+        "\ud83d\ude1e", "\ud83d\ude15", "\ud83d\ude22", "\ud83d\ude2d", "\ud83d\ude20",
+        "\ud83d\ude21", "\ud83e\udd2c", "\ud83e\udd2f", "\ud83d\ude31", "\ud83d\ude28",
+        "\ud83d\ude30", "\ud83d\ude33", "\ud83e\udd75", "\ud83e\udd76", "\ud83d\ude35",
+        "\ud83e\udd74", "\ud83e\udd22", "\ud83e\udd27", "\ud83d\ude37", "\ud83e\udd12",
+        "\ud83e\udd11", "\ud83e\udd20", "\ud83e\udd21", "\ud83d\ude08", "\ud83d\udc7f",
+        "\ud83d\udc80", "\ud83d\udc7d", "\ud83e\udd16",
         // --- Cu chi / Tay ---
-        "\ud83d\udc4d", // 👍 thumbs up
-        "\ud83d\udc4e", // 👎 thumbs down
-        "\ud83d\udc4f", // 👏 clap
-        "\ud83d\ude4f", // 🙏 pray/thanks
-        "\ud83e\udd1d", // 🤝 handshake
-        "\u270c\ufe0f", // ✌️ victory
-        "\ud83e\udd1e", // 🤞 crossed fingers
-        "\ud83e\udd1f", // 🤟 love you hand
-        "\ud83e\udd18", // 🤘 rock on
-        "\ud83d\udc4c", // 👌 ok
-        "\ud83e\udd19", // 🤙 call me
-        "\u261d\ufe0f", // ☝️ point up
-        "\ud83d\udc46", // 👆 point up 2
-        "\ud83d\udc47", // 👇 point down
-        "\ud83d\udc48", // 👈 point left
-        "\ud83d\udc49", // 👉 point right
-        "\ud83d\udc4a", // 👊 fist bump
-        "\u270a", // ✊ raised fist
-        "\ud83e\udd1b", // 🤛 left fist
-        "\ud83e\udd1c", // 🤜 right fist
-        "\ud83d\udc4b", // 👋 wave
-        "\ud83e\udd1a", // 🤚 raised back hand
-        "\ud83d\udd90\ufe0f", // 🖐️ hand splayed
-        "\u270b", // ✋ raised hand
-        "\ud83d\udc4e", // 👎 dislike
-        "\ud83d\udcaa", // 💪 muscle
-        "\ud83d\ude4c", // 🙌 celebrate hands
-        "\ud83d\ude4b", // 🙋 hand raise person
-        "\ud83e\udd26", // 🤦 facepalm
-        "\ud83e\udd37", // 🤷 shrug
-
+        "\ud83d\udc4d", "\ud83d\udc4e", "\ud83d\udc4f", "\ud83d\ude4f", "\ud83e\udd1d",
+        "\u270c\ufe0f", "\ud83e\udd1e", "\ud83e\udd1f", "\ud83e\udd18", "\ud83d\udc4c",
+        "\ud83e\udd19", "\u261d\ufe0f", "\ud83d\udc46", "\ud83d\udc47", "\ud83d\udc48",
+        "\ud83d\udc49", "\ud83d\udc4a", "\u270a", "\ud83e\udd1b", "\ud83e\udd1c",
+        "\ud83d\udc4b", "\ud83e\udd1a", "\ud83d\udd90\ufe0f", "\u270b", "\ud83d\udc4e",
+        "\ud83d\udcaa", "\ud83d\ude4c", "\ud83d\ude4b", "\ud83e\udd26", "\ud83e\udd37",
         // --- Tim / Cam xuc ---
-        "\u2764\ufe0f", // ❤️ red heart
-        "\ud83e\udde1", // 🧡 orange heart
-        "\ud83d\udc9b", // 💛 yellow heart
-        "\ud83d\udc9a", // 💚 green heart
-        "\ud83d\udc99", // 💙 blue heart
-        "\ud83d\udc9c", // 💜 purple heart
-        "\ud83d\udc97", // 💗 growing heart
-        "\ud83d\udc96", // 💖 sparkling heart
-        "\ud83d\udc95", // 💕 two hearts
-        "\ud83d\udc94", // 💔 broken heart
-        "\u2665\ufe0f", // ♥️ heart suit
-        "\ud83d\udcaf", // 💯 100
-        "\u2b50", // ⭐ star
-        "\ud83c\udf1f", // 🌟 glowing star
-        "\ud83d\udd25", // 🔥 fire
-        "\u26a1", // ⚡ lightning
-        "\ud83c\udf89", // 🎉 party popper
-        "\ud83c\udf8a", // 🎊 confetti
-
+        "\u2764\ufe0f", "\ud83e\udde1", "\ud83d\udc9b", "\ud83d\udc9a", "\ud83d\udc99",
+        "\ud83d\udc9c", "\ud83d\udc97", "\ud83d\udc96", "\ud83d\udc95", "\ud83d\udc94",
+        "\u2665\ufe0f", "\ud83d\udcaf", "\u2b50", "\ud83c\udf1f", "\ud83d\udd25",
+        "\u26a1", "\ud83c\udf89", "\ud83c\udf8a",
         // --- Do an / Uong ---
-        "\ud83c\udf55", // 🍕 pizza
-        "\ud83c\udf54", // 🍔 burger
-        "\ud83c\udf5c", // 🍜 noodles
-        "\ud83c\udf5b", // 🍛 curry
-        "\ud83c\udf63", // 🍣 sushi
-        "\ud83c\udf62", // 🍢 oden
-        "\ud83e\udd6a", // 🥪 sandwich
-        "\ud83c\udf2e", // 🌮 taco
-        "\ud83c\udf2f", // 🌯 burrito
-        "\ud83e\udd57", // 🥗 salad
-        "\ud83c\udf70", // 🎰 cake slice
-        "\ud83c\udf82", // 🎂 birthday cake
-        "\ud83c\udf69", // 🍩 donut
-        "\ud83c\udf6a", // 🍪 cookie
-        "\ud83c\udf6b", // 🍫 chocolate
-        "\ud83c\udf6c", // 🍬 candy
-        "\ud83c\udf6d", // 🍭 lollipop
-        "\ud83e\udd64", // 🥤 cup straw
-        "\ud83c\udf7a", // 🍺 beer
-        "\ud83c\udf77", // 🍷 wine
-        "\u2615", // ☕ coffee
-        "\ud83c\udf75", // 🍵 tea
-        "\ud83c\udf7d\ufe0f", // 🍽️ fork knife plate
-        "\ud83e\udd51", // 🥑 avocado
-        "\ud83c\udf4e", // 🍎 apple
-        "\ud83c\udf4a", // 🍊 orange
-        "\ud83c\udf4b", // 🍋 lemon
-        "\ud83c\udf49", // 🍉 watermelon
-        "\ud83c\udf53", // 🍓 strawberry
-        "\ud83c\udf47", // 🍇 grapes
-
+        "\ud83c\udf55", "\ud83c\udf54", "\ud83c\udf5c", "\ud83c\udf5b", "\ud83c\udf63",
+        "\ud83c\udf62", "\ud83e\udd6a", "\ud83c\udf2e", "\ud83c\udf2f", "\ud83e\udd57",
+        "\ud83c\udf70", "\ud83c\udf82", "\ud83c\udf69", "\ud83c\udf6a", "\ud83c\udf6b",
+        "\ud83c\udf6c", "\ud83c\udf6d", "\ud83e\udd64", "\ud83c\udf7a", "\ud83c\udf77",
+        "\u2615", "\ud83c\udf75", "\ud83c\udf7d\ufe0f", "\ud83e\udd51", "\ud83c\udf4e",
+        "\ud83c\udf4a", "\ud83c\udf4b", "\ud83c\udf49", "\ud83c\udf53", "\ud83c\udf47",
         // --- Dong vat ---
-        "\ud83d\udc36", // 🐶 dog
-        "\ud83d\udc31", // 🐱 cat
-        "\ud83d\udc2d", // 🐭 mouse
-        "\ud83d\udc39", // 🐹 hamster
-        "\ud83d\udc30", // 🐰 rabbit
-        "\ud83d\udc3b", // 🐻 bear
-        "\ud83d\udc3c", // 🐼 panda
-        "\ud83d\udc28", // 🐨 koala
-        "\ud83d\udc2f", // 🐯 tiger
-        "\ud83e\udd81", // 🦁 lion
-        "\ud83d\udc2e", // 🐮 cow
-        "\ud83d\udc37", // 🐷 pig
-        "\ud83d\udc24", // 🐤 chick
-        "\ud83d\udc27", // 🐧 penguin
-        "\ud83d\udc26", // 🐦 bird
-        "\ud83e\udd85", // 🦅 eagle
-        "\ud83d\udc2c", // 🐬 dolphin
-        "\ud83d\udc33", // 🐳 whale
-        "\ud83d\udc20", // 🐠 tropical fish
-        "\ud83d\udc19", // 🐙 octopus
-        "\ud83e\udd8b", // 🦋 butterfly
-
+        "\ud83d\udc36", "\ud83d\udc31", "\ud83d\udc2d", "\ud83d\udc39", "\ud83d\udc30",
+        "\ud83d\udc3b", "\ud83d\udc3c", "\ud83d\udc28", "\ud83d\udc2f", "\ud83e\udd81",
+        "\ud83d\udc2e", "\ud83d\udc37", "\ud83d\udc24", "\ud83d\udc27", "\ud83d\udc26",
+        "\ud83e\udd85", "\ud83d\udc2c", "\ud83d\udc33", "\ud83d\udc20", "\ud83d\udc19",
+        "\ud83e\udd8b",
         // --- Thien nhien / Thoi tiet ---
-        "\u2600\ufe0f", // ☀️ sun
-        "\ud83c\udf24\ufe0f", // 🌤️ sun behind cloud
-        "\u2601\ufe0f", // ☁️ cloud
-        "\ud83c\udf27\ufe0f", // 🌧️ rain
-        "\u26c4", // ⛄ snowman
-        "\ud83c\udf08", // 🌈 rainbow
-        "\ud83c\udf0a", // 🌊 wave
-        "\ud83c\udf38", // 🌸 cherry blossom
-        "\ud83c\udf39", // 🌹 rose
-        "\ud83c\udf3b", // 🌻 sunflower
-        "\ud83c\udf3c", // 🌼 blossom
-        "\ud83c\udf40", // 🍀 four leaf clover
-        "\ud83c\udf41", // 🍁 maple leaf
-        "\ud83c\udf3f", // 🌿 herb
-        "\ud83c\udf0d", // 🌍 earth africa
-        "\ud83c\udf19", // 🌙 crescent moon
-        "\ud83d\udc4b", // 👋 wave hi
-
+        "\u2600\ufe0f", "\ud83c\udf24\ufe0f", "\u2601\ufe0f", "\ud83c\udf27\ufe0f", "\u26c4",
+        "\ud83c\udf08", "\ud83c\udf0a", "\ud83c\udf38", "\ud83c\udf39", "\ud83c\udf3b",
+        "\ud83c\udf3c", "\ud83c\udf40", "\ud83c\udf41", "\ud83c\udf3f", "\ud83c\udf0d",
+        "\ud83c\udf19", "\ud83d\udc4b",
         // --- Di chuyen / Dia diem ---
-        "\ud83d\ude97", // 🚗 car
-        "\ud83d\ude8c", // 🚌 bus
-        "\ud83d\ude82", // 🚂 train
-        "\ud83d\udea2", // 🚢 ship
-        "\u2708\ufe0f", // ✈️ airplane
-        "\ud83d\ude80", // 🚀 rocket
-        "\ud83d\udeb2", // 🚲 bicycle
-        "\ud83c\udfe0", // 🏠 house
-        "\ud83c\udfe2", // 🏢 office
-        "\ud83c\udfd6\ufe0f", // 🏖️ beach
-        "\ud83c\udfd4\ufe0f", // 🏔️ mountain
-        "\ud83d\uddfa\ufe0f", // 🗺️ map
-        "\ud83d\udccd", // 📍 pin
-        "\ud83c\udf0f", // 🌏 earth asia
-
+        "\ud83d\ude97", "\ud83d\ude8c", "\ud83d\ude82", "\ud83d\udea2", "\u2708\ufe0f",
+        "\ud83d\ude80", "\ud83d\udeb2", "\ud83c\udfe0", "\ud83c\udfe2", "\ud83c\udfd6\ufe0f",
+        "\ud83c\udfd4\ufe0f", "\ud83d\uddfa\ufe0f", "\ud83d\udccd", "\ud83c\udf0f",
         // --- Do vat / Cong nghe ---
-        "\ud83d\udcf1", // 📱 phone
-        "\ud83d\udcbb", // 💻 laptop
-        "\u2328\ufe0f", // ⌨️ keyboard
-        "\ud83d\udda5\ufe0f", // 🖥️ desktop
-        "\ud83d\udcf7", // 📷 camera
-        "\ud83c\udfa4", // 🎤 microphone
-        "\ud83c\udfa7", // 🎧 headphone
-        "\ud83d\udcfa", // 📺 tv
-        "\ud83d\udcda", // 📚 books
-        "\ud83d\udcdd", // 📝 memo
-        "\ud83d\udce7", // 📧 email
-        "\ud83d\udd14", // 🔔 bell
-        "\ud83d\udcb0", // 💰 money bag
-        "\ud83d\udcb3", // 💳 credit card
-        "\ud83c\udf81", // 🎁 gift
-        "\ud83d\udd12", // 🔒 lock
-        "\ud83d\udd13", // 🔓 unlock
-        "\ud83d\udd0d", // 🔍 search
-        "\u2705", // ✅ check
-        "\u274c", // ❌ cross
-        "\u23f0", // ⏰ alarm clock
-        "\ud83d\udcca", // 📊 chart
-        "\ud83d\udcc8", // 📈 up chart
-        "\ud83d\udcc9"  // 📉 down chart
+        "\ud83d\udcf1", "\ud83d\udcbb", "\u2328\ufe0f", "\ud83d\udda5\ufe0f", "\ud83d\udcf7",
+        "\ud83c\udfa4", "\ud83c\udfa7", "\ud83d\udcfa", "\ud83d\udcda", "\ud83d\udcdd",
+        "\ud83d\udce7", "\ud83d\udd14", "\ud83d\udcb0", "\ud83d\udcb3", "\ud83c\udf81",
+        "\ud83d\udd12", "\ud83d\udd13", "\ud83d\udd0d", "\u2705", "\u274c",
+        "\u23f0", "\ud83d\udcca", "\ud83d\udcc8", "\ud83d\udcc9"
     )
 
-    /** Trang ky hieu mo rong (nut "=\<"). Truoc day 2 phim dau hang thu 2 la
-     *  £, € (ky hieu tien te it dung) - doi thanh <, > (dau ngoac nhon) de
-     *  huu ich hon cho viec go code/van ban ky thuat. */
     private val extendedSymbolRows = listOf(
         "~`|\u2022\u221a\u03c0\u00f7\u00d7\u00b6\u0394",
         "<>$\u00a2^\u00b0={}\\"
     )
-    // SUA: ky tu \u2105 ("care of", trong nhu chu "c/o" viet tat) o co nho
-    // hien thi TRONG GAN GIONG dau "%" ben canh, khien nguoi dung thay nham
-    // nhu co 2 dau "%" trung nhau tren ban phim. Bo ky tu do, thay bang 2 ky
-    // hieu ro rang, khac biet va huu ich hon (§ dau muc/dieu luat, ± cong-tru)
-    // - vua het nham lan, vua du 8 ky tu (cong voi "?123" + "⌫" thanh dung 10
-    // phim, khop cot voi 2 hang tren, xem [numberRow3Symbols] cho ly do tuong
-    // tu ben trang So).
     private val extendedSymbolRow3 = "%\u00a9\u00ae\u2122\u00a7\u00b1[]"
 
     private fun dp(value: Int): Int =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics).toInt()
 
     /** LOI nguoi dung phan anh: man hinh NGANG (landscape) hoac cua so hep
-     *  (chieu cao man hinh nho) khien toan bo ban phim (5 hang x 48dp/hang =
-     *  ~262dp, TRUOC DAY chieu cao phim la SO CO DINH, khong doi theo man
-     *  hinh) CAO HON khong gian thuc te danh cho ban phim. Vi cua so IME luon
-     *  duoc neo o DAY man hinh va "moc" len TREN, phan vuot qua bi day len
-     *  TREN DINH man hinh - tuc bi CAT MAT/KHUAT hoan toan (khong phai cuon
-     *  duoc, chi la khong con cho de ve), dung y het hien tuong nguoi dung
-     *  chup man hinh: chi con thay 2 hang duoi cung (zxcvbnm + hang phim
-     *  cach), hang zxcvbnm bi "cat" o mep tren vi no la hang DAU TIEN con
-     *  vua may cham toi vach tren cung con hien duoc.
-     *
-     *  KHAC PHUC: tinh chieu cao MOI phim (dung chung cho toan bo ban phim,
-     *  thay cho hang so 48 co dinh) dua theo [screenHeightDp] THUC TE cua
-     *  man hinh hien tai (tu dong cap nhat lai moi khi ban phim duoc ve lai,
-     *  vd sau khi xoay man hinh) - man hinh cang thap (ngang, cua so nho) thi
-     *  phim cang thap theo TY LE, dam bao TOAN BO 5 hang luon vua du trong
-     *  khong gian thuc te, khong con hang nao bi day khuat len tren nua. Man
-     *  hinh doc binh thuong (screenHeightDp lon) van giu nguyen 48dp nhu cu,
-     *  khong doi gi ca. */
+     *  khien toan bo ban phim bi cat mat/khuat o phia tren. Tinh chieu cao
+     *  MOI phim dua theo [screenHeightDp] THUC TE cua man hinh hien tai. */
     private val keyHeightDp: Int
         get() {
             val screenHeightDp = resources.configuration.screenHeightDp
             return when {
-                screenHeightDp <= 400 -> 34 // man hinh ngang (landscape) tren hau het dien thoai
-                screenHeightDp <= 550 -> 42 // man hinh doc nhung thap (dien thoai nho, cua so chia doi)
-                else -> 48 // man hinh doc binh thuong - giu nguyen nhu cu
+                screenHeightDp <= 400 -> 34
+                screenHeightDp <= 550 -> 42
+                else -> 48
             }
         }
 
+    /** TOI UU (xem giai thich day du o dau file): CHI xoa cache cac trang
+     *  So/Ky hieu/So-rieng khi kich thuoc phim THAT SU doi (xoay man hinh...);
+     *  neu KHONG doi (truong hop pho bien nhat: chi chuyen o nhap/ung dung),
+     *  GIU LAI cac View da cache, chi go chung ra khoi container CU (neu
+     *  dang gan o do) de tranh crash "already has a parent" khi gan lai vao
+     *  container MOI ngay sau day trong [buildKeyboardContainer]. */
     override fun onCreateInputView(): View {
-        // Xoa cache de build lai trang LETTERS tuoi moi khi ban phim duoc
-        // mo (co the da doi man hinh xoay/chieu cao, can tinh lai keyHeightDp).
-        // Cache NUMBERS/SYMBOLS van giu de dung lai ngay neu nguoi dung
-        // chuyen trang ngay sau khi mo ban phim.
-        cachedNumbersView = null
-        cachedSymbolsView = null
+        val currentKeyHeight = keyHeightDp
+        if (currentKeyHeight != lastBuiltKeyHeightDp) {
+            cachedNumbersView = null
+            cachedSymbolsView = null
+            cachedNumpadView = null
+            lastBuiltKeyHeightDp = currentKeyHeight
+        } else {
+            detachFromParentIfAny(cachedNumbersView)
+            detachFromParentIfAny(cachedSymbolsView)
+            detachFromParentIfAny(cachedNumpadView)
+        }
         keyboardRootContainer = null
         lettersPageView = null
         return buildKeyboardContainer()
     }
 
-    /** Tao container boc 3 trang ban phim. Moi trang la mot LinearLayout
-     *  rieng, tat ca nam trong cung mot FrameLayout - khi chuyen trang chi
-     *  can doi VISIBLE/GONE, khong rebuild View nao ca. */
+    /** Go [view] ra khoi ViewGroup cha hien tai cua no (neu co) - dung truoc
+     *  khi gan lai mot View DA CACHE vao mot container KHAC, tranh
+     *  IllegalStateException "The specified child already has a parent". */
+    private fun detachFromParentIfAny(view: View?) {
+        if (view == null) return
+        (view.parent as? ViewGroup)?.removeView(view)
+    }
+
+    /** Tao container boc toi da 4 trang ban phim. TOI UU: KHONG con xay dung
+     *  ca 4 trang cung luc nhu truoc - CHI trang LETTERS (luon can, mang
+     *  trang thai dong: Shift/ngon ngu) duoc build NGAY, cong THEM DUY NHAT
+     *  trang dang TRUNG voi [mode] hien tai (neu khac LETTERS). 3 trang con
+     *  lai duoc de danh, CHI xay dung THAT SU khi nguoi dung chuyen toi qua
+     *  [switchMode] - xem giai thich day du ("TOI UU") o dau file. */
     private fun buildKeyboardContainer(): View {
         val container = FrameLayout(this).apply {
-            setBackgroundColor(Color.parseColor("#050507"))
+            setBackgroundColor(keyboardBackgroundColor())
         }
         keyboardRootContainer = container
 
-        // Trang LETTERS: luon build moi (co trang thai dong: Shift, ngon ngu)
         val letters = buildLettersPage()
         lettersPageView = letters
         container.addView(letters)
+        letters.visibility = if (mode == KeyboardMode.LETTERS) View.VISIBLE else View.GONE
 
-        // Trang NUMBERS: dung cache neu co
-        val numbers = cachedNumbersView ?: buildNumbersPage().also { cachedNumbersView = it }
-        container.addView(numbers)
-
-        // Trang SYMBOLS: dung cache neu co
-        val symbols = cachedSymbolsView ?: buildSymbolsPage().also { cachedSymbolsView = it }
-        container.addView(symbols)
-
-        // Hien dung trang theo mode hien tai, an 2 trang con lai
-        applyModeVisibility(container, letters, numbers, symbols)
+        when (mode) {
+            KeyboardMode.NUMBERS -> {
+                val numbers = cachedNumbersView ?: buildNumbersPage().also { cachedNumbersView = it }
+                container.addView(numbers)
+                numbers.visibility = View.VISIBLE
+            }
+            KeyboardMode.SYMBOLS -> {
+                val symbols = cachedSymbolsView ?: buildSymbolsPage().also { cachedSymbolsView = it }
+                container.addView(symbols)
+                symbols.visibility = View.VISIBLE
+            }
+            KeyboardMode.NUMPAD -> {
+                val numpad = cachedNumpadView ?: buildNumpadPage().also { cachedNumpadView = it }
+                container.addView(numpad)
+                numpad.visibility = View.VISIBLE
+            }
+            KeyboardMode.LETTERS -> { /* da them o tren */ }
+        }
         return container
     }
 
+    /** Cap nhat visibility cho tat ca cac trang HIEN CO (cac trang con lai -
+     *  [numbers]/[symbols]/[numpad] - co the null neu CHUA duoc xay dung,
+     *  xem giai thich "TOI UU" o dau file: khong con bat buoc phai ton tai
+     *  san nhu truoc). */
     private fun applyModeVisibility(
         container: FrameLayout,
-        letters: View, numbers: View, symbols: View
+        letters: View, numbers: View?, symbols: View?, numpad: View?
     ) {
         letters.visibility = if (mode == KeyboardMode.LETTERS) View.VISIBLE else View.GONE
-        numbers.visibility = if (mode == KeyboardMode.NUMBERS) View.VISIBLE else View.GONE
-        symbols.visibility = if (mode == KeyboardMode.SYMBOLS) View.VISIBLE else View.GONE
+        numbers?.visibility = if (mode == KeyboardMode.NUMBERS) View.VISIBLE else View.GONE
+        symbols?.visibility = if (mode == KeyboardMode.SYMBOLS) View.VISIBLE else View.GONE
+        numpad?.visibility = if (mode == KeyboardMode.NUMPAD) View.VISIBLE else View.GONE
     }
 
     /** Build trang chu cai (LETTERS). Ham nay duoc goi moi khi can cap nhat
@@ -1019,24 +779,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 letterRows.forEachIndexed { index, row ->
                     val rowView = buildCharRow(row, applyShiftCase = true)
                     if (index == letterRows.lastIndex) {
-                        // SUA loi nguoi dung phan anh (lan 2): ban vá truoc day
-                        // (topMargin -= dp(5) o day, cong topMargin = dp(5) o
-                        // [buildLettersBottomRow]) tuy giu TONG chieu cao ban
-                        // phim khong doi, nhung lai lam 2 khoang cach quanh
-                        // hang nay LECH NHAU ro ret: khoang cach PHIA TREN
-                        // (voi hang asdfghjkl) bi am (-3dp, tuc la CHONG LEN
-                        // nhau/"sat vao nhau"), trong khi khoang cach PHIA
-                        // DUOI (voi hang ?123/,/cach/./Enter) lai thanh +7dp -
-                        // gap hon 3 lan khoang cach binh thuong (2dp) giua cac
-                        // hang khac. KHONG con chinh topMargin rieng cho hang
-                        // nay nua - de no dung khoang cach MAC DINH (giong het
-                        // cac hang chu cai khac o tren), tu do deu voi ca hang
-                        // tren lan hang duoi.
-                        // Hang chu cai cuoi cung (zxcvbnm): nut Shift (⇧) o
-                        // DAU hang (ben trai), nut xoa (⌫) o CUOI hang (ben
-                        // phai) - giu nguyen vi tri nay (KHONG chuyen xuong
-                        // hang duoi cung), chi sua loi "Shift bi lech cao"
-                        // bang isBaselineAligned = false o [buildCharRow].
                         rowView.addView(
                             buildKey(
                                 "\u2b06", weight = 1.5f,
@@ -1074,13 +816,15 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 }
                 root.addView(buildLettersBottomRow())
             }
-            else -> { /* NUMBERS/SYMBOLS duoc xu ly o buildNumbersPage/buildSymbolsPage */ }
+            else -> { /* NUMBERS/SYMBOLS/NUMPAD duoc xu ly o cac ham build*Page rieng */ }
         }
 
         return root
     }
 
-    /** Build trang so (NUMBERS) - chi goi 1 lan, ket qua duoc cache lai. */
+    /** Build trang so (NUMBERS) - CHI duoc goi khi nguoi dung THAT SU chuyen
+     *  toi trang nay (xem [buildKeyboardContainer]/[switchMode]), ket qua
+     *  duoc cache lai qua [cachedNumbersView]. */
     private fun buildNumbersPage(): View {
         val verticalPaddingDp = if (keyHeightDp < 48) 2 else 6
         return LinearLayout(this).apply {
@@ -1093,7 +837,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
     }
 
-    /** Build trang ky hieu (SYMBOLS) - chi goi 1 lan, ket qua duoc cache lai. */
+    /** Build trang ky hieu (SYMBOLS) - CHI duoc goi khi nguoi dung THAT SU
+     *  chuyen toi trang nay, ket qua duoc cache lai qua [cachedSymbolsView].
+     *  THEM: [buildKeyboardSettingsBar] - thanh chon mau vien + sang/toi,
+     *  hien san ngay tren trang nay (khong can nut bat/tat rieng). */
     private fun buildSymbolsPage(): View {
         val verticalPaddingDp = if (keyHeightDp < 48) 2 else 6
         return LinearLayout(this).apply {
@@ -1101,56 +848,128 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             setPadding(dp(4), dp(verticalPaddingDp), dp(4), dp(verticalPaddingDp + EXTRA_BOTTOM_LIFT_DP))
             extendedSymbolRows.forEach { row -> addView(buildCharRow(row)) }
             addView(buildExtendedSymbolsRow3())
+            addView(buildKeyboardSettingsBar())
             addView(buildExtendedSymbolsBottomRow())
         }
     }
 
-    /** Chuyen sang trang [newMode]: chi doi visibility, KHONG rebuild View.
-     *  Neu container chua duoc tao (hiem gap), fallback ve setInputView. */
+    /** Trang BAN PHIM SO rieng (dang ban phim PIN/dien thoai: 3 hang so +
+     *  mot hang hanh dong duoi cung), duoc TU DONG chon khi mo mot o nhap
+     *  CHI NHAN SO (xem [isNumericOnlyField]). Dong bo HOAN TOAN cach dung
+     *  phim (glow key background qua [buildKey]/[buildCharRow]) VA cau truc
+     *  hang DUOI CUNG voi CA BA trang con lai - moi trang chi co DUY NHAT
+     *  mot hang hanh dong o day cung, dung chung mot chieu cao co dinh
+     *  dp(keyHeightDp + 2) + bottomMargin dp(6) + fillRowHeight = true cho
+     *  moi phim trong hang do. */
+    private fun buildNumpadPage(): View {
+        val verticalPaddingDp = if (keyHeightDp < 48) 2 else 6
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(4), dp(verticalPaddingDp), dp(4), dp(verticalPaddingDp + EXTRA_BOTTOM_LIFT_DP))
+        }
+
+        root.addView(buildCharRow("123"))
+        root.addView(buildCharRow("456"))
+        root.addView(buildCharRow("789"))
+
+        val bottomRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(keyHeightDp + 2)
+            ).apply { bottomMargin = dp(6) }
+        }
+        bottomRow.addView(buildKey("ABC", weight = 1.4f, fillRowHeight = true) { switchMode(KeyboardMode.LETTERS) })
+        bottomRow.addView(buildKey("0", weight = 1f, fillRowHeight = true) { insertText("0") })
+        bottomRow.addView(buildKey("\u232b", weight = 1.4f, fillRowHeight = true, onRepeat = { deleteChar() }) { deleteChar() })
+        bottomRow.addView(buildKey("\u21b5", weight = 1.4f, highlight = true, fillRowHeight = true) { sendEnter() })
+        root.addView(bottomRow)
+
+        return root
+    }
+
+    /** True neu [info] khai bao o nhap CHI NHAN SO (vd o nhap ma PIN/OTP -
+     *  TYPE_CLASS_NUMBER, hoac o nhap so dien thoai - TYPE_CLASS_PHONE).
+     *  Dung de TU DONG chuyen sang [KeyboardMode.NUMPAD] - xem [onStartInputView]. */
+    private fun isNumericOnlyField(info: EditorInfo?): Boolean {
+        if (info == null) return false
+        val inputClass = info.inputType and InputType.TYPE_MASK_CLASS
+        return inputClass == InputType.TYPE_CLASS_NUMBER || inputClass == InputType.TYPE_CLASS_PHONE
+    }
+
+    /** True neu [info] khai bao o nhap la MAT KHAU (password) - ca lop TEXT
+     *  (mat khau thuong/web/hien ro chu) lan lop NUMBER (ma PIN kieu mat
+     *  khau so). Dung de TU DONG chuyen ve TIENG ANH khi mo cac o nhap loai
+     *  nay - xem [onStartInputView]: go mat khau bang Telex Tieng Viet gan
+     *  nhu luon SAI, nen tu dong tat Telex de tranh go nham. */
+    private fun isPasswordField(info: EditorInfo?): Boolean {
+        if (info == null) return false
+        val inputType = info.inputType
+        val inputClass = inputType and InputType.TYPE_MASK_CLASS
+        val variation = inputType and InputType.TYPE_MASK_VARIATION
+        return when (inputClass) {
+            InputType.TYPE_CLASS_TEXT -> variation == InputType.TYPE_TEXT_VARIATION_PASSWORD ||
+                variation == InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD ||
+                variation == InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+            InputType.TYPE_CLASS_NUMBER -> variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            else -> false
+        }
+    }
+
+    /** Chuyen sang trang [newMode]. TOI UU: chi build LAZY DUY NHAT trang
+     *  DICH (neu chua co cache) - KHONG dong thoi build ca 3 trang con lai
+     *  nhu code truoc day tung lam trong [redrawKeyboard]. Neu container
+     *  chua duoc tao (hiem gap), fallback ve buildKeyboardContainer. */
     private fun switchMode(newMode: KeyboardMode) {
         mode = newMode
         val container = keyboardRootContainer
         val letters = lettersPageView
-        val numbers = cachedNumbersView
-        val symbols = cachedSymbolsView
-        if (container != null && letters != null && numbers != null && symbols != null) {
-            applyModeVisibility(container, letters, numbers, symbols)
-        } else {
+        if (container == null || letters == null) {
             setInputView(buildKeyboardContainer())
+            return
         }
+        when (newMode) {
+            KeyboardMode.LETTERS -> { /* da co san */ }
+            KeyboardMode.NUMBERS -> if (cachedNumbersView == null) {
+                cachedNumbersView = buildNumbersPage().also { container.addView(it) }
+            }
+            KeyboardMode.SYMBOLS -> if (cachedSymbolsView == null) {
+                cachedSymbolsView = buildSymbolsPage().also { container.addView(it) }
+            }
+            KeyboardMode.NUMPAD -> if (cachedNumpadView == null) {
+                cachedNumpadView = buildNumpadPage().also { container.addView(it) }
+            }
+        }
+        applyModeVisibility(container, letters, cachedNumbersView, cachedSymbolsView, cachedNumpadView)
     }
 
     /** Ve lai trang LETTERS (Shift/ngon ngu doi) va cap nhat visibility.
-     *  Trang NUMBERS/SYMBOLS van giu nguyen cache, khong bi rebuild. */
+     *  TOI UU: KHONG con ep build cachedNumbersView/cachedSymbolsView/
+     *  cachedNumpadView "cho chac" moi lan goi ham nay nhu truoc (dieu do
+     *  TRUOC DAY khien vieC go phim/doi Shift tren trang Chu cai vo tinh kich
+     *  hoat xay dung ca hang emoji 150 nut + trang Ky hieu, gay giat/khung -
+     *  xem giai thich "TOI UU" o dau file) - chi dung [applyModeVisibility]
+     *  voi CAC TRANG DA CO (co the null), cac trang chua build van GIU
+     *  NGUYEN trang thai "chua build", se duoc build dung luc qua
+     *  [switchMode] khi nguoi dung THAT SU can toi. */
     private fun redrawKeyboard() {
         val container = keyboardRootContainer
         if (container != null && mode == KeyboardMode.LETTERS) {
-            // Xoa trang LETTERS cu, build trang moi co trang thai cap nhat
             lettersPageView?.let { container.removeView(it) }
             val newLetters = buildLettersPage()
             lettersPageView = newLetters
-            // Chen trang LETTERS moi vao index 0 (duoi cung stack FrameLayout
-            // de NUMBERS/SYMBOLS van nam phia tren nhung dang GONE)
             container.addView(newLetters, 0)
-            val numbers = cachedNumbersView ?: buildNumbersPage().also {
-                cachedNumbersView = it; container.addView(it)
-            }
-            val symbols = cachedSymbolsView ?: buildSymbolsPage().also {
-                cachedSymbolsView = it; container.addView(it)
-            }
-            applyModeVisibility(container, newLetters, numbers, symbols)
+            applyModeVisibility(container, newLetters, cachedNumbersView, cachedSymbolsView, cachedNumpadView)
         } else {
-            // Fallback: rebuild toan bo (vd chua co container)
             setInputView(buildKeyboardContainer())
         }
     }
 
-    /** Ban phim mo lai o mot o nhap THAT SU MOI (khac ung dung/o nhap truoc
-     *  do) se quay ve trang chu cai, giong hanh vi quen thuoc cua cac ban
-     *  phim khac. NHUNG neu chi la ban phim tu tat/bat lai bat ngo tren CUNG
-     *  mot o nhap cu (vd bi thong bao he thong che khuat trong tich tac) thi
-     *  GIU NGUYEN trang phim (chu cai/so/ky hieu) dang dung truoc do - xem
-     *  [lastEditorSessionKey]. */
+    /** Ban phim mo lai o mot o nhap THAT SU MOI se quay ve trang mac dinh
+     *  phu hop (chu cai, hoac SO RIENG neu la o nhap chi nhan so - xem
+     *  [isNumericOnlyField]); neu chi la ban phim tu tat/bat lai bat ngo tren
+     *  CUNG mot o nhap cu thi GIU NGUYEN trang phim dang dung truoc do.
+     *  THEM: o nhap MAT KHAU se TU DONG tat Telex Tieng Viet neu dang bat -
+     *  xem [isPasswordField]. */
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
 
@@ -1158,35 +977,28 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val isSameFieldAsBefore = sessionKey == lastEditorSessionKey
         lastEditorSessionKey = sessionKey
 
-        // SUA LOI nguoi dung phan anh: chon nhap lieu o mot o khac (hoac
-        // chuyen sang ung dung khac) trong luc khung quet QR dang mo lai
-        // KHONG dong khung quet do - khung quet "dinh" theo qua o nhap moi,
-        // du no khong con lien quan gi. So sanh "chia khoa" phien nhap lieu
-        // luc khung quet duoc mo ([qrOverlaySessionKey]) voi o nhap MOI vua
-        // duoc bao qua day: neu khac nhau, tuc nguoi dung THAT SU da chuyen
-        // sang o nhap/ung dung khac - dong khung quet NGAY, RESET lai chi
-        // con ban phim binh thuong. Neu giong nhau (cung o nhap cu, chi la
-        // he thong tai tao View tam thoi vd WebView refresh), giu nguyen
-        // khung quet nhu truoc gio (khong reset oan).
         if (qrOverlayView != null && sessionKey != qrOverlaySessionKey) {
             hideQrOverlay()
         }
 
-        // Ban phim vua duoc mo lai (du la lan dau hay do he thong tai tao
-        // sau mot lan finishingInput = true "hu") - huy moi lenh dong khung
-        // quet QR dang cho, giu nguyen khung quet + camera nhu truoc do.
         cancelPendingFinishHide()
 
-        // Khung quet QR VUA tu dong dong ngay sau khi quet xong 1 ma (xem
-        // [onQrFound] + [reopenQrScannerOnNextStart]), va ban phim nay dang
-        // mo lai TRONG KHOANG THOI GIAN cho phep ([QR_AUTO_REOPEN_WINDOW_MS])
-        // - tu dong bat lai camera/khung quet luon, y het truoc luc bi dong,
-        // khong bat nguoi dung phai bam nut [QR] them lan nua.
         if (reopenQrScannerOnNextStart) {
             reopenQrScannerOnNextStart = false
             if (android.os.SystemClock.uptimeMillis() <= reopenQrScannerDeadline) {
                 openQrScanner(continuous = qrContinuousMode)
             }
+        }
+
+        // O nhap MAT KHAU vua duoc mo (khac o nhap truoc do) - TU DONG tat
+        // che do go Tieng Viet (Telex) neu dang bat, ve lai Tieng Anh - xem
+        // giai thich chi tiet o [isPasswordField]. Dieu kien
+        // "!isSameFieldAsBefore" de KHONG lam phien nguoi dung neu ho da tu
+        // CHU DONG bat lai Tieng Viet ngay tren CHINH o mat khau nay trong
+        // luc ban phim bi he thong tai tao View tam thoi.
+        if (!isSameFieldAsBefore && isPasswordField(info) && isVietnameseMode) {
+            isVietnameseMode = false
+            currentWord.clear()
         }
 
         currentWord.clear()
@@ -1196,36 +1008,37 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val hadPendingSuggestion = pendingSuggestion != null
         clearAutocorrectSuggestion()
         if (!isSameFieldAsBefore) {
-            // O nhap/ung dung THAT SU khac truoc - ve trang chu cai mac dinh.
-            if (mode != KeyboardMode.LETTERS) {
-                switchMode(KeyboardMode.LETTERS)
+            // O nhap/ung dung THAT SU khac truoc - chon trang mac dinh: neu
+            // la o nhap CHI NHAN SO (vd o nhap ma PIN/OTP, so dien thoai -
+            // xem [isNumericOnlyField]), TU DONG mo trang ban phim SO RIENG
+            // (NUMPAD - xem [buildNumpadPage]). Cac o nhap khac (chu cai/hon
+            // hop) van ve trang chu cai nhu cu.
+            val targetMode = if (isNumericOnlyField(info)) KeyboardMode.NUMPAD else KeyboardMode.LETTERS
+            if (mode != targetMode) {
+                switchMode(targetMode)
             }
 
-            // TU DONG VIET HOA chu cai dau tien cua o nhap MOI, giong hanh vi
-            // quen thuoc cua hau het ban phim khac - CHI ap dung khi o nhap
-            // dang THAT SU TRONG (chua co ky tu nao truoc con tro), tranh viet
-            // hoa oan khi nguoi dung quay lai o nhap DA CO SAN noi dung (vd
-            // sua lai mot o nhap cu). Tai dung [capitalizeNextLetter] (co san,
-            // "viet hoa 1 chu ke tiep") nen nguoi dung van co the CHAM 1 LAN
-            // nut Shift TRUOC khi go de HUY viet hoa, neu muon go chu thuong
-            // ngay tu dau (xem xu ly nut Shift o [buildLettersBottomRow]).
-            val textBeforeCursor = currentInputConnection?.getTextBeforeCursor(1, 0)
-            val didAutoCapitalize = textBeforeCursor.isNullOrEmpty()
-            if (didAutoCapitalize) {
-                capitalizeNextLetter = true
-                showCapitalPreview = true
+            // TU DONG VIET HOA chu cai dau tien cua o nhap MOI - CHI co y
+            // nghia voi trang chu cai, khong ap dung cho o nhap SO (NUMPAD).
+            // Chi ap dung khi o nhap dang THAT SU TRONG (chua co ky tu nao
+            // truoc con tro), tranh viet hoa oan khi nguoi dung quay lai o
+            // nhap DA CO SAN noi dung.
+            val didAutoCapitalize = if (targetMode == KeyboardMode.LETTERS) {
+                val textBeforeCursor = currentInputConnection?.getTextBeforeCursor(1, 0)
+                val isEmpty = textBeforeCursor.isNullOrEmpty()
+                if (isEmpty) {
+                    capitalizeNextLetter = true
+                    showCapitalPreview = true
+                }
+                isEmpty
+            } else {
+                false
             }
 
-            // Ve lai trang LETTERS neu can phan anh trang thai moi: vua tu
-            // viet hoa o tren, HOAC dang co goi y autocorrect can xoa. Goi
-            // SAU khi [mode] da chac chan la LETTERS (switchMode o tren da
-            // dat mode truoc do neu can) de [redrawKeyboard] rebuild dung.
-            if (didAutoCapitalize || hadPendingSuggestion) {
+            if (didAutoCapitalize || hadPendingSuggestion || (isPasswordField(info) && targetMode == mode)) {
                 redrawKeyboard()
             }
         } else if (hadPendingSuggestion) {
-            // Cung o nhap cu (vd ban phim tu tat/bat lai) - giu nguyen trang
-            // phim hien tai, chi can ve lai neu vua xoa goi y autocorrect.
             redrawKeyboard()
         }
     }
@@ -1233,57 +1046,38 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     /** Mot hang phim don gian: moi ky tu trong chuoi la mot nut cung do rong
      *  bang nhau (weight 1), chen nguyen van ky tu do khi bam. Dung chung cho
      *  ca hang chu cai (co ap dung Shift de HIEN THI hoa/thuong) lan hang
-     *  so/ky hieu. */
+     *  so/ky hieu/NUMPAD. */
     private fun buildCharRow(chars: String, applyShiftCase: Boolean = false): LinearLayout {
         val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            // SUA loi nguoi dung phan anh: phim Shift (⇧, textSize 28f) nam
-            // "cao hon" han cac phim chu thuong (z, x, c... textSize 16f)
-            // CUNG HANG, DU tat ca deu khai bao chieu cao dp(keyHeightDp) y
-            // het nhau. NGUYEN NHAN: LinearLayout mac dinh (isBaselineAligned
-            // = true) CANH cac phim con theo BASELINE CHU (duong ke chan
-            // chu), khong phai theo KHUNG phim - chu cang to (28f) thi
-            // baseline cang nam THAP hon trong khung phim (de danh cho phan
-            // "duoi dong" - descent), buoc Android phai DAY LECH VI TRI ca
-            // khung phim do de baseline khop voi cac phim chu nho hon, dan
-            // toi hien tuong "phim to chu bi day cao/thap hon" nhu phan anh.
-            // TAT han (isBaselineAligned = false) de MOI phim duoc dat ngay
-            // ngan theo dung KHUNG (top/height thuc te, giong het nhau) -
-            // khong con phu thuoc kich thuoc chu ben trong nua.
             isBaselineAligned = false
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             )
         }
         chars.forEach { ch ->
-            // Hien thi chu HOA tren phim khi dang bat Caps Lock (isShiftOn)
-            // HOAC dang bat "viet hoa 1 chu ke tiep" (capitalizeNextLetter) -
-            // truoc day chi kiem tra isShiftOn nen o trang thai Shift "don"
-            // (1 chu), phim van hien chu thuong, khong khop voi chu THAT SU
-            // se duoc chen ra (da viet hoa, xem [insertChar]).
             val label = if (applyShiftCase && (isShiftOn || showCapitalPreview)) ch.uppercaseChar().toString() else ch.toString()
             row.addView(buildKey(label) { insertChar(ch) })
         }
         return row
     }
 
-    /** Hang emoji co the TRUOT (vuot) NGANG bang tay de tim emoji mong muon,
-     *  hien o dau trang so (trang thu 2). Dung HorizontalScrollView boc
-     *  quanh mot LinearLayout ngang chua tung nut emoji co CHIEU RONG CO
-     *  DINH (khac voi cac hang phim khac dung "weight" chia deu, vi ben
-     *  trong ScrollView khong the dung weight - noi dung phai co chieu rong
-     *  that, TRAN ra ngoai man hinh, moi truot/vuot duoc). Cham vao emoji se
-     *  chen truc tiep emoji do vao o nhap lieu, giong nhu mot phim thuong. */
+    /** Hang emoji co the TRUOT (vuot) NGANG bang tay. TOI UU: TRUOC DAY moi
+     *  MOT trong ~150 nut emoji tu tao RIENG mot Drawable nen (2 lop
+     *  GradientDrawable long nhau) - tuc ~150 lan phan bo Drawable object
+     *  chi de hien thi CUNG mot kieu vien/mau giong het nhau. GIO DAY: build
+     *  DUY NHAT MOT Drawable nen dung CHUNG cho CA HANG (moi nut co CUNG
+     *  kich thuoc [emojiKeySizePx] nen chia se an toan), giam so luong
+     *  Drawable object phai cap phat tu ~150 xuong con 1 - day la phan ton
+     *  chi phi LON NHAT khi xay dung trang So (chi xay ra 1 lan nho co che
+     *  cache [cachedNumbersView], nhung van dang gay giat neu la lan dau
+     *  nguoi dung mo trang nay). */
     private fun buildEmojiRow(): View {
         val inner = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
         }
-        // Kich thuoc phim emoji CUNG co giai theo [keyHeightDp] (tru di 8dp
-        // de danh vien margin), dong bo voi cac phim khac tren ban phim khi
-        // man hinh ngang/thap.
         val emojiKeySizePx = dp(keyHeightDp - 8)
+        val sharedEmojiBg = buildGlowKeyBackground(cornerDp = 4)
         emojiList.forEach { emoji ->
-            val bg = buildGlowKeyBackground(cornerDp = 4)
             val btn = Button(this).apply {
                 text = emoji
                 isAllCaps = false
@@ -1296,7 +1090,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 minHeight = 0
                 minimumHeight = 0
                 gravity = Gravity.CENTER
-                background = bg
+                background = sharedEmojiBg
                 stateListAnimator = null
                 elevation = 0f
                 outlineProvider = null
@@ -1304,8 +1098,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 layoutParams = LinearLayout.LayoutParams(emojiKeySizePx, emojiKeySizePx).apply {
                     setMargins(dp(3), dp(3), dp(3), dp(3))
                 }
-                setOnClickListener { v ->
-                    v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                setOnClickListener {
                     vibrateKeyPress()
                     playKeyClickTone()
                     insertText(emoji)
@@ -1324,7 +1117,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     }
 
     /** Thanh goi y sua loi Tieng Viet: mot nut lon hien "Sua thanh: ..."
-     *  (cham vao de ap dung goi y) va mot nut nho "\u2715" de bo qua goi y nay. */
+     *  va mot nut nho "\u2715" de bo qua goi y nay. */
     private fun buildAutocorrectSuggestionRow(): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1356,7 +1149,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 setMargins(dp(2), dp(2), dp(2), dp(2))
             }
             setOnClickListener {
-                it.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                 vibrateKeyPress()
                 playKeyClickTone()
                 acceptAutocorrectSuggestion()
@@ -1370,10 +1162,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         return row
     }
 
-    /** Kiem tra "tu" [word] (chu thuong) nguoi dung vua go xong (ket thuc
-     *  bang dau cach) co trong tu dien khong; neu KHONG co va tim duoc mot
-     *  tu gan giong (xem [VietnameseAutocorrect.suggestFor]), luu lai thanh
-     *  [pendingSuggestion] de [buildAutocorrectSuggestionRow] hien ra. */
     private fun checkAutocorrectSuggestion(word: String) {
         val suggestion = VietnameseAutocorrect.suggestFor(applicationContext, word)
         if (suggestion != null && suggestion != word) {
@@ -1385,8 +1173,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
     }
 
-    /** Ap dung goi y dang cho: XOA lai tu da go (cong them 1 ky tu cho dau
-     *  cach ket thuc tu do) roi CHEN tu goi y + dau cach vao thay the. */
     private fun acceptAutocorrectSuggestion() {
         val original = pendingSuggestionOriginalWord ?: return
         val suggestion = pendingSuggestion ?: return
@@ -1395,7 +1181,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             selfInitiatedChange = true
             ic.beginBatchEdit()
             try {
-                // +1 vi tu do da co mot dau cach ngay sau khi duoc chen.
                 ic.deleteSurroundingText(original.length + 1, 0)
                 ic.commitText("$suggestion ", 1)
             } finally {
@@ -1406,8 +1191,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         redrawKeyboard()
     }
 
-    /** Bo goi y dang cho (khong ap dung) - goi khi nguoi dung go tiep, xoa,
-     *  Enter, chuyen o nhap, hoac tu cham nut "\u2715" bo qua. */
     private fun clearAutocorrectSuggestion() {
         if (pendingSuggestion != null || pendingSuggestionOriginalWord != null) {
             pendingSuggestion = null
@@ -1415,35 +1198,14 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
     }
 
-    /** Hang duoi cung trang chu cai: nut "," (thay cho nut QR truoc day -
-     *  QR da chuyen sang trang so, doi cho voi dau ",") va dau "." moi CHUYEN
-     *  TU trang so SANG day, dat ngay ben phai phim cach (giua phim cach va
-     *  Enter) de go cau nhanh hon ma khong can chuyen trang. */
+    /** Hang duoi cung trang chu cai: "," / phim cach / "." / Enter, cung
+     *  dung MOT chieu cao co dinh de tat ca phim chia deu, khong lech nhau. */
     private fun buildLettersBottomRow(): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            // SUA loi "5 phim trong hang nay bi lech nhau" (?123/,/phim
-            // cach/./Enter khong ngang hang, xem giai thich day du trong
-            // [buildSpaceKey]): hang nay GIO dung CHIEU CAO CO DINH (thay
-            // cho WRAP_CONTENT truoc day), de tat ca phim ben trong co the
-            // dung MATCH_PARENT (fillRowHeight = true) ma chia deu chinh
-            // xac chieu cao nay - khong con phep tinh margin rieng biet nao
-            // co the khien mot phim "ra" ket qua khac phim khac nua.
-            //
-            // Khoang trong PHIA DUOI hang nay (de "nhich" ca hang len mot
-            // chut, tach voi vien duoi cung ban phim - hieu ung tuong tu
-            // verticalNudgeDp=-3 truoc day) GIO dat MOT LAN DUY NHAT o day,
-            // cho CA HANG, thay vi tung phim rieng - dam bao 100% khong the
-            // co truong hop mot phim "quen" nhich theo hang.
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(keyHeightDp + 2)
             ).apply {
-                // KHONG con dat topMargin rieng o day nua (xem giai thich
-                // chi tiet tai [buildKeyboardView], cho nhanh xu ly hang
-                // Shift/zxcvbnm/⌫) - phep "tra lai" topMargin = dp(5) truoc
-                // day thuc ra lam khoang cach hang nay QUA XA so voi hang
-                // tren no, trong khi hang tren lai bi keo CHONG LEN hang
-                // TREN NO NUA. Bo ca hai cho khoang cach mac dinh, deu nhau.
                 bottomMargin = dp(6)
             }
         }
@@ -1453,8 +1215,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         row.addView(buildSpaceKey(weight = 4.2f))
         row.addView(buildKey(".", weight = 1f, fillRowHeight = true) {
             insertText(".")
-            // Bat co "viet hoa chu tiep theo" - xem giai thich o khai bao
-            // [capitalizeNextLetter].
             capitalizeNextLetter = true
             showCapitalPreview = true
             capitalizeAppliedAtPrefixLen = null
@@ -1464,9 +1224,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         return row
     }
 
-    /** Hang 3 cua trang so: nut "=\<" chuyen sang trang ky hieu mo rong, roi
-     *  toi cac ky hieu co ban, va nut xoa o cuoi - tat ca cung do rong nhu
-     *  nhau, dong bo voi cach cac hang khac phan bo phim. */
     private fun buildNumbersRow3(): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1475,11 +1232,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             )
         }
 
-        // Dung CUNG mot ty le weight (phim bien 1.3f, phim ky tu 1f) nhu
-        // [buildExtendedSymbolsRow3] - truoc day hang nay dung toan weight
-        // mac dinh 1f cho tat ca (ke ca "=\<" va "⌫"), khien cot cua trang So
-        // va trang Ky hieu mo rong LECH nhau du ca hai deu co 10 phim/hang,
-        // vi ty le rong phim bien/phim thuong khac nhau giua 2 trang.
         row.addView(buildKey("=\\<", weight = 1.3f) { switchMode(KeyboardMode.SYMBOLS) })
         numberRow3Symbols.forEach { ch ->
             row.addView(buildKey(ch.toString(), weight = 1f) { insertText(ch.toString()) })
@@ -1489,26 +1241,14 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         return row
     }
 
-    /** Hang duoi cung cua trang so: nut "QR" (thay cho dau "," truoc day -
-     *  da doi cho sang trang chu cai) de mo may quet QR ngay tu trang so ma
-     *  khong can chuyen ve trang chu cai truoc. Dau "." da CHUYEN SANG trang
-     *  chu cai (canh phim cach) nen khong con o day nua.
-     *
-     *  Nut QR gio phan biet CHAM 1 LAN va DUP-TAP (cham 2 lan lien tiep,
-     *  trong vong [QR_DOUBLE_TAP_MAX_INTERVAL_MS]):
-     *   - Cham 1 lan: mo man hinh quet o che do BINH THUONG - quet duoc 1 ma
-     *     la tu dong dong lai ngay (hanh vi cu, khong doi).
-     *   - Dup-tap: mo man hinh quet o che do LIEN TUC - sau khi quet duoc 1
-     *     ma, KHONG tu dong dong, ma tiep tuc quet ma tiep theo, cho den khi
-     *     nguoi dung tu bam nut "Huy" tren man hinh quet. */
+    /** Hang duoi cung cua trang so: nut "QR" - SUA theo yeu cau nguoi dung:
+     *  CA cham 1 lan LAN dup-tap gio DEU mo khung quet o CHE DO QUET LIEN
+     *  TUC (continuous = true) - CHI dong khi nguoi dung tu bam "Huy" tren
+     *  khung quet. Co che PHAT HIEN dup-tap ([isDoubleTap]) van GIU NGUYEN
+     *  (tinh toan y het truoc), chi khac o CHO SU DUNG ket qua do. */
     private fun buildNumbersBottomRow(): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            // Dong bo chieu cao + khoang trong phia duoi voi
-            // [buildLettersBottomRow] (xem giai thich chi tiet o do va o
-            // [buildSpaceKey]) - dam bao ca 4 phim (ABC/QR/phim cach/Enter)
-            // luon ngang hang tuyet doi, khong con phep tinh margin rieng
-            // biet nao co the khien mot phim lech khoi cac phim con lai.
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(keyHeightDp + 2)
             ).apply { bottomMargin = dp(6) }
@@ -1518,10 +1258,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         row.addView(buildKey("QR", weight = 1.2f, highlight = true, fillRowHeight = true) {
             val now = android.os.SystemClock.uptimeMillis()
             val isDoubleTap = now - lastQrKeyTapTime <= QR_DOUBLE_TAP_MAX_INTERVAL_MS
-            // Dat lai ve 0 sau khi da tinh la dup-tap, de mot cham thu 3 lien
-            // ngay sau do khong bi hieu nham la dup-tap cua cap tiep theo.
             lastQrKeyTapTime = if (isDoubleTap) 0L else now
-            openQrScanner(continuous = isDoubleTap)
+            // SUA: du la cham 1 lan hay dup-tap, deu mo khung quet o CHE DO
+            // LIEN TUC (continuous = true) - xem giai thich o dau ham nay.
+            openQrScanner(continuous = true)
         })
         row.addView(buildSpaceKey(weight = 5.4f))
         row.addView(buildKey("\u21b5", weight = 1.6f, highlight = true, fillRowHeight = true) { sendEnter() })
@@ -1529,9 +1269,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         return row
     }
 
-    /** Hang 3 cua trang ky hieu mo rong: nut "?123" de quay lai trang so,
-     *  cac ky hieu %, ©, ®, ™, §, ±, [, ] va nut xoa - 10 phim, cung ty le
-     *  rong (weight) voi [buildNumbersRow3] de cot thang deu giua 2 trang. */
     private fun buildExtendedSymbolsRow3(): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1549,17 +1286,9 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         return row
     }
 
-    /** Hang duoi cung cua trang ky hieu mo rong: truoc day trang nay bi
-     *  THIEU han hang dau cach - gio them lai, dong bo voi trang chu cai va
-     *  trang so (nut "ABC" ve trang chu cai, phim cach, Enter). */
     private fun buildExtendedSymbolsBottomRow(): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            // Dong bo chieu cao + khoang trong phia duoi voi 2 trang kia -
-            // xem giai thich chi tiet trong [buildLettersBottomRow] va
-            // [buildSpaceKey]. Ca 3 phim (ABC/phim cach/Enter) gio dung
-            // fillRowHeight = true nen luon chia deu dung chieu cao hang
-            // nay, khong the lech nhau.
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(keyHeightDp + 2)
             ).apply { bottomMargin = dp(6) }
@@ -1572,18 +1301,107 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         return row
     }
 
-    /** Phim cach: chuc nang chinh la chen dau cach khi CHAM binh thuong
-     *  (khong keo ngang qua nguong [SPACE_SWIPE_THRESHOLD_DP]). Neu ngon tay
-     *  VUOT ngang qua nguong do truoc khi tha ra, xem la mot cu vuot doi ngon
-     *  ngu thay vi mot cai cham:
-     *   - Vuot TU TRAI SANG PHAI (deltaX duong)  -> ve Tieng Anh.
-     *   - Vuot TU PHAI SANG TRAI (deltaX am)     -> sang Tieng Viet.
-     *  Hai chu "V" (trai) va "E" (phai) ghim co dinh o hai dau phim, chu nao
-     *  ung voi ngon ngu DANG BAT thi to/sang mau xanh de nguoi dung biet minh
-     *  dang o che do nao va vuot ve huong nao de doi. Khong con dung kieu
-     *  cham nhanh 2 lan (double-tap) nhu truoc, vi kieu do de bi kich hoat
-     *  nham khi go nhanh lien tiep 2 dau cach gan nhau (vd giua 2 cau), gay
-     *  doi ngon ngu ngoai y muon giua chung. */
+    /** "Thanh cai dat" mau vien + nen sang/toi cho toan bo ban phim - hien
+     *  san tren trang Ky hieu mo rong, khong can nut bat/tat rieng. Xem giai
+     *  thich chi tiet ve bo cuc/hanh vi trong tai lieu dau file. */
+    private fun buildKeyboardSettingsBar(): View {
+        val inner = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+        val swatchSizePx = dp((keyHeightDp - 10).coerceAtLeast(24))
+
+        keyboardAccentColors.forEach { color ->
+            val isSelected = color == glowColor
+            val swatch = Button(this).apply {
+                text = ""
+                isAllCaps = false
+                minWidth = 0; minimumWidth = 0; minHeight = 0; minimumHeight = 0
+                stateListAnimator = null
+                elevation = 0f
+                outlineProvider = null
+                background = buildGlowKeyBackground(
+                    cornerDp = 6,
+                    borderColor = color,
+                    borderWidthDp = if (isSelected) 3 else 1
+                )
+                layoutParams = LinearLayout.LayoutParams(swatchSizePx, swatchSizePx).apply {
+                    setMargins(dp(3), dp(3), dp(3), dp(3))
+                }
+                isHapticFeedbackEnabled = true
+                setOnClickListener {
+                    vibrateKeyPress()
+                    playKeyClickTone()
+                    setAccentColor(color)
+                }
+            }
+            inner.addView(swatch)
+        }
+
+        val toggleBtn = Button(this).apply {
+            text = ""
+            isAllCaps = false
+            minWidth = 0; minimumWidth = 0; minHeight = 0; minimumHeight = 0
+            stateListAnimator = null
+            elevation = 0f
+            outlineProvider = null
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(if (isDarkTheme) Color.WHITE else Color.BLACK)
+                setStroke(dp(1), glowColor)
+            }
+            layoutParams = LinearLayout.LayoutParams(swatchSizePx, swatchSizePx).apply {
+                setMargins(dp(12), dp(3), dp(3), dp(3))
+            }
+            isHapticFeedbackEnabled = true
+            setOnClickListener {
+                vibrateKeyPress()
+                playKeyClickTone()
+                toggleTheme()
+            }
+        }
+        inner.addView(toggleBtn)
+
+        return HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, swatchSizePx + dp(6)
+            )
+            addView(inner)
+        }
+    }
+
+    private fun setAccentColor(color: Int) {
+        if (glowColor == color) return
+        glowColor = color
+        keyboardPrefs.edit().putInt(PREF_ACCENT_COLOR, color).apply()
+        rebuildAllKeyboardPages()
+    }
+
+    private fun toggleTheme() {
+        isDarkTheme = !isDarkTheme
+        keyboardPrefs.edit().putBoolean(PREF_IS_DARK_THEME, isDarkTheme).apply()
+        rebuildAllKeyboardPages()
+    }
+
+    /** Xoa TOAN BO cache (ca 4 trang) roi rebuild container tu dau - can
+     *  thiet khi doi MAU VIEN hoac NEN/CHU (mau da "nuong" san vao tung
+     *  Drawable/mau chu ngay luc build). [mode] (dang o trang nao) VAN GIU
+     *  NGUYEN. Chi goi khi nguoi dung THAT SU doi cai dat (hiem gap, khong
+     *  phai moi lan go phim) nen chi phi rebuild toan bo la chap nhan duoc -
+     *  KHONG anh huong toi toi uu "lazy build" ap dung cho luong go phim
+     *  binh thuong. */
+    private fun rebuildAllKeyboardPages() {
+        cachedNumbersView = null
+        cachedSymbolsView = null
+        cachedNumpadView = null
+        keyboardRootContainer = null
+        lettersPageView = null
+        setInputView(buildKeyboardContainer())
+    }
+
+    /** Phim cach: chuc nang chinh la chen dau cach khi CHAM binh thuong.
+     *  Neu ngon tay VUOT ngang qua nguong [SPACE_SWIPE_THRESHOLD_DP] truoc
+     *  khi tha ra, xem la mot cu vuot doi ngon ngu thay vi mot cai cham. */
     private fun buildSpaceKey(weight: Float): View {
         val bg = buildGlowKeyBackground()
         val container = FrameLayout(this).apply {
@@ -1591,31 +1409,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             stateListAnimator = null
             elevation = 0f
             outlineProvider = null
-            // SUA TRIET DE loi "hang duoi cung bi lech" (phim cach thap/cao
-            // hon cac phim Button ben canh du code TUONG duoc viet giong
-            // nhau): TRUOC DAY ham nay tinh margin tren/duoi rieng theo cong
-            // thuc verticalNudgeDp/baseMarginDp, y het cong thuc trong
-            // [buildKey] - VE LY THUYET hai cong thuc giong nhau nen phai ra
-            // cung mot vi tri, nhung Button va FrameLayout (View nay) la HAI
-            // LOAI VIEW KHAC NHAU, khong dam bao Android do/dat chung theo
-            // dung tung px nhu nhau du cung mot con so margin - dan den vien
-            // sang cua phim cach van bi lech vai px so voi phim ben canh tren
-            // may thuc te (nhu anh chup nguoi dung gui).
-            //
-            // CACH SUA GOC RE: KHONG con dat CHIEU CAO rieng + margin tren/
-            // duoi rieng cho tung phim trong hang nay nua. Thay vao do, phim
-            // cach (cung nhu tat ca phim Button dung fillRowHeight=true trong
-            // [buildKey]) LUON dung MATCH_PARENT de chiem TRON VEN chieu cao
-            // cua CHINH HANG chua no (hang da duoc gan mot chieu cao CO DINH
-            // - xem [buildLettersBottomRow]/[buildNumbersBottomRow]/
-            // [buildExtendedSymbolsBottomRow]), cong mot margin DOI XUNG y
-            // het nhau (dp(1) ca 4 canh) cho MOI phim khong phan biet loai
-            // View. Vi khong con phep tinh nudge/base rieng biet nua, KHONG
-            // THE co truong hop hai loai View "tinh ra" hai ket qua khac
-            // nhau - chung don gian CHIA DEU chieu cao hang, tuyet doi khong
-            // the lech. Muon "nhich" ca hang len/xuong (vd tao khoang trong
-            // phia duoi nhu thiet ke cu) thi chinh margin cua CA HANG (mot
-            // lan, o ham build*BottomRow), khong chinh tung phim rieng le.
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, weight).apply {
                 setMargins(dp(1), dp(1), dp(1), dp(1))
             }
@@ -1646,7 +1439,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val centerLabel = TextView(this).apply {
             text = "\u2423 " + if (isVietnameseMode) "VI" else "EN"
             textSize = 13f
-            setTextColor(Color.WHITE)
+            setTextColor(primaryTextColor())
             gravity = Gravity.CENTER
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
@@ -1661,7 +1454,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         container.setOnTouchListener { v, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                     vibrateKeyPress()
                     playKeyClickTone()
                     downX = event.rawX
@@ -1684,9 +1476,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         return container
     }
 
-    /** Chuyen thang sang che do [vietnamese] (khong phai toggle) - dung boi
-     *  cu vuot tren phim cach, moi huong vuot ung voi dung MOT ngon ngu cu
-     *  the (xem [buildSpaceKey]), khong phu thuoc trang thai hien tai. */
     private fun setLanguageMode(vietnamese: Boolean) {
         if (isVietnameseMode == vietnamese) return
         isVietnameseMode = vietnamese
@@ -1699,44 +1488,22 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         redrawKeyboard()
     }
 
-    /** Xay dung mot phim bam:
-     *  - Rung nhe (haptic) khi nham xuong.
-     *  - Neu la phim mot ky tu don, "noi" mot bong xem truoc phong to ngay
-     *    phia tren phim trong luc dang nham.
-     *  - Neu co [onRepeat], nham GIU phim se tu dong goi lai [onRepeat] lien
-     *    tuc (sau [DELETE_REPEAT_INITIAL_DELAY_MS] dau tien, roi lap lai moi
-     *    [DELETE_REPEAT_INTERVAL_MS]) cho den khi tha tay ra - dung cho phim
-     *    xoa (⌫) de "giu la xoa hoai". Neu chi cham nhanh (tha ra truoc khi
-     *    kich hoat lap lai), van goi [onClick] binh thuong dung 1 lan. */
+    /** Xay dung mot phim bam. TOI UU: bo [View.performHapticFeedback] (co
+     *  che rung "co san" cua Android, phu thuoc cai dat he thong "Rung khi
+     *  cham" - co the KHONG hoat dong, chinh la ly do [vibrateKeyPress] ra
+     *  doi de rung TRUC TIEP, dang tin cay hon) - giu lai DUY NHAT
+     *  [vibrateKeyPress], tranh MOI lan cham phim phai goi 2 co che rung
+     *  khac nhau (2 lan IPC toi he thong rung) trong khi chi co 1 co che
+     *  thuc su co tac dung. Giam duoc mot loat goi ham/IPC lap lai tren
+     *  MOI lan go, gop phan lam ban phim phan hoi nhanh hon khi go lien tuc. */
     private fun buildKey(
         label: String,
         weight: Float = 1f,
         highlight: Boolean = false,
-        // Dat true CHI cho phim nam trong mot hang co CHIEU CAO CO DINH va
-        // co CHUA phim cach (FrameLayout tu [buildSpaceKey]) canh ben, vd
-        // hang duoi cung cua ca 3 trang ban phim - xem
-        // [buildLettersBottomRow]/[buildNumbersBottomRow]/
-        // [buildExtendedSymbolsBottomRow]. Khi true, phim dung MATCH_PARENT
-        // cho chieu cao (chiem TRON VEN chieu cao hang, cong margin dp(1)
-        // doi xung) THAY CHO chieu cao rieng dp(keyHeightDp) + margin tinh
-        // theo cong thuc nudge nhu truoc - day la CACH SUA GOC RE cho loi
-        // "hang duoi cung bi lech" (xem giai thich chi tiet trong
-        // [buildSpaceKey]): vi phim Button va phim cach (FrameLayout) la hai
-        // loai View khac nhau, KHONG the tin tuong rang Android se do/dat
-        // chung ra CUNG mot vi tri du duoc truyen cung mot cong thuc margin
-        // - chi co cach chia deu chieu cao hang (MATCH_PARENT) la dam bao
-        // tuyet doi khong the lech, vi khong con phep tinh rieng biet nao
-        // nua de hai loai View co the "ra" ket qua khac nhau.
         fillRowHeight: Boolean = false,
         onRepeat: (() -> Unit)? = null,
         onClick: () -> Unit
     ): Button {
-        // Phim highlight (Enter, Shift dang bat, nut QR): VAN dung nen kinh
-        // TOI GIONG HET phim thuong (khong con to DAC mot khoi mau xanh nhu
-        // truoc - nhin lac tong so voi cac phim khac), CHI DOI mau VIEN sang
-        // xanh duong (thay vi tim) de van de nhan biet la phim "dang bat"/
-        // dac biet, ma van dong bo phong cach kinh + vien sang voi toan bo
-        // ban phim.
         val bg: Drawable = if (highlight) {
             buildGlowKeyBackground(borderColor = Color.parseColor("#4FC3F7"))
         } else {
@@ -1745,14 +1512,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val button = Button(this).apply {
             text = label
             isAllCaps = false
-            setTextColor(Color.WHITE)
-            // Chu nho hon o cac phim nhieu ky tu (vd "?123", "EN") va cho
-            // hien thi tren MOT dong duy nhat, tranh bi xuong dong roi cat
-            // mat chu (vd chi con thay dau "?" ma khong thay "123").
-            // RIENG hai phim bieu tuong Enter (\u21b5) va Shift/in hoa (\u2b06):
-            // TO HON HAN cac phim mot-ky-tu thong thuong - nguoi dung phan
-            // anh 2 phim nay VAN CON hoi nho (24f) sau lan chinh truoc, tang
-            // tiep len 28f de thay ro han nua.
+            setTextColor(primaryTextColor())
             textSize = when {
                 label == "\u21b5" || label == "\u2b06" -> 28f
                 label.length > 3 -> 11f
@@ -1760,14 +1520,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 else -> 16f
             }
             isSingleLine = true
-            // QUAN TRONG: sua loi dau cau Tieng Viet chu HOA bi "thut xuong"/
-            // bi cat mat. Theme Button mac dinh cua Android dat
-            // includeFontPadding = false de chu gon hon, nhung dieu nay lam
-            // Android CAT MAT phan tren cua dau (dac biet dau sac/nga/hoi tren
-            // chu hoa co dau mu nhu "Ấ", "Ế", "Ổ"...), khien dau nhin nhu bi
-            // "thut" xuong de/nam len chu. Bat lai includeFontPadding = true
-            // de danh du khong gian (line spacing) cho dau hien day du, dung
-            // vi tri, khong bi vat cat.
             includeFontPadding = true
             setPadding(dp(1), 0, dp(1), 0)
             minWidth = 0
@@ -1775,58 +1527,25 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             minHeight = 0
             minimumHeight = 0
             background = bg
-            // LOI nguoi dung phan anh: cac phim trong CUNG MOT HANG nhin
-            // "cao thap khong deu", phim nay nhu bi day len/xuong so voi phim
-            // kia du cung khai bao chieu cao dp(keyHeightDp) y het nhau.
-            // NGUYEN NHAN: Button (khac voi FrameLayout dung cho rieng phim
-            // cach) mac dinh KE THUA elevation/StateListAnimator tu theme he
-            // thong (Material) - tao mot lop BONG DO (shadow) mo o VIEN
-            // DUOI/QUANH moi nut, dich sang mot huong khi nhan. Lop bong nay
-            // VE RA NGOAI ranh gioi thuc cua nut, khien mat thuong thay nut
-            // nhu bi "nhoe/lech" xuong duoi vai px so voi phim cach (FrameLayout,
-            // khong co bong nay) - du kich thuoc THAT SU (do vien tim/xanh)
-            // cua ca hai la HOAN TOAN bang nhau. Tat het elevation/animator
-            // de moi phim phang tuyet doi, dong bo 100% voi phim cach.
             stateListAnimator = null
             elevation = 0f
             outlineProvider = null
             layoutParams = LinearLayout.LayoutParams(
-                // Chieu cao phim GIO CO GIAN theo man hinh thuc te (xem
-                // [keyHeightDp]) thay vi so co dinh 48dp nhu truoc - man hinh
-                // doc binh thuong van la 48dp nhu cu, chi giam khi man hinh
-                // ngang/thap de tranh bi khuat hang tren cung.
-                //
-                // RIENG khi [fillRowHeight] = true (hang duoi cung co phim
-                // cach canh ben): dung MATCH_PARENT thay vi dp(keyHeightDp)
-                // rieng le - xem giai thich chi tiet tai khai bao
-                // [fillRowHeight] o tren va tai [buildSpaceKey].
                 0,
                 if (fillRowHeight) ViewGroup.LayoutParams.MATCH_PARENT else dp(keyHeightDp),
                 weight
             ).apply {
-                // Margin doi xung dp(1) o CA 4 canh, GIONG NHAU cho MOI phim
-                // (khong con phan biet nudge/base nhu truoc) - don gian va
-                // khong the lech, xem giai thich tai [buildSpaceKey].
                 setMargins(dp(1), dp(1), dp(1), dp(1))
             }
             gravity = Gravity.CENTER
             isHapticFeedbackEnabled = true
         }
 
-        // Voi phim co [onRepeat] (vd phim xoa): dung mot Runnable tu lap lai
-        // qua deleteRepeatHandler. Bat dau dem gio tu luc ACTION_DOWN; neu
-        // ngon tay con giu qua DELETE_REPEAT_INITIAL_DELAY_MS, Runnable bat
-        // dau chay lien tuc moi DELETE_REPEAT_INTERVAL_MS (goi onRepeat moi
-        // lan) cho toi khi ACTION_UP/ACTION_CANCEL huy no di. Neu ngon tay
-        // tha ra TRUOC khi kich hoat lap lai (cham binh thuong), Runnable
-        // chua kip chay lan nao thi da bi huy - luc do de framework tu goi
-        // onClick() nhu mot phim thuong (xoa dung 1 ky tu).
         var repeatRunnable: Runnable? = null
         var repeatTriggered = false
         button.setOnTouchListener { v, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
-                    v.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                     vibrateKeyPress()
                     playKeyClickTone()
                     if (label.length == 1) showKeyPreview(v, label)
@@ -1849,9 +1568,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                     repeatRunnable?.let { deleteRepeatHandler.removeCallbacks(it) }
                     repeatRunnable = null
                     if (repeatTriggered) {
-                        // Da xoa lien tuc trong luc giu: nuot su kien de
-                        // KHONG kich hoat them onClick() (tranh xoa du 1 ky
-                        // tu nua ngay khi vua tha tay).
                         return@setOnTouchListener true
                     }
                     false
@@ -1869,14 +1585,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         return button
     }
 
-    /** Tao (chi mot lan duy nhat, dung lai cho nhung lan sau) cap PopupWindow
-     *  + TextView dung de "noi chu" xem truoc. TRUOC DAY moi lan nham mot
-     *  phim la mot cap PopupWindow/TextView MOI duoc tao ra roi huy di ngay
-     *  sau do - viec them/bot cua so qua WindowManager (System IPC) nhieu
-     *  lan lien tuc nhu vay la mot nguyen nhan chinh khien ban phim bi "do"
-     *  (nhap khong kip) khi go nhanh. Gio day chi tao MOT LAN, nhung lan sau
-     *  chi doi noi dung chu (bubble.text) va vi tri (popup.update(...)) cua
-     *  cung mot cua so co san, re hon rat nhieu so voi tao cua so moi. */
     private fun getOrCreatePreviewPopup(): Pair<PopupWindow, TextView> {
         val existingPopup = previewPopup
         val existingBubble = previewBubble
@@ -1888,11 +1596,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
             includeFontPadding = true
-            // Tang padding TREN len dp(16) (tu dp(8)) de cac chu Tieng Viet
-            // co 2 dau chong nhau (vd "Ầ", "Ổ", "Ẫ" - dau thanh dat TREN
-            // dau mu/moc) khong bi cat mat phan dinh nhat - Android tinh
-            // chieu cao WRAP_CONTENT cua TextView dua tren font metrics
-            // thong thuong, khong luon tinh du cho ky tu co dau cao bat thuong.
             setPadding(dp(14), dp(16), dp(14), dp(8))
             background = GradientDrawable().apply {
                 cornerRadius = dp(6).toFloat()
@@ -1909,8 +1612,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         return popup to bubble
     }
 
-    /** Hien mot bong nho, chu to, ngay phia tren phim dang nham, giong hieu
-     *  ung "noi chu" quen thuoc tren cac ban phim ao khac. */
     private fun showKeyPreview(anchor: View, label: String) {
         val (popup, bubble) = getOrCreatePreviewPopup()
         bubble.text = label
@@ -1924,8 +1625,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val y = loc[1] - bubble.measuredHeight - dp(4)
         try {
             if (popup.isShowing) {
-                // Cua so co san dang hien: chi di chuyen no toi vi tri moi,
-                // khong tao/them cua so moi vao WindowManager.
                 popup.update(x, y, -1, -1)
             } else {
                 popup.showAtLocation(anchor, Gravity.NO_GRAVITY, x, y)
@@ -1939,16 +1638,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         previewPopup?.let { if (it.isShowing) it.dismiss() }
     }
 
-    /** Chen mot ky tu chu cai. Neu dang o che do Tieng Viet, chuyen qua bo
-     *  xu ly Telex; nguoc lai chen truc tiep nhu Tieng Anh (co ap dung Shift). */
     private fun insertChar(ch: Char) {
         if (isVietnameseMode && ch.isLetter()) {
             insertVietnameseChar(ch)
             return
         }
-        // Che do go thuong (khong Telex): moi ky tu la mot lan commit doc
-        // lap, khong co bien doi nhieu buoc nao co the "danh mat" chu hoa da
-        // ap, nen co the ap dung va TIEU THU (tat) co ngay tai day.
         val shouldCapitalize = capitalizeNextLetter && ch.isLetter()
         if (shouldCapitalize) {
             capitalizeNextLetter = false
@@ -1957,90 +1651,18 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
         val out = if (isShiftOn || shouldCapitalize) ch.uppercaseChar() else ch
         insertText(out.toString())
-        // Vua "tieu thu" xong Shift "don" (viet hoa 1 chu) - ve lai ban phim
-        // de cac phim tro ve hien thi chu THUONG, dong bo voi trang thai moi
-        // (xem [buildCharRow], gio co hien preview chu hoa theo ca
-        // [capitalizeNextLetter], khong chi [isShiftOn] nhu truoc).
         if (shouldCapitalize) redrawKeyboard()
     }
 
-    /** Xu ly mot ky tu go theo kieu Telex: doi chieu voi phan "tu" da go tu
-     *  truoc (currentWord) de biet co can xoa/thay the ky tu truoc do hay
-     *  khong (vd go "a" roi "a" -> "â", go nguyen am roi "s" -> them dau sac).
-     *
-     *  TRUOC DAY: moi lan go 1 ky tu, ham nay LUON xoa TOAN BO tu dang go
-     *  (deleteSurroundingText(oldLen,0)) roi CHEN LAI TOAN BO tu moi - vd go
-     *  ky tu thu 8 cua mot tu 8 ky tu se xoa+chen lai ca 8 ky tu, du 7 ky tu
-     *  dau khong doi gi ca. Voi tu dai, moi keystroke la 2 IPC round-trip
-     *  ngay cang nang (ti le voi do dai tu), day chinh la NGUYEN NHAN CHINH
-     *  khien ban phim "khong theo kip" (giat, mat/thieu chu) khi go nhanh -
-     *  vi thoi gian xu ly 1 phim tang dan theo do dai tu dang go.
-     *
-     *  GIO DAY: tim DO DAI TIEN TO CHUNG giua tu cu va tu moi (vd go them 1
-     *  ky tu binh thuong, khong kich hoat bien doi Telex nao ca, thi toan bo
-     *  tu cu la tien to chung, CHI CAN commit dung 1 ky tu moi, KHONG can xoa
-     *  gi ca). Chi khi mot phep bien doi Telex THUC SU thay doi mot ky tu o
-     *  giua/gan cuoi tu (vd "tiep"+"e" -> "tiêp") thi moi can xoa+chen phan
-     *  DUOI KHAC NHAU ke tu diem do - van dung, nhung nho hon nhieu so voi
-     *  xoa+chen ca tu. */
     private fun insertVietnameseChar(ch: Char) {
         val ic = currentInputConnection ?: return
         val hadPendingSuggestion = pendingSuggestion != null
         clearAutocorrectSuggestion()
         val lower = ch.lowercaseChar()
 
-        // LOI TRUOC DAY: go xong 1 tu (vd "hau") + dau cach se lam currentWord
-        // bi XOA TRANG (xem [insertText] - dung de danh dau tu da "chot").
-        // Neu sau do nguoi dung XOA dau cach do di (bang phim ⌫) de noi lai
-        // vao cuoi tu ("hau"), currentWord VAN DANG TRONG (khong tu dong
-        // "khoi phuc" lai thanh "hau"), nen go them ky tu Telex tiep theo
-        // (vd "a" de "hau"+"a" -> "hâu") se bi hieu la BAT DAU MOT TU MOI, ra
-        // ket qua sai (vd "haua" thay vi "hâu" dung mong doi).
-        // KHAC PHUC: dong bo lai currentWord tu NOI DUNG THUC TE truoc con
-        // tro (doc qua InputConnection) - lay chuoi CHU CAI lien tuc gan con
-        // tro nhat (dung [Char.isLetter], bao gom ca chu Tieng Viet co dau)
-        // lam currentWord moi, GIONG NHU tu do van dang duoc go tiep, thay vi
-        // coi la tu moi hoan toan.
-        //
-        // LOI CUC NGHIEM TRONG nguoi dung phan anh: TRUOC DAY chi dong bo khi
-        // currentWord dang TRONG. Nhung neu o nhap bi XOA HET boi mot nguon
-        // KHAC voi chinh ban phim nay (vd nut "x" xoa nhanh co san ngay
-        // trong o nhap cua nhieu app/trinh duyet, khac voi phim ⌫ cua ban
-        // phim), thi ve ly thuyet onUpdateSelection() se duoc goi va xoa
-        // currentWord - NHUNG thong bao do di qua IPC bat dong bo, co the
-        // toi CHAM hon so voi luc nguoi dung da kip go ky tu dau tien cua tu
-        // moi. Luc do currentWord VAN CON giu "tu cu" (vd "hậu" tu cau truoc
-        // do da xoa), ma dieu kien "chi dong bo khi TRONG" khien no bi BO
-        // QUA (vi currentWord dang "khong trong" - du da la du lieu CU, sai
-        // lech voi o nhap THAT SU luc nay dang trong). Ket qua: ky tu tu moi
-        // dang go bi ghep nham vao "tu ma" nay, gay loi kieu go "trịnh" (sau
-        // khi da xoa het chu "trịnh công hậu") lai ra "ẩutịnh" (dau hoi ap
-        // nham vao "hậu" con sot lai khi go chu "r" trong "tr").
-        //
-        // GIO DAY: LUON so sanh currentWord voi noi dung CHU CAI THUC TE
-        // dang co ngay truoc con tro (khong con dieu kien "chi khi trong"
-        // nua) - neu khac nhau (bao gom truong hop currentWord con "sot"
-        // trong khi o nhap that su da trong, hoac nguoc lai), dong bo lai
-        // currentWord cho DUNG voi thuc te, bat ke truoc do no co trong hay
-        // khong. Vi thao tac nay chi la MOT lan doc (khong xoa/chen gi), chi
-        // phi hau nhu khong dang ke so voi loi nghiem trong no ngan chan.
         resyncCurrentWordFromInputConnection(ic)
 
         val oldWordLower = currentWord.toString()
-        // THEM (theo yeu cau nguoi dung): "f" va "w" KHONG phai chu cai
-        // Tieng Viet thuan (chi la PHIM tat Telex - "f" = dau huyen, "w" =
-        // bien doi a/o/u thanh ă/ơ/ư). Neu ca hai phim do deu KHONG tim duoc
-        // muc tieu hop le de bien doi (vd go "w" khi tu dang trong, hoac go
-        // "f" khi tu chua co nguyen am nao) thi chung se bi CHEN THANG vao tu
-        // dang CHU THO (xem [VietnameseTelex.processKey] - roi vao nhanh
-        // "khong bien doi duoc" o cuoi ham). Mot khi tu dang go DA CHUA san
-        // ky tu "f" hoac "w" o dang chu tho nhu vay, gan nhu chac chan day
-        // KHONG con la mot tu Tieng Viet nua (vd dang go "wifi", "file",
-        // "show", ma ban phim lo dang o che do Tieng Viet) - TUYET DOI KHONG
-        // con ap dung bat ky bien doi Telex nao (them dau thanh s/f/r/x/j,
-        // hay bien doi aa/aw/ee/oo/ow/uw/dd) cho PHAN CON LAI cua tu do nua,
-        // chi chen NGUYEN VAN ky tu nguoi dung go, tranh cac loi "bo dau oan"
-        // kieu "pow" -> "pơ", "flow" -> "flơ", v.v.
         val wordAlreadyHasLiteralFOrW = oldWordLower.any { it == 'f' || it == 'w' }
         val newWordLower = if (wordAlreadyHasLiteralFOrW) {
             oldWordLower + lower
@@ -2057,18 +1679,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val deleteCount = oldWordLower.length - commonPrefixLen
         val newSuffixLower = newWordLower.substring(commonPrefixLen)
 
-        // Neu [capitalizeNextLetter] dang bat VA lan go nay dong den DUNG VI
-        // TRI dang cho viet hoa - HOAC vi day la lan go DAU TIEN ke tu luc
-        // Shift "don" duoc bat ([capitalizeAppliedAtPrefixLen] con null, nen
-        // vi tri do co the la BAT KY dau (dau tu HOAC giua tu, vd nguoi dung
-        // cham Shift roi go tiep 1 chu giua cau) - viet hoa DUY NHAT ky tu
-        // dau tien cua phan hau to moi, giu nguyen (theo isShiftOn) cho phan
-        // con lai. KHONG tat co ngay - vi ky tu vua go CO THE con bi mot phim
-        // Telex tiep theo bien doi THEM tai CHINH vi tri do (vd go "a" (hoa)
-        // roi go "a" lan 2 -> "â", hoac "d" (hoa) roi "d" lan 2 -> "Đ") ma
-        // van phai tiep tuc duoc viet hoa. Chi tat khi gap lan go dong den
-        // MOT VI TRI KHAC (commonPrefixLen khac lan truoc) - dau hieu ky tu
-        // vua viet hoa da "on dinh", khong con bi ghi de lai.
         val touchesCapitalizeTarget = newSuffixLower.isNotEmpty() &&
             (capitalizeAppliedAtPrefixLen?.let { it == commonPrefixLen } ?: true)
         val wasCapitalizingWordStart = capitalizeNextLetter && touchesCapitalizeTarget
@@ -2084,40 +1694,16 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             isShiftOn -> newSuffixLower.uppercase()
             else -> newSuffixLower
         }
-        // [capitalizeNextLetter] vua duoc TIEU THU (tat) o day - can ve lai
-        // ban phim de cac phim CHU CAI tro ve hien thi CHU THUONG (dong bo
-        // voi trang thai moi), neu khong phim se "ket dinh" hien chu HOA sai
-        // cho toi khi co ly do khac lam ban phim ve lai (xem [buildCharRow]
-        // - gio co kiem tra ca [capitalizeNextLetter] de hien preview chu hoa
-        // ngay khi Shift "don" dang bat).
         val justConsumedSingleShift = capitalizeNextLetter && !touchesCapitalizeTarget
         if (justConsumedSingleShift) {
             capitalizeNextLetter = false
             capitalizeAppliedAtPrefixLen = null
         }
-        // SUA THEM (theo yeu cau nguoi dung): ngay khi CHU CAI DAU TIEN sau
-        // Shift "don" da duoc chen xong (wasCapitalizingWordStart == true),
-        // TAT [showCapitalPreview] NGAY LAP TUC de ban phim quay ve hien chu
-        // THUONG tu day - KHONG doi them 1 lan go nua. Truoc day ham nay chi
-        // ve lai ban phim khi [justConsumedSingleShift] (tuc phai doi den khi
-        // gap mot phim TIEP THEO khong dong den vi tri dau tu), nen nguoi
-        // dung thay ban phim "cham tre 1 nhip": go xong chu hoa dau tien roi
-        // ma cac phim VAN con hien chu hoa cho toi khi go THEM 1 chu nua moi
-        // chiu doi. Luu y: [capitalizeNextLetter] (logic, khac voi
-        // [showCapitalPreview] chi de hien thi) VAN duoc giu nguyen gia tri
-        // true trong truong hop nay - vi phim Telex tiep theo van co the con
-        // bien doi dung vi tri chu cai vua go (vd "A"+"a" -> "Â"), chi rieng
-        // PHAN HIEN THI la duoc tat som hon it hon.
         if (wasCapitalizingWordStart) {
             showCapitalPreview = false
         }
 
         selfInitiatedChange = true
-        // Goi xoa + chen trong CUNG mot batch edit: bao dam ung dung dich
-        // (o nhap lieu ben duoi) coi day la MOT thao tac lien tuc duy nhat
-        // thay vi 2 thao tac rieng le - vua tranh viec ung dung ve lai giao
-        // dien 2 lan (do trung gian) gay giat/cham khi go nhanh, vua tranh
-        // truong hop hiem gap 2 IPC rieng le bi xu ly khong dung thu tu.
         if (deleteCount > 0) {
             ic.beginBatchEdit()
             try {
@@ -2127,24 +1713,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 ic.endBatchEdit()
             }
         } else {
-            // Truong hop pho bien nhat (go them ky tu moi, khong bien doi gi
-            // ky tu cu): khong can xoa gi ca, chi 1 lenh commit duy nhat.
             ic.commitText(newSuffixDisplay, 1)
         }
         if (hadPendingSuggestion || justConsumedSingleShift || wasCapitalizingWordStart) redrawKeyboard()
     }
 
-    /** Doc mot doan van ban truoc con tro (qua InputConnection) va, neu doan
-     *  ngay truoc con tro la mot day CHU CAI lien tuc (khong bi ngat boi dau
-     *  cach/dau cau/ky tu khac), dat day chu cai do (ve chu thuong) lam
-     *  [currentWord] moi - de cac phep bien doi Telex tiep theo (aa->â, dau
-     *  thanh s/f/r/x/j...) ap dung DUNG vao tu dang go, thay vi nham la dang
-     *  bat dau mot tu hoan toan moi. Neu ky tu ngay truoc con tro KHONG phai
-     *  chu cai (vd dang thuc su dung sau dau cach/dau cau, hoac dau dong van
-     *  ban), [currentWord] duoc dat VE TRONG (khong con giu du lieu cu sai
-     *  lech nua - xem giai thich chi tiet o noi goi ham nay trong
-     *  [insertVietnameseChar] ve ly do PHAI dong bo ca chieu "ve trong" nay,
-     *  khong chi chieu "khoi phuc tu"). */
     private fun resyncCurrentWordFromInputConnection(ic: android.view.inputmethod.InputConnection) {
         val before = ic.getTextBeforeCursor(40, 0)?.toString() ?: return
         var i = before.length
@@ -2155,35 +1728,18 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
     }
 
-    /** Chen dau cach/dau cau/ky hieu - luon ket thuc "tu" hien tai. Neu vua
-     *  go xong mot "tu" Tieng Viet (ket thuc bang dau cach, khong dang bat
-     *  Shift), kiem tra xem tu do co the bi go sai chinh ta khong (xem
-     *  [checkAutocorrectSuggestion]) truoc khi xoa bo dem [currentWord]. */
     private fun insertText(text: String) {
         val boundaryWord = currentWord.toString()
         selfInitiatedChange = true
         currentInputConnection?.commitText(text, 1)
         currentWord.clear()
 
-        // DA BO: goi y sua loi Tieng Viet (checkAutocorrectSuggestion) sau
-        // moi dau cach - viec do tu dien (VietnameseAutocorrect, doc/duyet
-        // ~6600 tu trong vn_words.txt) lam ban phim bi KHUNG lai dung luc
-        // vua go xong mot tu, gay mat chu/lag khi go nhanh lien tuc.
         if (pendingSuggestion != null) {
             clearAutocorrectSuggestion()
             redrawKeyboard()
         }
     }
 
-    /** Xoa 1 ky tu truoc con tro - HOAC neu nguoi dung dang co mot vung van
-     *  ban duoc BOI DEN (chon khoi) trong o nhap lieu, xoa NGUYEN CA khoi do
-     *  bang mot lan bam duy nhat, thay vi im lang chi xoa 1 ky tu ngay truoc/
-     *  sau vung chon (hanh vi cu, gay cam giac nut xoa "khong an gi" voi khoi
-     *  van ban dai). Dung [InputConnection.getSelectedText] de kiem tra co
-     *  vung chon khong: neu co (khac null va khong rong), goi commitText("")
-     *  - theo dung tai lieu Android, commitText se THAY THE vung dang duoc
-     *  chon bang chuoi truyen vao, nen truyen chuoi rong tuong duong voi xoa
-     *  toan bo vung chon do. */
     private fun deleteChar() {
         val hadPendingSuggestion = pendingSuggestion != null
         clearAutocorrectSuggestion()
@@ -2202,28 +1758,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         if (hadPendingSuggestion) redrawKeyboard()
     }
 
-    /** LOI nguoi dung phan anh ve nut Enter (\u21b5): TRUOC DAY, moi khi o
-     *  nhap co khai bao san mot "hanh dong ban phim" (IME action - vd Gui,
-     *  Tim kiem, Tiep theo, Xong...), nut nay se GOI LUON hanh dong do (vd
-     *  bam Gui tin nhan) thay vi xuong dong - dieu nay RAT PHIEN trong cac
-     *  app nhan tin/chat: o nhap tin nhan o do THUONG co khai bao san hanh
-     *  dong "Gui", nen bam Enter de xuong dong (viet tin nhan nhieu dong)
-     *  lai vo tinh GUI LUON tin nhan dang go do.
-     *
-     *  GIO DAY: sua thanh kieu "Alt+Enter" - giong voi to hop phim Alt+Enter
-     *  tren ban phim vat ly ma nhieu app chat dung de CHEN XUONG DONG THAT
-     *  SU, KHONG kich hoat hanh dong Gui/Tim kiem/... cua o nhap:
-     *   - Neu o nhap la loai NHIEU DONG (co co [InputType.TYPE_TEXT_FLAG_MULTI_LINE]
-     *     hoac [InputType.TYPE_TEXT_FLAG_IME_MULTI_LINE] - vd o soan tin
-     *     nhan, o ghi chu, o binh luan dai...): LUON chen ky tu xuong dong
-     *     that ("\n"), bo qua hanh dong ban phim du o do co khai bao gi.
-     *   - Neu o nhap la loai MOT DONG (khong co hai co tren - vd o tim kiem,
-     *     o dang nhap, o dien so dien thoai...): xuong dong THAT SU khong co
-     *     y nghia o day (o nay khong the hien thi nhieu dong duoc), nen day
-     *     la truong hop "KHONG THE Alt-Enter duoc" - quay ve dung hanh vi
-     *     Enter THONG THUONG nhu truoc: goi hanh dong ban phim neu co khai
-     *     bao (Gui/Tim kiem/Xong...), neu khong co gi khai bao thi moi chen
-     *     xuong dong nhu mot phuong an du phong cuoi cung. */
     private fun sendEnter() {
         val ic = currentInputConnection ?: return
         currentWord.clear()
@@ -2244,14 +1778,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
     }
 
-    /** Duoc goi moi khi selection/con tro trong o nhap lieu thay doi. Neu
-     *  thay doi nay KHONG phai do chinh ban phim gay ra (co [selfInitiatedChange]
-     *  la false - vd nguoi dung vua cham vao giua doan van ban de doi vi tri
-     *  go, dung phim mui ten, hoac ung dung tu thay doi noi dung), bo dem
-     *  [currentWord] khong con dung voi vi tri con tro thuc te nua nen PHAI
-     *  xoa - neu khong, lan go Tieng Viet tiep theo se lay nham "tu" cu lam
-     *  ngu canh de bien doi Telex, gay hien tuong "chen nhac/lap lai chu vua
-     *  go truoc do" (vd go "cong hau" ra "cong conghau"). */
     override fun onUpdateSelection(
         oldSelStart: Int,
         oldSelEnd: Int,
@@ -2263,10 +1789,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
         if (!selfInitiatedChange) {
             currentWord.clear()
-            // Con tro vua doi vi tri KHONG phai do chinh ban phim gay ra (vd
-            // nguoi dung cham sang cho khac) - co "viet hoa chu tiep theo"
-            // (neu dang cho) khong con y nghia gi voi vi tri con tro moi,
-            // huy di de tranh viet hoa nham mot cho khong lien quan.
             capitalizeNextLetter = false
             showCapitalPreview = false
             capitalizeAppliedAtPrefixLen = null
@@ -2277,19 +1799,13 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     override fun onCreate() {
         super.onCreate()
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
+        // Doc lai mau vien + che do sang/toi da luu tu lan truoc (neu co) -
+        // xem [setAccentColor]/[toggleTheme]. Neu chua tung doi gi ca, dung
+        // gia tri mac dinh (tim neon, nen toi).
+        glowColor = keyboardPrefs.getInt(PREF_ACCENT_COLOR, DEFAULT_ACCENT_COLOR)
+        isDarkTheme = keyboardPrefs.getBoolean(PREF_IS_DARK_THEME, true)
     }
 
-    /** Duoc goi khi nut [QR] duoc bam. Neu chua co quyen CAMERA, phai nho MOT
-     *  Activity toi gian ([QrCameraPermissionActivity]) hien ho thoai xin
-     *  quyen he thong (Service khong the tu hien hop thoai nay duoc) - sau
-     *  khi nguoi dung tra loi, [notifyCameraPermissionResult] se goi lai va
-     *  tu dong mo tiep khung quet neu duoc cap quyen. Neu da co quyen roi
-     *  (truong hop thuong gap sau lan dau), mo thang khung quet nong ma
-     *  khong can dung Activity nao ca.
-     *
-     *  [continuous]: xem giai thich o [buildNumbersBottomRow]. Neu khung
-     *  quet DANG mo san (nguoi dung bam nut QR lan nua trong luc dang quet),
-     *  chi cap nhat lai che do quet, KHONG mo lai camera tu dau. */
     private fun openQrScanner(continuous: Boolean = false) {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             != PackageManager.PERMISSION_GRANTED
@@ -2308,20 +1824,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         qrLastDeliveredText = null
         qrFrameHandled.set(false)
 
-        if (qrOverlayView != null) return // camera van dang chay, chi doi che do o tren
+        if (qrOverlayView != null) return
         showQrOverlay()
     }
 
-    /** Them View chua preview camera vao THANG cua so cua Service nay (khong
-     *  qua Activity nao) bang [qrWindowManager]. Vi day van la cua so ban
-     *  phim (chi la them mot lop con), he thong khong bao gio coi la mat
-     *  focus - onFinishInputView() chi con bi goi dung luc nguoi dung THAT
-     *  SU roi o nhap, khong con bi goi oan luc dang quet nua.
-     *
-     *  Chieu cao khung quet = dung chieu cao ban phim hien tai (giong logic
-     *  cu), va dat gravity BOTTOM + y = chieu cao do de khung quet nam HAN
-     *  o phia TREN ban phim (khong che ban phim, ban phim van hien ro va
-     *  van nhan duoc cham vao cac phim con lai trong luc quet). */
     private fun showQrOverlay() {
         val decorView = window?.window?.decorView ?: return
         val heightPx = decorView.height.takeIf { it > 0 }
@@ -2343,8 +1849,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         try {
             qrWindowManager.addView(view, params)
         } catch (e: Exception) {
-            // Mot so ROM/dong may co the tu choi kieu cua so nay trong vai
-            // tinh huong hiem - bao cho nguoi dung thay vi treo im lang.
             Toast.makeText(this, "Kh\u00f4ng m\u1edf \u0111\u01b0\u1ee3c khung qu\u00e9t", Toast.LENGTH_SHORT).show()
             return
         }
@@ -2354,9 +1858,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         startQrCamera()
     }
 
-    /** Dong khung quet: ngat camera, go View khoi cua so, va dua
-     *  [lifecycleRegistry] ve CREATED (khong DESTROYED, de con dung lai duoc
-     *  cho lan quet ke tiep - xem giai thich o khai bao [lifecycleRegistry]). */
     private fun hideQrOverlay() {
         stopQrCamera()
         qrOverlayView?.let {
@@ -2373,22 +1874,12 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         qrImageCapture = null
         qrCaptureInProgress = false
         qrCaptureButton = null
-        // LUU Y: [qrAutoCapturePerScan] KHONG bi tat o day nua (truoc day co
-        // tat) - theo yeu cau nguoi dung, che do "TU DONG CHUP ANH THEO MA
-        // QUET" gio se DUY TRI xuyen suot qua nhieu lan khung quet tu dong
-        // dong/mo lai (vd tu dong dong sau khi quet xong roi tu mo lai theo
-        // [reopenQrScannerOnNextStart]) - CHI TAT khi nguoi dung THAT SU CHU
-        // DONG bam nut "Huy" (xem [cancelBtn] o [buildQrOverlayContentView]).
         pendingCaptureTap?.let { captureButtonTapHandler.removeCallbacks(it) }
         pendingCaptureTap = null
         lastCaptureTapTime = 0L
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
     }
 
-    /** Dung code de dung giao dien khung quet: lop preview camera chiem het
-     *  khung, nut Huy o GOC PHAI DUOI, nut bat/tat FLASH o GOC PHAI TREN -
-     *  y het bo cuc truoc day cua QrScanActivity, chi khac la gio day noi
-     *  chua no la mot View thuong, khong con la mot Activity/Window rieng. */
     private fun buildQrOverlayContentView(): View {
         val root = FrameLayout(this)
         qrOverlayRootLayout = root
@@ -2416,15 +1907,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 Gravity.BOTTOM or Gravity.END
             ).apply { setMargins(0, 0, dp(12), dp(12)) }
             setOnClickListener {
-                // Nguoi dung CHU DONG bam "Huy" - khong phai tu dong dong sau
-                // khi quet xong, nen KHONG duoc tu mo lai camera o lan
-                // [onStartInputView] tiep theo nua (xem [reopenQrScannerOnNextStart]).
                 reopenQrScannerOnNextStart = false
-                // Nguoi dung CHU DONG bam "Huy" cung la thoi diem DUY NHAT
-                // tat che do "TU DONG CHUP ANH THEO MA QUET" (xem
-                // [qrAutoCapturePerScan]) - de lan mo khung quet TIEP THEO
-                // (co the khong con lien quan gi den phien lam viec nay) se
-                // luon bat dau o trang thai mac dinh (chua bat che do nay).
                 qrAutoCapturePerScan = false
                 hideQrOverlay()
             }
@@ -2448,27 +1931,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         qrFlashButton = flashBtn
         root.addView(flashBtn)
 
-        // Nut "Chup anh nhanh" - theo yeu cau nguoi dung, nam GIUA nut Flash
-        // (goc tren-phai) va nut Huy (goc duoi-phai), CUNG mot canh ben phai
-        // voi hai nut do. Dung Gravity.CENTER_VERTICAL or END + KHONG dat
-        // margin doc (chi margin ngang) de no tu nam giua chieu cao khung,
-        // tuc dung giua khoang cach flash/huy ve mat thi giac.
-        //
-        // SUA giao dien theo yeu cau nguoi dung: THAY hinh may anh (emoji
-        // 📷 tren nen chu nhat bo goc) BANG mot VONG TRON mau TRANG DAY (kieu
-        // nut chup chuan cua may anh/may quay - chi la duong VIEN tron day,
-        // KHONG chu, KHONG nen dac, giong nut chup quen thuoc tren cac ung
-        // dung camera). Dung GradientDrawable.OVAL + setStroke (day net vien)
-        // thay vi chu/emoji.
-        //
-        // THEM (theo yeu cau nguoi dung): nut nay gio phan biet CHAM 1 LAN va
-        // DUP-TAP, giong nut QR/Shift:
-        //  - Cham 1 lan: LUON chup 1 tam anh NGAY (hanh vi cu, khong doi) -
-        //    CHUP BINH THUONG du che do [qrAutoCapturePerScan] dang BAT hay
-        //    TAT (khong bi chan boi che do tu dong).
-        //  - Dup-tap: BAT/TAT che do "TU DONG CHUP ANH THEO MA QUET" (xem
-        //    [qrAutoCapturePerScan]) - vong tron doi mau khi che do dang BAT
-        //    de nguoi dung de nhan biet.
         val captureBtn = Button(this).apply {
             text = ""
             isAllCaps = false
@@ -2487,9 +1949,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 val isDoubleTap = now - lastCaptureTapTime <= CAPTURE_DOUBLE_TAP_MAX_INTERVAL_MS
                 lastCaptureTapTime = if (isDoubleTap) 0L else now
                 if (isDoubleTap) {
-                    // Xac nhan la dup-tap - HUY lenh "chup thu cong" dang cho
-                    // tu lan cham DAU TIEN (tranh chup anh oan mot lan tren
-                    // duong dan toi cu dup-tap), roi BAT/TAT che do tu dong.
                     pendingCaptureTap?.let { captureButtonTapHandler.removeCallbacks(it) }
                     pendingCaptureTap = null
                     qrAutoCapturePerScan = !qrAutoCapturePerScan
@@ -2503,12 +1962,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                         Toast.LENGTH_SHORT
                     ).show()
                 } else {
-                    // Cham 1 lan (chua biet co phai la lan dau cua dup-tap
-                    // hay khong) - CHO trong khoang [CAPTURE_DOUBLE_TAP_MAX_INTERVAL_MS],
-                    // neu khong co lan cham thu 2 nao toi kip, moi thuc su
-                    // coi la cham don va chup anh THU CONG NGAY (hanh vi cu,
-                    // khong doi - CHUP BINH THUONG du che do tu dong dang
-                    // BAT hay TAT, khong bi chan nua).
                     pendingCaptureTap?.let { captureButtonTapHandler.removeCallbacks(it) }
                     val tapRunnable = Runnable {
                         pendingCaptureTap = null
@@ -2528,7 +1981,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     private fun buildQrCaptureButtonBackground(active: Boolean): GradientDrawable = GradientDrawable().apply {
         shape = GradientDrawable.OVAL
         if (active) {
-            // Do dam - bao hieu dang o che do TU DONG CHUP ANH THEO MA QUET.
             setColor(Color.parseColor("#CCFF3B30"))
             setStroke(dp(5), Color.WHITE)
         } else {
@@ -2553,8 +2005,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         qrFlashButton?.background = buildQrFlashButtonBackground(active = qrFlashOn)
     }
 
-    /** Khoi dong CameraX, bind vao [this] (Service nay tu implement
-     *  LifecycleOwner - xem [lifecycle]) thay vi vao mot Activity nhu truoc. */
     @OptIn(androidx.camera.core.ExperimentalGetImage::class)
     private fun startQrCamera() {
         val preview = qrPreviewView ?: return
@@ -2576,10 +2026,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 processQrFrame(imageProxy, scanner)
             }
 
-            // UseCase rieng cho tinh nang "Chup anh nhanh" (nut giua Flash va
-            // Huy) - hoan toan doc lap voi imageAnalysis dung de quet QR o
-            // tren, chi chup ANH THAT khi nguoi dung chu dong bam nut, KHONG
-            // anh huong den luong quet QR tu dong dang chay song song.
             val imageCaptureUseCase = ImageCapture.Builder()
                 .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
                 .build()
@@ -2602,8 +2048,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         try {
             ProcessCameraProvider.getInstance(this).get().unbindAll()
         } catch (e: Exception) {
-            // Bo qua neu camera provider chua kip khoi tao xong (vd nguoi
-            // dung bam Huy rat nhanh ngay sau khi mo).
+            // Bo qua neu camera provider chua kip khoi tao xong.
         }
         qrCameraExecutor?.shutdown()
         qrCameraExecutor = null
@@ -2611,34 +2056,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         qrImageCapture = null
     }
 
-    /** TINH NANG "CHUP ANH NHANH": nguoi dung bam nut chup (giua Flash va
-     *  Huy) trong luc khung quet QR dang mo -> chup MOT tam anh THAT (khac
-     *  hoan toan voi luong quet QR tu dong o [processQrFrame]) bang UseCase
-     *  [qrImageCapture] rieng, lam HAI viec:
-     *   1) LUON luu anh vao thu vien may (MediaStore) truoc tien, du app
-     *      dang go co nhan duoc anh hay khong - dam bao nguoi dung khong
-     *      bao gio mat anh vua chup.
-     *   2) SAU DO thu gui THANG anh do vao o nhap dang mo qua commitContent
-     *      (giong co che ban phim GIF/sticker gui anh) - CHI hoat dong neu
-     *      app dang go (Zalo/Messenger/...) co khai bao ho tro nhan noi
-     *      dung dang anh qua ban phim (EditorInfo.contentMimeTypes). Neu
-     *      app do KHONG ho tro, bao cho nguoi dung biet anh van da duoc luu
-     *      vao may, chi rieng buoc gui thang la khong lam duoc.
-     *
-     *  Tham so [silentAutoCapture]: true khi ham nay duoc goi TU DONG boi
-     *  [onQrFound] (che do "TU DONG CHUP ANH THEO MA QUET" - xem
-     *  [qrAutoCapturePerScan]), KHAC voi luc nguoi dung tu bam nut Chup thu
-     *  cong (false, mac dinh). Khi true:
-     *   - CHI luu anh vao thu vien (buoc 1 o tren) - KHONG lam buoc 2 (KHONG
-     *     gui/chen anh vao o nhap dang go qua commitContent), dung y muon
-     *     nguoi dung: chi luu bang chung, khong lam gian doan/chen noi dung
-     *     la vao o nhap dang go don hang.
-     *   - KHONG hien man hinh xem truoc anh ([showCapturedPhotoPreview]) -
-     *     tranh gian doan qua trinh quet lien tuc (dang quet don tiep theo
-     *     ma man hinh lai bi che boi anh vua chup).
-     *   - KHONG khoa/mo lai [qrCaptureButton] (nut nay luc do dung de
-     *     bat/tat che do tu dong bang dup-tap, khong con dai dien cho hanh
-     *     dong chup thu cong nua trong thoi gian che do dang bat). */
     private fun captureQrPhoto(silentAutoCapture: Boolean = false) {
         val imageCapture = qrImageCapture
         if (imageCapture == null) {
@@ -2647,16 +2064,8 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             }
             return
         }
-        if (qrCaptureInProgress) return // chan bam lien tuc nhieu lan
+        if (qrCaptureInProgress) return
 
-        // CHI may Android 9 (API 28) tro xuong moi can quyen nay (xem chu
-        // thich tai AndroidManifest.xml) - Android 10+ dung Scoped Storage
-        // nen khong bao gio roi vao nhanh nay. Vi day la truong hop rat
-        // hiem (may qua cu) va IME KHONG the tu hien hop thoai xin quyen
-        // runtime (giong ly do can QrCameraPermissionActivity rieng cho
-        // Camera), don gian chi bao nguoi dung tu vao Cai dat cap quyen,
-        // thay vi xay dung them mot Activity xin quyen nua chi cho truong
-        // hop ngay cang hiem gap nay.
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
             != PackageManager.PERMISSION_GRANTED
@@ -2679,9 +2088,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
             put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                // Tu Android 10: luu vao thu muc rieng "Pictures/QrKeyboard"
-                // trong bo nho dung chung, khong can xin quyen luu tru nao
-                // ca (Scoped Storage tu quan ly qua MediaStore).
                 put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/QrKeyboard")
                 put(MediaStore.Images.Media.IS_PENDING, 1)
             }
@@ -2698,10 +2104,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                     val savedUri = output.savedUri
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && savedUri != null) {
-                        // Go co "IS_PENDING" de anh chinh thuc hien trong
-                        // thu vien (truoc do dang o trang thai "an", chi
-                        // may thu tao ra moi thay, tranh app khac doc phai
-                        // file dang ghi do).
                         val doneValues = ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }
                         try {
                             contentResolver.update(savedUri, doneValues, null, null)
@@ -2717,10 +2119,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                         qrToneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP2, 120)
                         if (savedUri != null) {
                             if (silentAutoCapture) {
-                                // Che do tu dong theo ma quet: CHI luu vao
-                                // thu vien, KHONG gui/chen vao o nhap, KHONG
-                                // hien man hinh xem truoc (xem giai thich o
-                                // khai bao [silentAutoCapture] phia tren ham).
                                 Toast.makeText(
                                     this@QrKeyboardService,
                                     "\u0110\u00e3 l\u01b0u \u1ea3nh cho m\u00e3 v\u1eeba qu\u00e9t v\u00e0o th\u01b0 vi\u1ec7n",
@@ -2734,13 +2132,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                                     else "\u0110\u00e3 l\u01b0u \u1ea3nh v\u00e0o thi\u1ebft b\u1ecb (\u1ee9ng d\u1ee5ng n\u00e0y kh\u00f4ng nh\u1eadn \u1ea3nh tr\u1ef1c ti\u1ebfp t\u1eeb b\u00e0n ph\u00edm)",
                                     Toast.LENGTH_LONG
                                 ).show()
-                                // SUA LOI nguoi dung phan anh: TRUOC DAY sau khi
-                                // chup + gui xong, khung quet lap tuc quay lai
-                                // quet lien tuc, khong he cho xem lai anh vua
-                                // chup. GIO DAY: hien NGAY anh vua chup phu kin
-                                // khung quet, tam dung quet (xem
-                                // [qrShowingCapturedPhoto]), cho toi khi nguoi
-                                // dung tu cham vao anh de dong va tro lai quet.
                                 showCapturedPhotoPreview(savedUri)
                             }
                         } else {
@@ -2763,13 +2154,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         )
     }
 
-    /** Thu gui anh vua chup THANG vao o nhap dang mo, dung API chinh thuc
-     *  cua Android danh cho ban phim gui noi dung phong phu (anh/GIF...):
-     *  InputConnectionCompat.commitContent. Tra ve true neu app dang go
-     *  XAC NHAN da nhan (chap nhan mime "image/jpeg" trong EditorInfo);
-     *  tra ve false neu app do khong khai bao ho tro (rat nhieu app - vd
-     *  cac o nhap thong thuong/form dang nhap - se khong ho tro, day la
-     *  DIEU BINH THUONG, khong phai loi). */
     private fun tryCommitPhotoToChat(uri: Uri): Boolean {
         val ic = currentInputConnection ?: return false
         val editorInfo = currentInputEditorInfo ?: return false
@@ -2796,16 +2180,9 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
     }
 
-    /** Hien anh VUA CHUP phu kin toan bo khung quet (che camera preview +
-     *  cac nut Flash/Huy/Chup), tam dung nhan dien QR ([qrShowingCapturedPhoto])
-     *  cho toi khi nguoi dung cham vao anh de dong ([dismissCapturedPhotoPreview]).
-     *  Giai ma anh o LUONG PHU (khong phai luong chinh) va thu nho truoc
-     *  (xem [decodeSampledBitmap]) de tranh giat/lag hoac OOM voi anh chup
-     *  full-size tren cac may co camera do phan giai cao. */
     private fun showCapturedPhotoPreview(uri: Uri) {
         val root = qrOverlayRootLayout ?: return
 
-        // Phong truong hop (hiem) view cu chua kip don dep xong.
         qrCapturedPhotoView?.let { root.removeView(it) }
 
         val imageView = android.widget.ImageView(this).apply {
@@ -2829,8 +2206,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 null
             }
             Handler(Looper.getMainLooper()).post {
-                // Chi ap dung neu day VAN CON DUNG ImageView dang hien (nguoi
-                // dung co the da cham dong truoc khi giai ma xong).
                 if (qrCapturedPhotoView === imageView) {
                     if (bitmap != null) {
                         imageView.setImageBitmap(bitmap)
@@ -2847,26 +2222,14 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
     }
 
-    /** Dong anh xem truoc, quay lai camera preview + tiep tuc nhan dien QR
-     *  binh thuong (goi khi nguoi dung cham vao anh, xem [showCapturedPhotoPreview]). */
     private fun dismissCapturedPhotoPreview() {
         qrCapturedPhotoView?.let { qrOverlayRootLayout?.removeView(it) }
         qrCapturedPhotoView = null
         qrShowingCapturedPhoto = false
-        // Cho phep nhan mot ma QR moi ngay sau khi tro lai quet, khong bi
-        // ket dinh vao ma cu (qrLastDeliveredText giu nguyen de tranh nhan
-        // lai CHINH ma vua quet truoc do lien tuc).
         qrFrameHandled.set(false)
     }
 
-    /** Giai ma anh tu [uri] voi kich thuoc TOI DA [maxDim] px (theo canh dai
-     *  hon), dung 2 lan decode (lan 1 chi doc kich thuoc that, lan 2 moi giai
-     *  ma that voi inSampleSize phu hop) - tranh tai toan bo anh goc (co the
-     *  rat lon) vao bo nho chi de hien thi mot khung xem truoc nho. */
     private fun decodeSampledBitmap(uri: Uri, maxDim: Int): android.graphics.Bitmap? {
-        // Lan 1: chi do KICH THUOC that (inJustDecodeBounds = true luon lam
-        // decodeStream() tra ve null - KHONG dung gia tri tra ve nay de
-        // kiem tra loi, chi dung de biet co mo duoc stream hay khong).
         val boundsOptions = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
         val boundsStream = contentResolver.openInputStream(uri) ?: return null
         boundsStream.use { android.graphics.BitmapFactory.decodeStream(it, null, boundsOptions) }
@@ -2876,20 +2239,12 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             sampleSize *= 2
         }
 
-        // Lan 2: giai ma THAT voi inSampleSize da tinh - can mo LAI stream vi
-        // stream lan 1 da doc/dong xong.
         val decodeOptions = android.graphics.BitmapFactory.Options().apply { inSampleSize = sampleSize }
         val decodeStream = contentResolver.openInputStream(uri) ?: return null
         return decodeStream.use { android.graphics.BitmapFactory.decodeStream(it, null, decodeOptions) }
     }
 
-    /** Y het logic cu o QrScanActivity.processFrame(): chi nhan mot ma QR
-     *  hop le (khong ky tu dac biet, khac ma vua xuat gan nhat) trong luc
-     *  chua co ma nao dang cho xu ly ([qrFrameHandled]). */
     private fun processQrFrame(imageProxy: ImageProxy, scanner: BarcodeScanner) {
-        // Dang xem anh vua chup ([showCapturedPhotoPreview]) - TAM DUNG nhan
-        // dien QR, tranh vua xem anh xong bi tu dong nhay/quet ma khac ngay
-        // ben duoi anh dang hien (xem [qrShowingCapturedPhoto]).
         if (qrShowingCapturedPhoto) {
             imageProxy.close()
             return
@@ -2920,7 +2275,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             .addOnCompleteListener { imageProxy.close() }
     }
 
-    /** Tap ky tu duoc coi la hop le (khong phai "dac biet") - y het truoc day. */
     private val qrAllowedCharacterRegex = Regex("^[\\p{L}\\p{N}\\s.,!?:;'\"()/@_-]*$")
 
     private fun containsQrSpecialCharacter(text: String): Boolean =
@@ -2939,9 +2293,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
     }
 
-    /** Ma QR quet duoc: phat bip, chen thang vao o nhap dang mo (khong con
-     *  can qua companion callback nua vi tat ca dien ra trong CUNG mot doi
-     *  tuong Service), roi xuong dong san cho lan nhap/quet tiep theo. */
     private fun onQrFound(text: String) {
         val beepDurationMs = 150
         qrToneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP, beepDurationMs)
@@ -2958,28 +2309,15 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             if (hadPendingSuggestion) redrawKeyboard()
             Toast.makeText(this, "\u0110\u00e3 qu\u00e9t: $text", Toast.LENGTH_SHORT).show()
 
-            // Che do "TU DONG CHUP ANH THEO MA QUET" dang BAT (xem
-            // [qrAutoCapturePerScan]) - tu dong chup 1 tam anh gan lien voi
-            // ma VUA quet duoc nay, CHI luu vao thu vien, KHONG chen vao o
-            // nhap, KHONG hien man hinh xem truoc (xem [captureQrPhoto]).
             if (qrAutoCapturePerScan) {
                 captureQrPhoto(silentAutoCapture = true)
             }
         }
 
-        // Doi het thoi luong tieng bip roi moi dong khung (hoac mo lai cho
-        // ma tiep theo neu dang o CHE DO QUET LIEN TUC) - tranh cat ngang am
-        // thanh dang phat bat dong bo.
         mainHandler.postDelayed({
             if (qrContinuousMode) {
                 qrFrameHandled.set(false)
             } else {
-                // Danh dau: khung quet dang TU DONG dong do quet xong (khong
-                // phai nguoi dung tu bam "Huy") - neu ban phim som mo lai
-                // ([onStartInputView], vd trang web tu an/hien lai ngay sau
-                // khi nhan duoc noi dung quet), tu dong MO LAI khung quet
-                // luon trong khoang [QR_AUTO_REOPEN_WINDOW_MS], khong bat
-                // nguoi dung phai bam nut [QR] them lan nua.
                 reopenQrScannerOnNextStart = true
                 reopenQrScannerDeadline =
                     android.os.SystemClock.uptimeMillis() + QR_AUTO_REOPEN_WINDOW_MS
@@ -2990,36 +2328,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
-        // QUAN TRONG: chi dong khung quet khi [finishingInput] = true, tuc la
-        // phien nhap THAT SU ket thuc (nguoi dung chuyen sang app khac, dong
-        // han ban phim...). Mot so trang/app (dac biet WebView, hoac field co
-        // validate/refresh lien tuc) khien he thong goi onFinishInputView()
-        // ROI onStartInputView() lai NGAY SAU DO voi finishingInput = false -
-        // day chi la tai tao lai view tam thoi, nguoi dung VAN DANG o nguyen
-        // trong o nhap do, khong he roi di. TRUOC DAY ham nay dong khung quet
-        // VO DIEU KIEN, nen tren cac trang loai nay, khung quet (ke ca dang o
-        // CHE DO QUET LIEN TUC/dup-tap) bi tu dong tat ngay sau khi quet duoc
-        // 1 ma, dung y het hien tuong nguoi dung phan anh. Gio chi dong that
-        // su khi finishingInput = true.
-        //
-        // NHUNG: ngay ca khi finishingInput = true, VAN CHUA dong ngay - vi
-        // mot so thong bao/popup thoang qua (thong bao he thong, popup xin
-        // quyen trinh duyet, hop thoai khac cuop focus tam thoi...) cung
-        // khien he thong bao finishingInput = true trong tich tac roi goi
-        // lai onStartInputView ngay sau do, du nguoi dung khong thuc su roi
-        // o nhap. Dat mot lenh dong "hoan" sau FINISH_INPUT_HIDE_DEBOUNCE_MS
-        // - neu onStartInputView duoc goi lai truoc do (xem
-        // [cancelPendingFinishHide]), lenh nay se bi huy, khung quet + ban
-        // phim duoc giu nguyen tren cung nhu nguoi dung mong doi.
         if (finishingInput) {
             cancelPendingFinishHide()
             val hideRunnable = Runnable {
                 pendingFinishHide = null
-                // Khung quet dang MO (o CA hai che do - thuong lan lien tuc)
-                // vao dung luc ban phim THAT SU mat focus (khong phai do
-                // nguoi dung tu bam "Huy") - danh dau de tu mo lai neu ban
-                // phim som bat len lai (xem [reopenQrScannerOnNextStart] va
-                // cach dung o [onStartInputView]).
                 if (qrOverlayView != null) {
                     reopenQrScannerOnNextStart = true
                     reopenQrScannerDeadline =
@@ -3031,8 +2343,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             finishInputHideHandler.postDelayed(hideRunnable, FINISH_INPUT_HIDE_DEBOUNCE_MS)
         }
         hideKeyPreview()
-        // Huy moi vong lap xoa-lien-tuc dang cho (phong truong hop nguoi
-        // dung roi o nhap trong luc van con dang giu phim xoa).
         deleteRepeatHandler.removeCallbacksAndMessages(null)
     }
 
@@ -3047,6 +2357,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         previewBubble = null
         cachedNumbersView = null
         cachedSymbolsView = null
+        cachedNumpadView = null
         keyboardRootContainer = null
         lettersPageView = null
     }
@@ -3055,14 +2366,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 /**
  * Goi y sua loi chinh ta Tieng Viet don gian, dua tren mot tu dien co san
  * (file assets/vn_words.txt, ~6600 tu Tieng Viet thong dung, moi tu 1 dong).
- * Cach hoat dong: khi mot "tu" nguoi dung go xong KHONG co trong tu dien,
- * tim trong tu dien mot tu SAI LECH DUNG 1 KY TU (them/xoa/doi 1 ky tu) so
- * voi tu do; neu tim thay, coi la goi y sua loi hop ly. Day la mot ky thuat
- * don gian (khong phai mo hinh ngon ngu day du), nen chi bat duoc cac loi
- * go sai co ban (thieu/du/sai 1 ky tu) - khong bat duoc loi sai dau thanh
- * lam tu do van "co ve giong tu khac" trong tu dien, hay loi ngu phap/ngu
- * canh. Tu dien duoc TAI MOT LAN DUY NHAT (lazy, dung ca cho toan bo doi
- * song cua IME) va nhom theo do dai tu de tim kiem nhanh hon.
+ * LUU Y: tinh nang GOI Y (hien thanh goi y tren ban phim) hien dang KHONG
+ * duoc goi toi trong luong go binh thuong (xem [insertText]/[checkAutocorrectSuggestion])
+ * vi viec doc/duyet tu dien lam ban phim khung dung luc vua go xong 1 tu -
+ * object nay van duoc GIU LAI (khong xoa) de co the bat lai de dang neu sau
+ * nay toi uu duoc cach tra cuu (vd chuyen sang Trie/nen tang khac).
  */
 private object VietnameseAutocorrect {
 
@@ -3074,10 +2382,6 @@ private object VietnameseAutocorrect {
     @Volatile
     private var dictionarySet: Set<String>? = null
 
-    /** Tai tu dien tu file assets/vn_words.txt (chi 1 lan). Neu file khong
-     *  ton tai (vd nguoi dung chua them file nay vao du an) hoac loi doc,
-     *  tra ve tap rong - luc do tinh nang goi y coi nhu tam tat, KHONG lam
-     *  crash ung dung. */
     private fun ensureLoaded(context: android.content.Context) {
         if (dictionarySet != null) return
         synchronized(this) {
@@ -3094,9 +2398,6 @@ private object VietnameseAutocorrect {
         }
     }
 
-    /** Tra ve mot goi y thay the cho [word] (chu thuong) neu [word] KHONG co
-     *  trong tu dien nhung co dung mot tu trong tu dien sai lech 1 ky tu -
-     *  nguoc lai (tu dung roi, hoac khong tim thay goi y phu hop) tra null. */
     fun suggestFor(context: android.content.Context, word: String): String? {
         ensureLoaded(context)
         val set = dictionarySet ?: return null
@@ -3107,8 +2408,6 @@ private object VietnameseAutocorrect {
             (byLength[word.length - 1].orEmpty()) +
             (byLength[word.length + 1].orEmpty())
 
-        // Uu tien tu co ky tu DAU giong nhau, giam so luong can so sanh va
-        // tang do lien quan cua goi y (tranh goi y "la" cho tu "ba" chang han).
         val firstChar = word[0]
         return pool.firstOrNull { candidate ->
             candidate.isNotEmpty() && candidate[0] == firstChar &&
@@ -3116,10 +2415,6 @@ private object VietnameseAutocorrect {
         }
     }
 
-    /** True neu chi can DUNG MOT phep them/xoa/doi 1 ky tu de bien [a]
-     *  thanh [b] (khoang cach Levenshtein <= 1). Viet rieng (khong dung DP
-     *  day du) vi chi can biet <=1 hay khong, nhanh hon nhieu so voi tinh
-     *  toan bo ma tran Levenshtein cho tu dien lon. */
     private fun isEditDistanceAtMostOne(a: String, b: String): Boolean {
         if (a == b) return true
         val lenA = a.length
@@ -3127,7 +2422,6 @@ private object VietnameseAutocorrect {
         if (kotlin.math.abs(lenA - lenB) > 1) return false
 
         if (lenA == lenB) {
-            // Cung do dai: chi cho phep DOI dung 1 ky tu.
             var diffCount = 0
             for (i in a.indices) {
                 if (a[i] != b[i]) {
@@ -3138,8 +2432,6 @@ private object VietnameseAutocorrect {
             return diffCount == 1
         }
 
-        // Do dai lech nhau dung 1: kiem tra xem co the XOA dung 1 ky tu cua
-        // chuoi dai hon de duoc chuoi ngan hon khong.
         val longer = if (lenA > lenB) a else b
         val shorter = if (lenA > lenB) b else a
         var i = 0
@@ -3162,17 +2454,13 @@ private object VietnameseAutocorrect {
 
 /**
  * Bo xu ly go Tieng Viet kieu Telex don gian: chuyen mot chuoi ky tu QWERTY
- * thuong (khong dau) thanh chuoi co dau Tieng Viet, dua tren "tu" dang go
- * (tu luc bat dau tu den ky tu hien tai). Cac quy tac Telex duoc ho tro:
- *   - aa -> â, aw -> ă, ee -> ê, oo -> ô, ow -> ơ, uw -> ư, dd -> đ
- *   - s/f/r/x/j -> dau sac/huyen/hoi/nga/nang; z -> bo dau
- * Day la mot bo xu ly rut gon (khong xu ly het moi truong hop dac biet cua
- * chinh ta Tieng Viet), nhung dap ung tot phan lon cac tu thong dung.
+ * thuong (khong dau) thanh chuoi co dau Tieng Viet, dua tren "tu" dang go.
+ * SUA LOI (theo yeu cau nguoi dung): "qua"+sac ra dung "quá" (khong con
+ * "qúa"), "gia"+sac ra dung "giá" (khong con "gía") - xem chi tiet trong
+ * [applyTone], phan tinh [quOrGiGlideNucleus].
  */
 private object VietnameseTelex {
 
-    // Moi nhom: ky tu goc (khong dau) + 6 bien the theo dau:
-    // [khong dau, sac, huyen, hoi, nga, nang]
     private val vowelGroups: List<CharArray> = listOf(
         charArrayOf('a', '\u00e1', '\u00e0', '\u1ea3', '\u00e3', '\u1ea1'), // a
         charArrayOf('\u0103', '\u1eaf', '\u1eb1', '\u1eb3', '\u1eb5', '\u1eb7'), // ă
@@ -3188,8 +2476,6 @@ private object VietnameseTelex {
         charArrayOf('y', '\u00fd', '\u1ef3', '\u1ef7', '\u1ef9', '\u1ef5')  // y
     )
 
-    // Cac nhom "co mu/moc" (â, ă, ê, ô, ơ, ư) duoc uu tien khi dat dau thanh
-    // neu chung xuat hien trong cum nguyen am.
     private val modifiedGroupIndices = setOf(1, 2, 4, 7, 8, 10)
 
     private val charToGroupTone: Map<Char, Pair<Int, Int>> by lazy {
@@ -3200,77 +2486,25 @@ private object VietnameseTelex {
         map
     }
 
-    /** Ap dung mot phim [keyLower] (da ve chu thuong) vao "tu" hien tai
-     *  [word] (cung da ve chu thuong), tra ve tu moi sau khi bien doi Telex
-     *  (neu co) hoac tu cu + ky tu do neu khong co bien doi nao ap dung. */
     fun processKey(word: String, keyLower: Char): String {
         applyDoubleModifier(word, keyLower)?.let { return it }
         applyTone(word, keyLower)?.let { return it }
         return word + keyLower
     }
 
-    /** Xu ly cac cap chuyen doi: aa->â, aw->ă, ee->ê, oo->ô, ow->ơ, uw->ư,
-     *  dd->đ. TRUOC DAY chi ap dung khi ky tu ngay LIEN TRUOC do khop dung
-     *  quy tac (vd phai go "tiee" thi "e" thu 2 moi bien "e" thanh "ê"), nen
-     *  neu nguoi dung lo go het phu am cuoi tu roi ("tiep") moi quay lai them
-     *  "e" thi se KHONG nhan (chi chen them chu "e" moi, sai chinh ta).
-     *  GIO DAY: tim NGUYEN AM GOC (chua bien doi) GAN CUOI NHAT trong CA TU
-     *  (khong bat buoc phai dung sat cuoi), roi bien doi ngay tai vi tri do,
-     *  giu nguyen moi ky tu dung sau no (vd phu am cuoi). Nho vay go "tiep"
-     *  roi go them "e" van ra "tiêp" dung nhu go "tiee" tu dau.
-     *
-     *  SUA THEM (2 loi nguoi dung phan anh):
-     *  1) "hạu" (danh sai) + dat con tro truoc "u" + go them "a" TRUOC DAY ra
-     *     "hạau" (sai) vi ham chi tim ky tu 'a' THUAN (khong dau) - trong khi
-     *     ky tu thuc te ngay truoc con tro la 'ạ' (a MANG SAN dau nang), nen
-     *     bi coi la "khong khop", chi chen them chu "a" moi. GIO DAY: tim
-     *     theo NHOM nguyen am goc (vd nhom "a" gom ca a/á/à/ả/ã/ạ) bang
-     *     [lastIndexOfGroup], roi GIU NGUYEN dau thanh da co khi doi nhom (vd
-     *     'ạ' -> 'ậ', khong phai 'ạ' -> 'ạa') - ra dung "hậu" nhu mong doi.
-     *  2) "được" bi go ra "đuợc": phim "w" TRUOC DAY chi doi MOT nguyen am
-     *     gan cuoi nhat trong so {a,o,u} (uu tien "o" vi nam sau "u" trong tu
-     *     "duo"), nen chi "o" -> "ơ", con "u" bi bo qua, giu nguyen. GIO DAY:
-     *     kiem tra rieng cum "uo" LIEN TIEP (dung quy uoc Telex chuan cho cum
-     *     nguyen am doi "ươ") - neu co, doi CA HAI ky tu cung luc (u -> ư VA
-     *     o -> ơ), moi ra dung "được". Chi khi KHONG co cum "uo" moi quay ve
-     *     logic cu (chon 1 trong 3 nguyen am gan cuoi nhat). */
     private fun applyDoubleModifier(word: String, key: Char): String? {
         if (word.isEmpty()) return null
 
-        // Vi tri GAN CUOI NHAT trong [word] co ky tu thuoc NHOM nguyen am goc
-        // [groupIdx] - BAT KY dang mang dau thanh nao (vd nhom 0 "a" khop ca
-        // voi 'a','á','à','ả','ã','ạ'), khong chi ky tu thuan khong dau.
         fun lastIndexOfGroup(groupIdx: Int): Int? =
             word.indices.lastOrNull { i -> charToGroupTone[word[i]]?.first == groupIdx }
 
-        // SUA THEM (theo yeu cau nguoi dung): ho tro "HUY bien doi" khi phim
-        // modifier duoc go LAP LAI mot lan nua, giong quy uoc Unikey chuan
-        // ("aaa" -> "aa" thay vi giu "â" roi chen them "a" vo nghia). Doi/HUY
-        // giua NHOM GOC [fromGroupIdx] (vd "a") va NHOM DICH [toGroupIdx]
-        // (vd "â") theo phim [key]:
-        //  - Neu nguyen am GAN CUOI NHAT trong ca hai nhom nay dang o NHOM
-        //    GOC (chua bien doi) -> bien doi BINH THUONG sang NHOM DICH, giu
-        //    nguyen dau thanh da co (hanh vi cu, khong doi).
-        //  - Neu nguyen am do dang o NHOM DICH (DA duoc bien doi tu truoc,
-        //    vd "â" tu "aa") VA CHUA mang dau thanh nao (tone == "khong dau")
-        //    -> coi day la lan go phim modifier THU BA lien tiep: HUY bien
-        //    doi (dua ve lai NHOM GOC), roi CHEN THEM ky tu [key] vao CUOI
-        //    CUNG cua tu (nhu mot chu cai binh thuong duoc go tiep theo, y
-        //    het cach "aaa" duoc hieu la "aa"+"a" = 2 chu "a"). Vi du:
-        //    "chêt" (đã có ê, chưa dấu) + "e" -> huy "ê"->"e" ("chet") roi
-        //    chen "e" o cuoi -> "chete".
-        //  - Neu nguyen am o NHOM DICH nhung DA CO dau thanh roi (vd "ế" -
-        //    ê + sac) -> KHONG huy (dau thanh la thong tin quan trong khong
-        //    the tu y bo), tra ve null de ky tu moi duoc chen BINH THUONG o
-        //    cuoi tu, giu nguyen dau thanh cu. Vi du: "chết" + "e" ->
-        //    "chếte" (khong phai "cheét" hay "chette").
         fun toggleGroup(fromGroupIdx: Int, toGroupIdx: Int): String? {
             val fromIdx = lastIndexOfGroup(fromGroupIdx)
             val toIdx = lastIndexOfGroup(toGroupIdx)
             val toIsNearer = toIdx != null && (fromIdx == null || toIdx > fromIdx)
             if (toIsNearer) {
                 val toneIdx = charToGroupTone[word[toIdx!!]]!!.second
-                if (toneIdx != 0) return null // da co dau thanh -> khong huy
+                if (toneIdx != 0) return null
                 val baseChar = vowelGroups[fromGroupIdx][0]
                 return word.substring(0, toIdx) + baseChar + word.substring(toIdx + 1) + key
             }
@@ -3283,27 +2517,13 @@ private object VietnameseTelex {
         }
 
         return when (key) {
-            'a' -> toggleGroup(0, 2) // a-family <-> â
-            'e' -> toggleGroup(3, 4) // e-family <-> ê
-            'o' -> toggleGroup(6, 7) // o-family <-> ô
+            'a' -> toggleGroup(0, 2)
+            'e' -> toggleGroup(3, 4)
+            'o' -> toggleGroup(6, 7)
             'w' -> {
-                // Cum "uo" LIEN TIEP gan cuoi nhat (ky tu nhom "u" [9] ngay
-                // truoc mot ky tu nhom "o" [6]) - neu co, doi CA HAI thanh
-                // "ươ" cung luc (quy uoc Telex chuan cho cum nguyen am doi).
-                // (Truong hop nay chi xu ly chieu BIEN DOI XUOI, khong ap
-                // dung "huy" cho ca cum - qua hiem gap trong thuc te go go.)
                 val uoIdx = (0 until word.length - 1).lastOrNull { i ->
                     charToGroupTone[word[i]]?.first == 9 && charToGroupTone[word[i + 1]]?.first == 6
                 }
-                // SUA LOI nguoi dung phan anh: go "uu" (hai chu "u" LIEN
-                // TIEP) roi go "w" TRUOC DAY ra "uư" (bien doi nham chu "u"
-                // THU HAI/gan cuoi nhat thanh "ư", giu nguyen chu "u" dau) -
-                // trong khi dung phai la "ưu" (chu "u" DAU TIEN cua cap moi
-                // la nguyen am chinh duoc bien doi thanh "ư", chu "u" con
-                // lai GIU NGUYEN dung sau no, giong quy uoc go tat "uw" + "u"
-                // = "ưu" nhung go theo thu tu nguoc "uu" + "w"). Tim cap "uu"
-                // LIEN TIEP gan cuoi nhat (ca hai deu thuoc nhom "u" [9]),
-                // uu tien kiem tra TRUOC cap tong quat o nhanh else ben duoi.
                 val uuIdx = (0 until word.length - 1).lastOrNull { i ->
                     charToGroupTone[word[i]]?.first == 9 && charToGroupTone[word[i + 1]]?.first == 9
                 }
@@ -3318,11 +2538,6 @@ private object VietnameseTelex {
                     val newFirstU = vowelGroups[10][toneFirstU]
                     word.substring(0, uuIdx) + newFirstU + word.substring(uuIdx + 1)
                 } else {
-                    // Khong co cum "uo": trong 3 cap nhom co the bien doi/huy
-                    // boi "w" (a<->ă, o<->ơ, u<->ư), chon cap co vi tri GAN
-                    // CUOI TU NHAT (xet ca hai nhom goc/dich cua moi cap), roi
-                    // ap dung toggleGroup (bien doi hoac huy) cho DUY NHAT cap
-                    // do.
                     val pairs = listOf(0 to 1, 6 to 8, 9 to 10)
                     val best = pairs.mapNotNull { (fromG, toG) ->
                         val pos = maxOf(lastIndexOfGroup(fromG) ?: -1, lastIndexOfGroup(toG) ?: -1)
@@ -3332,12 +2547,6 @@ private object VietnameseTelex {
                 }
             }
             'd' -> {
-                // "d" <-> "đ": HUY tuong tu cac nguyen am o tren, nhung đ
-                // khong mang dau thanh nen khong can kiem tra tone - cu thay
-                // "đ" gan cuoi nhat (neu no gan hon "d" thuong) tro lai "d"
-                // roi chen them "d" moi o cuoi tu. Vi du: "đo" + "d" -> "do"
-                // + "d" = "dod" (thay vi "ddo" hay giu nguyen "đo" roi chen
-                // "d" vo nghia).
                 val dIdx = word.lastIndexOf('d')
                 val dashIdx = word.lastIndexOf('\u0111')
                 val useDash = dashIdx >= 0 && (dIdx < 0 || dashIdx > dIdx)
@@ -3351,26 +2560,6 @@ private object VietnameseTelex {
         }
     }
 
-    /** Xu ly cac phim dat dau thanh: s (sac), f (huyen), r (hoi), x (nga),
-     *  j (nang), z (bo dau). TRUOC DAY chi tim cum nguyen am NEU no nam dung
-     *  o CUOI TU - nen neu nguoi dung da go xong phu am cuoi ("tiep") roi
-     *  moi go dau thanh ("s") thi se KHONG nhan (chi chen them chu "s" moi).
-     *  GIO DAY: bo qua moi phu am cuoi (khong phai nguyen am) o cuoi tu
-     *  truoc, tim ra cum nguyen am GAN CUOI NHAT trong tu (du no khong con
-     *  nam o vi tri cuoi cung nua), uu tien nguyen am "co mu/moc" (â, ê, ô,
-     *  ơ, ư, ă) neu co. Neu khong co nguyen am "co mu/moc" nao trong cum:
-     *   - Neu SAU cum nguyen am van con phu am (tu dang "dong", vd "hoan"),
-     *     dau dat o nguyen am CUOI cung trong cum (ngay truoc phu am), vi
-     *     day la vi tri dung duy nhat trong tieng Viet cho truong hop nay
-     *     (vd "hoan" + f -> "hoàn", dau o "a").
-     *   - Neu cum nguyen am nam SAT CUOI TU (tu "mo", khong co phu am theo
-     *     sau, vd "bao", "hoa", "khoe", "thuy"), dau dat o nguyen am DAU
-     *     TIEN trong cum (kieu chinh ta "cu": "bảo", "hòa", "khỏe", "thúy")
-     *     - TRUOC DAY luon dat o nguyen am CUOI cum bat ke con hay het tu,
-     *     nen "bao" + r (hoi) sai ra "baỏ" (dau tren "o") thay vi dung phai
-     *     la "bảo" (dau tren "a"). Day la sua chinh cho loi nay.
-     *  Neu khong tim thay nguyen am nao trong ca tu, tra ve null de ky tu
-     *  duoc chen nhu binh thuong (vd "s", "r", "x" o dau tu la phu am). */
     private fun applyTone(word: String, key: Char): String? {
         val toneIdx = when (key) {
             's' -> 1
@@ -3382,13 +2571,10 @@ private object VietnameseTelex {
             else -> return null
         }
 
-        // Bo qua phu am cuoi (neu co) de tim ve nguyen am gan cuoi nhat.
         var end = word.length - 1
         while (end >= 0 && !charToGroupTone.containsKey(word[end])) end--
         if (end < 0) return null
 
-        // Cum nguyen am nam SAT CUOI TU (khong co phu am nao theo sau) khi
-        // vi tri cuoi cung cua cum ("end") trung voi ky tu cuoi cung cua tu.
         val isOpenSyllable = end == word.length - 1
 
         val clusterIndices = mutableListOf<Int>()
@@ -3402,58 +2588,52 @@ private object VietnameseTelex {
             charToGroupTone[word[pos]]!!.first in modifiedGroupIndices
         }
 
-        // SUA LOI nguoi dung phan anh: "hoa"+sac TRUOC DAY ra "hóa" (dau tren
-        // "o", ky tu DAU TIEN cua cum "oa") - nhung chinh ta dung phai la
-        // "hoá" (dau tren "a"). Tuong tu "hoai"+huyen TRUOC DAY ra "hòai"
-        // (dau tren "o") thay vi dung phai la "hoài" (dau tren "a", ky tu O
-        // GIUA cum "oai"). LY DO: trong cac cum "oa", "oe", "oai", "oay",
-        // chu "o" dung dau chi la BAN AM DEM (glide, phat am nhu /w/), KHONG
-        // phai nguyen am chinh cua van - nguyen am chinh (noi dau thanh phai
-        // dat vao) la chu ngay SAU no ("a" hoac "e"). Day la quy tac dung
-        // rieng cho cum bat dau bang "o" (nhom 6) - KHONG ap dung cho cac cum
-        // khac nhu "ao", "eo" (o dung SAU, dong vai tro nguyen am chinh o
-        // VI TRI DAU, xem "bảo" o comment cua ham nay), nen khong lam anh
-        // huong toi cac truong hop dang dung khac.
         val oGroupIdx = 6
         val aGroupIdx = 0
         val eGroupIdx = 3
-        // "o" o dau cum CHI dong vai tro ban am dem (glide) khi ky tu NGAY
-        // SAU no thuoc nhom "a" hoac "e" (dung cho cac cum "oa", "oe", "oai",
-        // "oay"). Voi cac cum khac bat dau bang "o" nhung theo sau la nguyen
-        // am khac (vd "oi" - nhu "voi", "moi", "hoi") thi "o" chinh la
-        // NGUYEN AM CHINH cua van (giong cum "ao", "eo"), KHONG phai glide -
-        // SUA LOI nguoi dung phan anh: "oi" + r (hoi) truoc day sai ra "oỉ"
-        // (dau tren "i") do bi ap dung nham quy tac glide nay, dung phai la
-        // "ỏi" (dau tren "o").
         val startsWithOGlide = clusterIndices.size >= 2 &&
             charToGroupTone[word[clusterIndices.first()]]?.first == oGroupIdx &&
             charToGroupTone[word[clusterIndices[1]]]?.first.let { it == aGroupIdx || it == eGroupIdx }
         val oGlideNucleus: Int? = when {
             !startsWithOGlide -> null
-            clusterIndices.size == 3 -> clusterIndices[1] // "oai", "oay" -> dau o ky tu GIUA
-            clusterIndices.size == 2 -> clusterIndices[1] // "oa", "oe" -> dau o ky tu THU HAI
+            clusterIndices.size == 3 -> clusterIndices[1]
+            clusterIndices.size == 2 -> clusterIndices[1]
             else -> null
         }
+
+        // SUA LOI nguoi dung phan anh: "qua"+sac ra "qúa" (dau tren "u") thay
+        // vi dung phai la "quá" (dau tren "a"); tuong tu "gia"+sac ra "gía"
+        // thay vi "giá". NGUYEN NHAN: chu "u" ngay sau "q" (tao thanh "qu")
+        // va chu "i" ngay sau "g" (tao thanh "gi") VE MAT CHINH TA khong
+        // phai la nguyen am chinh cua van - chung chi la mot PHAN CUA PHU AM
+        // GHEP ("qu", "gi"), dong vai tro giong het chu "o" dem trong cac cum
+        // "oa"/"oe" (xem [oGlideNucleus] o tren). SUA: neu ky tu NGAY TRUOC
+        // nguyen am dau cum la 'q' va nguyen am do thuoc nhom "u" (chi ap
+        // dung khi cum CON nguyen am khac sau "u", vd "qua", "quy"); tuong tu
+        // ky tu truoc la 'g' va nguyen am do thuoc nhom "i" (cum con nguyen
+        // am khac sau "i", vd "gia", "giu") - thi BO QUA nguyen am dem do,
+        // dat dau vao nguyen am KE TIEP trong cum thay vi nguyen am dau tien.
+        val quOrGiGlideNucleus: Int? = if (clusterIndices.size >= 2) {
+            val firstVowelPos = clusterIndices.first()
+            val firstVowelGroup = charToGroupTone[word[firstVowelPos]]?.first
+            val precedingChar = if (firstVowelPos > 0) word[firstVowelPos - 1] else null
+            when {
+                precedingChar == 'q' && firstVowelGroup == 9 -> clusterIndices[1]
+                precedingChar == 'g' && firstVowelGroup == 5 -> clusterIndices[1]
+                else -> null
+            }
+        } else null
 
         val target = when {
             preferred != null -> preferred
             isOpenSyllable && oGlideNucleus != null -> oGlideNucleus
+            isOpenSyllable && quOrGiGlideNucleus != null -> quOrGiGlideNucleus
             isOpenSyllable && clusterIndices.size >= 2 -> clusterIndices.first()
             else -> clusterIndices.last()
         }
 
         val (groupIdx, currentToneIdx) = charToGroupTone[word[target]]!!
 
-        // SUA THEM (theo yeu cau nguoi dung): neu nguyen am o vi tri [target]
-        // DA MANG dung dau thanh vua duoc go lan nua (vd "chết" - ê+sac - roi
-        // go tiep phim "s" mot lan nua), coi day la HUY dau thanh (quy uoc
-        // giong Unikey: go lap lai cung mot phim dau thanh se "thoat" dau
-        // thanh do) - dua nguyen am ve lai KHONG DAU (giu nguyen nhom, vd "ê"
-        // van la "ê", chi bo dau "sac"), roi CHEN THEM ky tu [key] vao CUOI
-        // CUNG cua tu nhu mot chu cai binh thuong. Vi du: "chết" + "s" (sac)
-        // -> huy dau sac tren "ế" ve "ê" ("chêt"), roi chen "s" o cuoi ->
-        // "chêts". Neu dau thanh moi KHAC dau thanh hien co, giu hanh vi cu:
-        // THAY dau thanh binh thuong (khong chen them ky tu nao).
         if (currentToneIdx == toneIdx) {
             val revertedChar = vowelGroups[groupIdx][0]
             return word.substring(0, target) + revertedChar + word.substring(target + 1) + key
