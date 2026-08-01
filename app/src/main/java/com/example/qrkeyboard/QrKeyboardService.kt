@@ -866,16 +866,19 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
     /** Build trang ky hieu (SYMBOLS) - CHI duoc goi khi nguoi dung THAT SU
      *  chuyen toi trang nay, ket qua duoc cache lai qua [cachedSymbolsView].
-     *  THEM: [buildKeyboardSettingsBar] - thanh chon mau vien + sang/toi,
-     *  hien san ngay tren trang nay (khong can nut bat/tat rieng). */
+     *  THEM: [buildKeyboardSettingsBar] - thanh chon mau vien + sang/toi.
+     *  SUA (theo yeu cau nguoi dung "dong mau sac chuyen len tren cung"):
+     *  truoc day dong nay nam O GIUA (sau 2 hang ky hieu, truoc hang hanh
+     *  dong duoi cung) - gio dua len DAU TIEN, la dong TREN CUNG cua trang
+     *  nay, de nguoi dung thay va doi mau ngay khi vua mo trang Ky hieu. */
     private fun buildSymbolsPage(): View {
         val verticalPaddingDp = if (keyHeightDp < 48) 2 else 6
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(4), dp(verticalPaddingDp), dp(4), dp(verticalPaddingDp + EXTRA_BOTTOM_LIFT_DP))
+            addView(buildKeyboardSettingsBar())
             extendedSymbolRows.forEach { row -> addView(buildCharRow(row)) }
             addView(buildExtendedSymbolsRow3())
-            addView(buildKeyboardSettingsBar())
             addView(buildExtendedSymbolsBottomRow())
         }
     }
@@ -1277,10 +1280,15 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         row.addView(buildKey(",", weight = 1f, fillRowHeight = true) { insertText(",") })
         row.addView(buildSpaceKey(weight = 4.2f))
         row.addView(buildKey(".", weight = 1f, fillRowHeight = true) {
+            // SUA (theo yeu cau nguoi dung): TRUOC DAY tu dong bat viet hoa
+            // NGAY KHI go dau "." don (chua go dau cach) - nghia la go "."
+            // xong go tiep 1 chu cai (khong qua dau cach) van bi viet hoa,
+            // sai voi yeu cau "sau dau cham [DON, CHUA co dau cach] thi van
+            // la chu thuong". GIO DAY: dau "." CHi duoc chen binh thuong,
+            // KHONG dat co viet hoa nua - co nay gio duoc dat o dung luc go
+            // PHIM CACH (xem nhanh xu ly dau cach trong insertChar), CHI KHI
+            // ky tu ngay truoc dau cach do THAT SU la ".".
             insertText(".")
-            capitalizeNextLetter = true
-            showCapitalPreview = true
-            capitalizeAppliedAtPrefixLen = null
         })
         row.addView(buildKey("\u21b5", weight = 1.4f, highlight = true, fillRowHeight = true) { sendEnter() })
 
@@ -1739,6 +1747,26 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         if (isVietnameseMode && ch.isLetter()) {
             insertVietnameseChar(ch)
             return
+        }
+        // SUA (theo yeu cau nguoi dung): tu dong viet hoa chu cai tiep theo
+        // CHi khi go PHIM CACH va ky tu THAT SU ngay truoc con tro la "."
+        // (tuc la nguoi dung vua go dung trinh tu ". " - dau cham roi dau
+        // cach) - KHONG con bat viet hoa ngay khi go dau "." don nua (xem
+        // buildLettersBottomRow). Neu giua dau "." va dau cach nguoi dung
+        // go them ky tu KHAC (khong phai dau cach ngay lap tuc), ky tu ngay
+        // truoc con tro se KHONG CON la "." nua, dieu kien nay tu dong
+        // KHONG kich hoat - dung y muon "sau dau cham don thi van la chu
+        // thuong, phai co dau cach theo sau moi tu dong viet hoa".
+        if (ch == ' ' && !capitalizeNextLetter) {
+            val charBefore = currentInputConnection?.getTextBeforeCursor(1, 0)
+            if (charBefore == ".") {
+                capitalizeNextLetter = true
+                showCapitalPreview = true
+                capitalizeAppliedAtPrefixLen = null
+                insertText(" ")
+                redrawKeyboard()
+                return
+            }
         }
         val shouldCapitalize = capitalizeNextLetter && ch.isLetter()
         if (shouldCapitalize) {
@@ -2633,15 +2661,20 @@ private object VietnameseTelex {
 
     private val modifiedGroupIndices = setOf(1, 2, 4, 7, 8, 10)
 
-    /** THEM (theo yeu cau nguoi dung, lam ro lan 2): danh sach cac PHU AM
-     *  GHEP (chu ghep) - neu TU dang go (TINH TOI THOI DIEM NGAY TRUOC
-     *  keystroke dau thanh) hien dang KET THUC bang MOT trong cac cum nay,
-     *  thi phim dau thanh (s/f/r/x/j) se KHONG duoc ap dung nua - xem
-     *  [applyTone]. Liet ke "ngh" TRUOC "ng"/"gh" khong anh huong ket qua
-     *  (chi can KHOP VOI BAT KY cum nao trong danh sach la du, xem cach
-     *  dung qua [String.endsWith] trong [applyTone]). */
+    /** THEM (theo yeu cau nguoi dung, lam ro lan 2 va lan 3): danh sach cac
+     *  PHU AM GHEP CHi HOP LE LAM AM DAU (onset) cua 1 am tiet, KHONG BAO
+     *  GIO la phu am CUOI (coda) hop le trong Tieng Viet - neu TU dang go
+     *  (TINH TOI THOI DIEM NGAY TRUOC keystroke dau thanh) hien dang KET
+     *  THUC bang MOT trong cac cum nay, thi phim dau thanh (s/f/r/x/j) se
+     *  KHONG duoc ap dung nua - xem [applyTone]. Da BO "ch" va "ng" ra khoi
+     *  danh sach nay (theo yeu cau moi nhat "tru ng, nh, ch") vi ca 2 deu
+     *  la PHU AM CUOI (coda) HOP LE RAT PHO BIEN trong Tieng Viet (vd
+     *  "sach"+s phai ra dung "sách", "lang"+huyen phai ra dung "làng") -
+     *  chan dau thanh cho 2 cum nay se lam hong hang loat tu thong dung kiet
+     *  thuc bang "ch"/"ng". "nh" cung la coda hop le tuong tu nen da duoc
+     *  tru ra tu truoc (xem "nhanh"+s -> "nhánh" o vi du ben duoi). */
     private val toneBlockingEndClusters = listOf(
-        "ngh", "tr", "th", "ph", "gh", "kh", "ch", "ng", "qu"
+        "ngh", "tr", "th", "ph", "gh", "kh", "qu"
     )
 
     private val charToGroupTone: Map<Char, Pair<Int, Int>> by lazy {
