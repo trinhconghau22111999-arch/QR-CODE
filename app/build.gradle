@@ -43,7 +43,7 @@ android {
     // nguoi dung tu chinh trong Cai dat - xem qrConsecutiveSameLimit trong
     // QrKeyboardService.kt). CA 2 flavor dung CHUNG 1 applicationId (khong
     // doi) de khong lam gian doan nguoi dung dang dung ban cu.
-    flavorDimensions = ["distribution"]
+    flavorDimensions "distribution"
     productFlavors {
         direct {
             dimension "distribution"

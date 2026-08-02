@@ -47,7 +47,7 @@
         <activity
             android:name=".SettingsActivity"
             android:exported="false"
-            android:label="C\u00e0i \u0111\u1eb7t"
+            android:label="Cài đặt"
             android:theme="@style/Theme.QRKeyboard"
             android:taskAffinity="com.example.qrkeyboard.settings" />
 
