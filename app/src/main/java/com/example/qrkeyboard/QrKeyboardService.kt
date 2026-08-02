@@ -33,10 +33,6 @@ import android.widget.LinearLayout
 import android.widget.PopupWindow
 import android.widget.TextView
 import android.widget.Toast
-import android.content.ContentValues
-import android.content.ClipDescription
-import android.net.Uri
-import android.provider.MediaStore
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
@@ -47,8 +43,6 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
-import androidx.core.view.inputmethod.InputConnectionCompat
-import androidx.core.view.inputmethod.InputContentInfoCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
@@ -56,6 +50,8 @@ import com.google.mlkit.vision.barcode.BarcodeScanner
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.text.TextRecognition
+import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -181,12 +177,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         private const val DELETE_REPEAT_INTERVAL_MS = 50L
 
         /** Khoang thoi gian toi da (ms) giua 2 lan cham nut [QR] de tinh la
-         *  mot cu DUP-TAP (cham dup 2 lan) - CO CHE PHAT HIEN nay VAN GIU
-         *  NGUYEN (du phong cho tuong lai), nhung theo yeu cau nguoi dung,
-         *  CA cham 1 lan LAN dup-tap gio deu dan toi CUNG mot ket qua (mo
-         *  khung quet o CHE DO LIEN TUC) - xem [buildNumbersBottomRow]. */
-        private const val QR_DOUBLE_TAP_MAX_INTERVAL_MS = 350L
-
         /** Khoang thoi gian (ms) toi da giua 2 lan cham nut Shift (⇧) de tinh
          *  la mot cu DUP-TAP (cham 2 lan lien tiep, trong khoang thoi gian
          *  nay). Xem [buildKeyboardView] (buildLettersPage), phan xu ly nut
@@ -213,23 +203,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
          *  cho toi luc ban phim mo lai, de con duoc coi la "tu mo lai khung
          *  quet" - xem [reopenQrScannerOnNextStart]. */
         private const val QR_AUTO_REOPEN_WINDOW_MS = 4000L
-
-        /** Ten file SharedPreferences + cac khoa dung de LUU lai lua chon
-         *  mau vien va che do sang/toi cua nguoi dung - xem [setAccentColor]/
-         *  [toggleTheme] - de mo lai ban phim (thoat app, khoi dong lai may)
-         *  van giu nguyen cai dat da chon, khong bi reset ve mac dinh. */
-        private const val PREFS_NAME = "qr_keyboard_prefs"
-        private const val PREF_ACCENT_COLOR = "accent_color"
-        private const val PREF_IS_DARK_THEME = "is_dark_theme"
-
-        /** Mau tim neon MAC DINH (giu nguyen y het mau glowColor cu truoc
-         *  khi co tinh nang doi mau). */
-        private val DEFAULT_ACCENT_COLOR = Color.parseColor("#B388FF")
     }
-
-    /** Thoi diem (uptimeMillis) cua lan cham nut [QR] gan nhat, dung de phat
-     *  hien cu dup-tap (xem [QR_DOUBLE_TAP_MAX_INTERVAL_MS]) o [buildNumbersBottomRow]. */
-    private var lastQrKeyTapTime = 0L
 
     /** Thoi diem (uptimeMillis) cua lan cham nut Shift (⇧) gan nhat, dung de
      *  phat hien cu dup-tap (xem [SHIFT_DOUBLE_TAP_MAX_INTERVAL_MS]). */
@@ -378,8 +352,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     private val captureButtonTapHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var pendingCaptureTap: Runnable? = null
     private var qrOverlayRootLayout: FrameLayout? = null
-    private var qrCapturedPhotoView: android.widget.ImageView? = null
-    private var qrShowingCapturedPhoto = false
     private var qrOverlaySessionKey: String? = null
 
     private fun editorSessionKey(info: EditorInfo?): String {
@@ -389,6 +361,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
     private val qrFrameHandled = AtomicBoolean(false)
     private var qrLastDeliveredText: String? = null
+    /** THEM: dem so lan LIEN TIEP da xuat ra CUNG 1 du lieu quet duoc (tang
+     *  dan khi quet trung [qrLastDeliveredText], reset ve 0 khi quet ra du
+     *  lieu KHAC). Dung de so sanh voi [ScanLimitPrefs.getConsecutiveLimit]
+     *  o [processQrFrame] - xem giai thich chi tiet o do. */
+    private var qrConsecutiveSameCount = 0
     private var qrContinuousMode = false
     private var reopenQrScannerOnNextStart = false
     private var reopenQrScannerDeadline = 0L
@@ -523,34 +500,16 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     /** Mau VIEN PHAT SANG dung CHUNG cho MOI phim, tren CA 4 trang (chu cai,
      *  so, ky hieu, so-rieng NUMPAD) - xem [buildGlowKeyBackground]. TRUOC
      *  DAY la hang so co dinh (luon la mau tim) - GIO DAY la BIEN, nguoi
-     *  dung co the doi sang 1 trong 8 mau qua [buildKeyboardSettingsBar]
-     *  (xem [setAccentColor]). Gia tri KHOI TAO se duoc GHI DE lai trong
-     *  [onCreate] bang mau da luu tu lan truoc (neu co). */
-    private var glowColor: Int = DEFAULT_ACCENT_COLOR
+     *  dung co the doi sang 1 trong cac mau co san qua man Cai dat rieng
+     *  (xem SettingsActivity.kt + KeyboardThemePrefs.kt). Gia tri KHOI TAO
+     *  se duoc GHI DE lai trong [onCreate]/[onWindowShown] bang mau da luu
+     *  tu lan truoc (neu co). */
+    private var glowColor: Int = KeyboardThemePrefs.DEFAULT_ACCENT_COLOR
 
     /** True = NEN toi (den), chu TRANG (mac dinh, giu nguyen giao dien cu).
-     *  False = NEN sang (trang), chu DEN. Doi qua nut tron trong
-     *  [buildKeyboardSettingsBar] - xem [toggleTheme]. */
+     *  False = NEN sang (trang), chu DEN. Doi trong man Cai dat rieng (xem
+     *  SettingsActivity.kt + KeyboardThemePrefs.kt). */
     private var isDarkTheme: Boolean = true
-
-    /** SharedPreferences dung de luu/doc lai mau vien + che do sang toi da
-     *  chon - xem [PREFS_NAME]. */
-    private val keyboardPrefs: android.content.SharedPreferences by lazy {
-        getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-    }
-
-    /** Danh sach 8 mau nguoi dung co the chon cho vien phim, hien duoi dang
-     *  8 o vuong trong [buildKeyboardSettingsBar]. */
-    private val keyboardAccentColors = listOf(
-        Color.parseColor("#FF3B30"), // Do
-        Color.parseColor("#3B82F6"), // Xanh duong
-        Color.parseColor("#34C759"), // Luc (xanh la)
-        Color.parseColor("#FFD60A"), // Vang
-        Color.parseColor("#FF2D8A"), // Hong
-        Color.parseColor("#FF9500"), // Cam
-        DEFAULT_ACCENT_COLOR,        // Tim neon (mac dinh)
-        Color.parseColor("#8B5E3C")  // Nau
-    )
 
     private fun keyboardBackgroundColor(): Int =
         if (isDarkTheme) Color.parseColor("#050507") else Color.parseColor("#FAFAFA")
@@ -623,7 +582,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         "1234567890",
         "@#\u0111_&-+()/"
     )
-    private val numberRow3Symbols = "*\"':;!?="
+    private val numberRow3Symbols = "*\"':;!?"
 
     /** Danh sach emoji cho hang emoji co the TRUOT NGANG (xem [buildEmojiRow]),
      *  hien tren trang so (trang thu 2). */
@@ -685,9 +644,15 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
     private val extendedSymbolRows = listOf(
         "~`|\u2022\u221a\u03c0\u00f7\u00d7\u00b6\u0394",
-        "<>$\u00a2^\u00b0={}\\"
+        // SUA (theo yeu cau nguoi dung): "<" và ">" đã CHUYỂN xuống hàng
+        // dấu cách (xem buildExtendedSymbolsBottomRow) - bổ sung "£"
+        // (\u00a3) và "€" (\u20ac) vào ĐÚNG vị trí cũ của chúng (đầu hàng
+        // này) thay vì để trống.
+        "\u00a3\u20ac$\u00a2^\u00b0={}\\"
     )
-    private val extendedSymbolRow3 = "%\u00a9\u00ae\u2122\u00a7\u00b1[]"
+    // SUA (theo yeu cau nguoi dung): thay "§" (\u00a7) bang "℅" (\u2105,
+    // ky hieu "care of").
+    private val extendedSymbolRow3 = "%\u00a9\u00ae\u2122\u2105\u00b1[]"
 
     private fun dp(value: Int): Int =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics).toInt()
@@ -804,7 +769,26 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 }
                 root.addView(buildCharRow(numberRows[0]))
                 letterRows.forEachIndexed { index, row ->
-                    val rowView = buildCharRow(row, applyShiftCase = true)
+                    // SUA (theo yeu cau nguoi dung): hang chu THU 2 tu tren
+                    // xuong (letterRows[0] = "asdfghjkl", 9 ky tu, index==0)
+                    // truoc day dung buildCharRow() nhu moi hang khac - vi
+                    // chi co 9 phim thay vi 10 nhu hang tren ("qwertyuiop"),
+                    // MOI PHIM BI PHONG TO len de tu lap day het chieu rong
+                    // hang, khien phim hang nay TO HON han hang tren, khong
+                    // thang hang/xen ke nhu ban phim vat ly that. GIO DAY
+                    // dung buildStaggeredCharRow(): giu NGUYEN kich thuoc
+                    // tung phim bang dung hang tren (10), chen 2 khoang
+                    // trong nua-phim vao 2 ben de lap day phan con thieu.
+                    // CHi ap dung cho DUNG hang nay (index==0) - KHONG ap
+                    // dung cho hang CUOI (letterRows.lastIndex, "zxcvbnm")
+                    // vi hang do con duoc CHEN THEM phim Shift/Xoa ngay ben
+                    // duoi day - neu cung stagger hang do, tong do rong se
+                    // TANG THEM (13 thay vi 10), lam hang do RONG HON han
+                    // cac hang khac, pha vo su can bang da co san tu truoc.
+                    val rowView = if (index == 0 && row.length < numberRows[0].length)
+                        buildStaggeredCharRow(row, numberRows[0].length, applyShiftCase = true)
+                    else
+                        buildCharRow(row, applyShiftCase = true)
                     if (index == letterRows.lastIndex) {
                         rowView.addView(
                             buildKey(
@@ -866,11 +850,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
     /** Build trang ky hieu (SYMBOLS) - CHI duoc goi khi nguoi dung THAT SU
      *  chuyen toi trang nay, ket qua duoc cache lai qua [cachedSymbolsView].
-     *  THEM: [buildKeyboardSettingsBar] - thanh chon mau vien + sang/toi.
-     *  SUA (theo yeu cau nguoi dung "dong mau sac chuyen len tren cung"):
-     *  truoc day dong nay nam O GIUA (sau 2 hang ky hieu, truoc hang hanh
-     *  dong duoi cung) - gio dua len DAU TIEN, la dong TREN CUNG cua trang
-     *  nay, de nguoi dung thay va doi mau ngay khi vua mo trang Ky hieu. */
+     *  Dong tren cung la nut "Cai dat" (xem [buildKeyboardSettingsBar]) mo
+     *  SettingsActivity - noi gio day gom ca phan chon mau sac (truoc day
+     *  la 1 thanh chon mau ngay tai day, da chuyen han sang man Cai dat
+     *  rieng theo yeu cau nguoi dung). */
     private fun buildSymbolsPage(): View {
         val verticalPaddingDp = if (keyHeightDp < 48) 2 else 6
         return LinearLayout(this).apply {
@@ -891,6 +874,13 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  mot hang hanh dong o day cung, dung chung mot chieu cao co dinh
      *  dp(keyHeightDp + 2) + bottomMargin dp(6) + fillRowHeight = true cho
      *  moi phim trong hang do. */
+    /** SUA (theo yeu cau nguoi dung): ban phim so rieng nay TRUOC DAY co 4
+     *  dong (1-2-3 / 4-5-6 / 7-8-9 / ABC+0+Xoa+Gui) - GIO DAY dung 3 dong
+     *  nhu yeu cau: "1,2,3,4,5 ; 6,7,8,9,0 ; dòng thứ 3 là 3 phím abc, nút
+     *  xóa, nút gửi". 3 nut o dong cuoi CAN DEU NHAU (weight=1f moi nut,
+     *  giong het cach chia cua 2 dong so tren) - vi dong nay chi co 3 nut
+     *  thay vi 5 nhu 2 dong tren, MOI NUT TU NHIEN se RONG/TO HON han phim
+     *  so (dung y "nó to hơn mấy phím số là chắc rồi"). */
     private fun buildNumpadPage(): View {
         val verticalPaddingDp = if (keyHeightDp < 48) 2 else 6
         val root = LinearLayout(this).apply {
@@ -898,9 +888,8 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             setPadding(dp(4), dp(verticalPaddingDp), dp(4), dp(verticalPaddingDp + EXTRA_BOTTOM_LIFT_DP))
         }
 
-        root.addView(buildCharRow("123"))
-        root.addView(buildCharRow("456"))
-        root.addView(buildCharRow("789"))
+        root.addView(buildCharRow("12345"))
+        root.addView(buildCharRow("67890"))
 
         val bottomRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -908,10 +897,9 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(keyHeightDp + 2)
             ).apply { bottomMargin = dp(6) }
         }
-        bottomRow.addView(buildKey("ABC", weight = 1.4f, fillRowHeight = true) { switchMode(KeyboardMode.LETTERS) })
-        bottomRow.addView(buildKey("0", weight = 1f, fillRowHeight = true) { insertText("0") })
-        bottomRow.addView(buildKey("\u232b", weight = 1.4f, fillRowHeight = true, onRepeat = { deleteChar() }) { deleteChar() })
-        bottomRow.addView(buildKey("\u21b5", weight = 1.4f, highlight = true, fillRowHeight = true) { sendEnter() })
+        bottomRow.addView(buildKey("ABC", weight = 1f, fillRowHeight = true) { switchMode(KeyboardMode.LETTERS) })
+        bottomRow.addView(buildKey("\u232b", weight = 1f, fillRowHeight = true, onRepeat = { deleteChar() }) { deleteChar() })
+        bottomRow.addView(buildKey("\u21b5", weight = 1f, highlight = true, fillRowHeight = true) { sendEnter() })
         root.addView(bottomRow)
 
         return root
@@ -1127,6 +1115,40 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         return row
     }
 
+    /** THEM (theo yeu cau nguoi dung): dung cho hang co ÍT ký tự HƠN hàng
+     *  tham chiếu bên trên (vd hàng "asdfghjkl" 9 ký tự so với hàng
+     *  "qwertyuiop" 10 ký tự) - GIỮ NGUYÊN kích thước từng phím bằng đúng
+     *  hàng tham chiếu (mỗi phím vẫn weight=1f y hệt [buildCharRow]), rồi
+     *  chèn thêm 2 khoảng trống rỗng NỬA-PHÍM (weight = chênh lệch/2) vào
+     *  2 bên trái/phải để LẤP ĐẦY đúng phần thiếu - tạo hiệu ứng các phím
+     *  XEN KẼ/so le với hàng trên, giống hệt bố cục bàn phím vật lý thật,
+     *  thay vì tự phóng to từng phím lên để lấp đầy cả hàng như trước
+     *  (khiến phím hàng này to hơn hẳn hàng trên, không thẳng hàng). */
+    private fun buildStaggeredCharRow(chars: String, referenceKeyCount: Int, applyShiftCase: Boolean = false): LinearLayout {
+        val row = LinearLayout(this).apply {
+            isBaselineAligned = false
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        }
+        val sideWeight = (referenceKeyCount - chars.length) / 2f
+        if (sideWeight > 0f) {
+            row.addView(View(this).apply {
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, sideWeight)
+            })
+        }
+        chars.forEach { ch ->
+            val label = if (applyShiftCase && (isShiftOn || showCapitalPreview)) ch.uppercaseChar().toString() else ch.toString()
+            row.addView(buildKey(label) { insertChar(ch) })
+        }
+        if (sideWeight > 0f) {
+            row.addView(View(this).apply {
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, sideWeight)
+            })
+        }
+        return row
+    }
+
     /** Hang emoji co the TRUOT (vuot) NGANG bang tay. TOI UU: TRUOC DAY moi
      *  MOT trong ~150 nut emoji tu tao RIENG mot Drawable nen (2 lop
      *  GradientDrawable long nhau) - tuc ~150 lan phan bo Drawable object
@@ -1303,20 +1325,33 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             )
         }
 
-        row.addView(buildKey("=\\<", weight = 1.3f) { switchMode(KeyboardMode.SYMBOLS) })
+        // SUA (theo yeu cau nguoi dung): "sửa kích thước các phím từ '*' đến
+        // '?' bằng kích thước các phím của hàng ký tự phía trên" (numberRows[1],
+        // 10 ký tự, mỗi phím weight=1f). 7 phím ký hiệu ("*"đến"?") đã sẵn
+        // weight=1f giống hàng trên rồi - vấn đề là TỔNG trọng số cả hàng
+        // này (trước đây 1.3+7+1.3=9.6) KHÁC 10 (tổng của hàng trên), nên
+        // dù cùng weight=1f, mỗi phím ở đây vẫn hơi RỘNG HƠN phím hàng trên
+        // (chia cho tổng nhỏ hơn). Tăng 2 nút 2 bên lên 1.5 mỗi nút
+        // (1.5+7+1.5=10, khớp đúng tổng hàng trên) để TỪNG phím ký hiệu có
+        // kích thước bằng CHÍNH XÁC phím hàng trên.
+        row.addView(buildKey("=\\<", weight = 1.5f) { switchMode(KeyboardMode.SYMBOLS) })
         numberRow3Symbols.forEach { ch ->
             row.addView(buildKey(ch.toString(), weight = 1f) { insertText(ch.toString()) })
         }
-        row.addView(buildKey("\u232b", weight = 1.3f, onRepeat = { deleteChar() }) { deleteChar() })
+        row.addView(buildKey("\u232b", weight = 1.5f, onRepeat = { deleteChar() }) { deleteChar() })
 
         return row
     }
 
-    /** Hang duoi cung cua trang so: nut "QR" - SUA theo yeu cau nguoi dung:
-     *  CA cham 1 lan LAN dup-tap gio DEU mo khung quet o CHE DO QUET LIEN
-     *  TUC (continuous = true) - CHI dong khi nguoi dung tu bam "Huy" tren
-     *  khung quet. Co che PHAT HIEN dup-tap ([isDoubleTap]) van GIU NGUYEN
-     *  (tinh toan y het truoc), chi khac o CHO SU DUNG ket qua do. */
+    /** Hang duoi cung cua trang so: nut "QR" - SUA theo yeu cau nguoi dung
+     *  (lan 2): TRUOC DAY co ca co che phat hien dup-tap DE TINH TOAN (bien
+     *  [lastQrKeyTapTime]/[QR_DOUBLE_TAP_MAX_INTERVAL_MS]) nhung KHONG con
+     *  y nghia gi nua vi CA 2 nhanh (cham 1 lan hay dup-tap) DEU chi lam
+     *  DUNG MOT VIEC: mo khung quet o CHE DO QUET LIEN TUC (continuous =
+     *  true) - da hop nhat tu 1 lan sua truoc do. GIO DAY: bo han co che
+     *  dup-tap thua nay, CHi con cham 1 lan don gian, ap dung DUNG logic cu
+     *  (continuous = true) - dung y muon "giu nguyen toan bo logic cu cua
+     *  nhan 2 lan, ap dat het qua nhan 1 lan". */
     private fun buildNumbersBottomRow(): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1327,14 +1362,15 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
         row.addView(buildKey("ABC", weight = 1.6f, fillRowHeight = true) { switchMode(KeyboardMode.LETTERS) })
         row.addView(buildKey("QR", weight = 1.2f, highlight = true, fillRowHeight = true) {
-            val now = android.os.SystemClock.uptimeMillis()
-            val isDoubleTap = now - lastQrKeyTapTime <= QR_DOUBLE_TAP_MAX_INTERVAL_MS
-            lastQrKeyTapTime = if (isDoubleTap) 0L else now
-            // SUA: du la cham 1 lan hay dup-tap, deu mo khung quet o CHE DO
-            // LIEN TUC (continuous = true) - xem giai thich o dau ham nay.
             openQrScanner(continuous = true)
         })
-        row.addView(buildSpaceKey(weight = 5.4f))
+        // SUA (theo yeu cau nguoi dung): "rút ngắn bên phải của dấu cách để
+        // thêm nút bàn phím số 123 vào" - giam trong so dau cach (5.4 ->
+        // 4.2, tuc rut ngan dung o BEN PHAI vi nut moi duoc chen NGAY SAU
+        // no), them nut "123" (weight = 1.2, bang dung nut QR de can doi 2
+        // ben) chuyen sang ban phim so rieng (NUMPAD - xem buildNumpadPage).
+        row.addView(buildSpaceKey(weight = 4.2f))
+        row.addView(buildKey("123", weight = 1.2f, fillRowHeight = true) { switchMode(KeyboardMode.NUMPAD) })
         row.addView(buildKey("\u21b5", weight = 1.6f, highlight = true, fillRowHeight = true) { sendEnter() })
 
         return row
@@ -1357,6 +1393,15 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         return row
     }
 
+    /** SUA (theo yeu cau nguoi dung): "làm cho nguyên hàng dấu cách giống
+     *  hệt như trang 1 nhưng thay vì nút ',' và '.' thì thành '<' và '>'" -
+     *  TRUOC DAY hang nay chi co ABC + Cach + Enter (khong co phim nao 2
+     *  ben dau cach ca). GIO DAY dung dung cau truc 5-phan cua
+     *  [buildLettersBottomRow] (ABC/"?123" + dau + Cach + dau + Enter, cung
+     *  tong trong so = 9), nhung dung "<" va ">" thay cho ","/".". "<" và
+     *  ">" TRUOC DAY nam o dau extendedSymbolRows[1] (hang 2 cua trang nay)
+     *  - da CHUYEN xuong day, nhuong lai vi tri cu cho "£"/"€" (xem
+     *  extendedSymbolRows). */
     private fun buildExtendedSymbolsBottomRow(): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1366,92 +1411,58 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
 
         row.addView(buildKey("ABC", weight = 1.4f, fillRowHeight = true) { switchMode(KeyboardMode.LETTERS) })
-        row.addView(buildSpaceKey(weight = 4.8f))
+        row.addView(buildKey("<", weight = 1f, fillRowHeight = true) { insertText("<") })
+        row.addView(buildSpaceKey(weight = 4.2f))
+        row.addView(buildKey(">", weight = 1f, fillRowHeight = true) { insertText(">") })
         row.addView(buildKey("\u21b5", weight = 1.4f, highlight = true, fillRowHeight = true) { sendEnter() })
 
         return row
     }
 
     /** "Thanh cai dat" mau vien + nen sang/toi cho toan bo ban phim - hien
-     *  san tren trang Ky hieu mo rong, khong can nut bat/tat rieng. Xem giai
-     *  thich chi tiet ve bo cuc/hanh vi trong tai lieu dau file. */
+     *  san tren trang Ky hieu mo rong, khong can nut bat/tat rieng.
+     *
+     *  SUA (theo yeu cau nguoi dung "đưa phần cài đặt màu sắc của bàn phím
+     *  vào mục màu sắc trong phần cài đặt"): TRUOC DAY ham nay ve nguyen 1
+     *  thanh cuon ngang gom 8 o vuong chon mau + 1 nut tron doi sang/toi NGAY
+     *  TAI DAY. GIO DAY: toan bo phan chon mau da CHUYEN HAN sang man Cai dat
+     *  rieng (xem SettingsActivity.kt, muc "Mau sac") - ham nay chi con ve 1
+     *  NUT DUY NHAT de mo man do len (dung Intent + FLAG_ACTIVITY_NEW_TASK vi
+     *  goi tu Context cua 1 Service, khong phai Activity). */
     private fun buildKeyboardSettingsBar(): View {
-        val inner = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-        }
-        val swatchSizePx = dp((keyHeightDp - 10).coerceAtLeast(24))
-
-        keyboardAccentColors.forEach { color ->
-            val isSelected = color == glowColor
-            val swatch = Button(this).apply {
-                text = ""
-                isAllCaps = false
-                minWidth = 0; minimumWidth = 0; minHeight = 0; minimumHeight = 0
-                stateListAnimator = null
-                elevation = 0f
-                outlineProvider = null
-                background = buildGlowKeyBackground(
-                    cornerDp = 6,
-                    borderColor = color,
-                    borderWidthDp = if (isSelected) 3 else 1
-                )
-                layoutParams = LinearLayout.LayoutParams(swatchSizePx, swatchSizePx).apply {
-                    setMargins(dp(3), dp(3), dp(3), dp(3))
-                }
-                isHapticFeedbackEnabled = true
-                setOnClickListener {
-                    vibrateKeyPress()
-                    playKeyClickTone()
-                    setAccentColor(color)
-                }
-            }
-            inner.addView(swatch)
-        }
-
-        val toggleBtn = Button(this).apply {
-            text = ""
+        val btn = Button(this).apply {
+            text = "\u2699\ufe0f  C\u00e0i \u0111\u1eb7t"
             isAllCaps = false
-            minWidth = 0; minimumWidth = 0; minHeight = 0; minimumHeight = 0
+            textSize = 14f
+            setTextColor(if (isDarkTheme) Color.WHITE else Color.BLACK)
             stateListAnimator = null
             elevation = 0f
             outlineProvider = null
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(if (isDarkTheme) Color.WHITE else Color.BLACK)
-                setStroke(dp(1), glowColor)
-            }
-            layoutParams = LinearLayout.LayoutParams(swatchSizePx, swatchSizePx).apply {
-                setMargins(dp(12), dp(3), dp(3), dp(3))
-            }
+            background = buildGlowKeyBackground(cornerDp = 10, borderColor = glowColor, borderWidthDp = 2)
+            setPadding(dp(16), dp(10), dp(16), dp(10))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(keyHeightDp)
+            ).apply { setMargins(dp(4), dp(3), dp(4), dp(6)) }
             isHapticFeedbackEnabled = true
             setOnClickListener {
                 vibrateKeyPress()
                 playKeyClickTone()
-                toggleTheme()
+                try {
+                    startActivity(Intent(this@QrKeyboardService, SettingsActivity::class.java).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    })
+                } catch (e: Exception) {
+                    android.util.Log.w("QrKeyboardService", "Khong mo duoc SettingsActivity: ${e.message}")
+                }
             }
         }
-        inner.addView(toggleBtn)
-
-        return HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, swatchSizePx + dp(6)
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             )
-            addView(inner)
+            addView(btn)
         }
-    }
-
-    private fun setAccentColor(color: Int) {
-        if (glowColor == color) return
-        glowColor = color
-        keyboardPrefs.edit().putInt(PREF_ACCENT_COLOR, color).apply()
-        rebuildAllKeyboardPages()
-    }
-
-    private fun toggleTheme() {
-        isDarkTheme = !isDarkTheme
-        keyboardPrefs.edit().putBoolean(PREF_IS_DARK_THEME, isDarkTheme).apply()
-        rebuildAllKeyboardPages()
     }
 
     /** Xoa TOAN BO cache (ca 4 trang) roi rebuild container tu dau - can
@@ -1970,10 +1981,29 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         super.onCreate()
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
         // Doc lai mau vien + che do sang/toi da luu tu lan truoc (neu co) -
-        // xem [setAccentColor]/[toggleTheme]. Neu chua tung doi gi ca, dung
-        // gia tri mac dinh (tim neon, nen toi).
-        glowColor = keyboardPrefs.getInt(PREF_ACCENT_COLOR, DEFAULT_ACCENT_COLOR)
-        isDarkTheme = keyboardPrefs.getBoolean(PREF_IS_DARK_THEME, true)
+        // qua KeyboardThemePrefs (dung CHUNG voi SettingsActivity, xem file
+        // do). Neu chua tung doi gi ca, dung gia tri mac dinh (tim neon, nen toi).
+        glowColor = KeyboardThemePrefs.getAccentColor(this)
+        isDarkTheme = KeyboardThemePrefs.isDarkTheme(this)
+    }
+
+    /** THEM: man Cai dat (SettingsActivity) gio la noi DUY NHAT nguoi dung
+     *  doi mau vien/che do sang-toi (da chuyen khoi thanh chon mau tren
+     *  trang Ky hieu cua ban phim - xem buildKeyboardSettingsBar). Ham
+     *  callback nay cua InputMethodService duoc goi MOI LAN cua so ban phim
+     *  TRO LAI HIEN THI (ke ca sau khi bi che boi 1 Activity khac, dung y
+     *  luc nguoi dung tu man Cai dat quay lai) - doc lai gia tri moi nhat va
+     *  ve lai ban phim ngay, khong can nguoi dung tu dong/mo lai ban phim
+     *  moi thay mau vua doi. */
+    override fun onWindowShown() {
+        super.onWindowShown()
+        val newColor = KeyboardThemePrefs.getAccentColor(this)
+        val newDark = KeyboardThemePrefs.isDarkTheme(this)
+        if (newColor != glowColor || newDark != isDarkTheme) {
+            glowColor = newColor
+            isDarkTheme = newDark
+            redrawKeyboard()
+        }
     }
 
     private fun openQrScanner(continuous: Boolean = false) {
@@ -1992,6 +2022,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
         qrContinuousMode = continuous
         qrLastDeliveredText = null
+        qrConsecutiveSameCount = 0
         qrFrameHandled.set(false)
 
         if (qrOverlayView != null) return
@@ -2035,8 +2066,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
         qrOverlayView = null
         qrOverlayRootLayout = null
-        qrCapturedPhotoView = null
-        qrShowingCapturedPhoto = false
         qrOverlaySessionKey = null
         qrPreviewView = null
         qrFlashButton = null
@@ -2126,9 +2155,9 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                     Toast.makeText(
                         this@QrKeyboardService,
                         if (qrAutoCapturePerScan)
-                            "\u0110\u00e3 b\u1eadt: t\u1ef1 \u0111\u1ed9ng ch\u1EE5p \u1ea3nh m\u1ed7i l\u1ea7n qu\u00e9t \u0111\u01b0\u1ee3c m\u00e3"
+                            "\u0110\u00e3 b\u1eadt: t\u1ef1 \u0111\u1ed9ng ch\u1EE5p v\u0103n b\u1EA3n m\u1ed7i l\u1ea7n qu\u00e9t \u0111\u01b0\u1ee3c m\u00e3"
                         else
-                            "\u0110\u00e3 t\u1eaft ch\u1EE5p \u1ea3nh t\u1ef1 \u0111\u1ed9ng theo m\u00e3 qu\u00e9t",
+                            "\u0110\u00e3 t\u1eaft ch\u1EE5p v\u0103n b\u1EA3n t\u1ef1 \u0111\u1ed9ng theo m\u00e3 qu\u00e9t",
                         Toast.LENGTH_SHORT
                     ).show()
                 } else {
@@ -2226,6 +2255,26 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         qrImageCapture = null
     }
 
+    /** Bo nhan dien van ban (OCR) dung chung cho moi lan chup - tao 1 lan
+     *  duy nhat (lazy), tai su dung cho ca phien quet. */
+    private val qrTextRecognizer by lazy {
+        TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
+    }
+
+    /** SUA HOAN TOAN (theo yeu cau nguoi dung): "thay đổi chức năng chụp
+     *  ảnh (lưu ảnh lại trong máy và dán lên vị trí con trỏ) bằng chức năng
+     *  chụp 'hình' văn bản, rồi tự copy văn bản bên trong hình (nếu có) để
+     *  dán vào vị trí con trỏ. Chụp liên tục thì dán liên tục, sau mỗi lần
+     *  chụp thì tự xuống dòng." TRUOC DAY: chup xong LUU ANH vao thu vien
+     *  (MediaStore) roi co gang DAN ANH do vao khung chat qua
+     *  InputConnection.commitContent (chi vai app ho tro), that bai thi chi
+     *  bao "da luu vao thiet bi". GIO DAY: chup anh TRONG BO NHO (khong luu
+     *  file nao ca - dung bien the takePicture() tra ve ImageProxy truc
+     *  tiep thay vi OutputFileOptions), chay qua ML Kit Text Recognition de
+     *  nhan dien chu trong anh, roi DAN THANG VAN BAN do vao vi tri con tro
+     *  (insertText) - KHONG con lien quan gi toi luu/dan ANH nua. Chup lien
+     *  tuc (bam nhieu lan, hoac bat "tu dong chup theo ma quet") se DAN LIEN
+     *  TIEP moi lan mot doan van ban moi, tu xuong dong sau moi lan. */
     private fun captureQrPhoto(silentAutoCapture: Boolean = false) {
         val imageCapture = qrImageCapture
         if (imageCapture == null) {
@@ -2236,80 +2285,66 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
         if (qrCaptureInProgress) return
 
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            if (!silentAutoCapture) {
-                Toast.makeText(
-                    this,
-                    "H\u00e3y c\u1ea5p quy\u1ec1n L\u01b0u tr\u1eef cho \u1ee9ng d\u1ee5ng trong C\u00e0i \u0111\u1eb7t \u0111\u1ec3 d\u00f9ng ch\u1ee5p \u1ea3nh",
-                    Toast.LENGTH_LONG
-                ).show()
-            }
-            return
-        }
-
         qrCaptureInProgress = true
         if (!silentAutoCapture) qrCaptureButton?.isEnabled = false
 
-        val fileName = "QR_${System.currentTimeMillis()}.jpg"
-        val contentValues = ContentValues().apply {
-            put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
-            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/QrKeyboard")
-                put(MediaStore.Images.Media.IS_PENDING, 1)
-            }
-        }
-        val outputOptions = ImageCapture.OutputFileOptions.Builder(
-            contentResolver, MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues
-        ).build()
-
         val executor = qrCameraExecutor ?: Executors.newSingleThreadExecutor()
         imageCapture.takePicture(
-            outputOptions,
             executor,
-            object : ImageCapture.OnImageSavedCallback {
-                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                    val savedUri = output.savedUri
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && savedUri != null) {
-                        val doneValues = ContentValues().apply { put(MediaStore.Images.Media.IS_PENDING, 0) }
-                        try {
-                            contentResolver.update(savedUri, doneValues, null, null)
-                        } catch (e: Exception) {
-                            android.util.Log.w("QrKeyboardService", "Khong go duoc IS_PENDING: ${e.message}")
-                        }
+            object : ImageCapture.OnImageCapturedCallback() {
+                override fun onCaptureSuccess(image: androidx.camera.core.ImageProxy) {
+                    val bitmap = try {
+                        val buffer = image.planes[0].buffer
+                        val bytes = ByteArray(buffer.remaining())
+                        buffer.get(bytes)
+                        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                    } catch (e: Exception) {
+                        null
+                    } finally {
+                        image.close()
                     }
                     val mainHandler = Handler(Looper.getMainLooper())
-                    mainHandler.post {
-                        qrCaptureInProgress = false
-                        if (!silentAutoCapture) qrCaptureButton?.isEnabled = true
-                        vibrateKeyPress()
-                        qrToneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP2, 120)
-                        if (savedUri != null) {
-                            if (silentAutoCapture) {
-                                Toast.makeText(
-                                    this@QrKeyboardService,
-                                    "\u0110\u00e3 l\u01b0u \u1ea3nh cho m\u00e3 v\u1eeba qu\u00e9t v\u00e0o th\u01b0 vi\u1ec7n",
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            } else {
-                                val sentToChat = tryCommitPhotoToChat(savedUri)
-                                Toast.makeText(
-                                    this@QrKeyboardService,
-                                    if (sentToChat) "\u0110\u00e3 l\u01b0u \u1ea3nh v\u00e0 g\u1eedi v\u00e0o khung chat"
-                                    else "\u0110\u00e3 l\u01b0u \u1ea3nh v\u00e0o thi\u1ebft b\u1ecb (\u1ee9ng d\u1ee5ng n\u00e0y kh\u00f4ng nh\u1eadn \u1ea3nh tr\u1ef1c ti\u1ebfp t\u1eeb b\u00e0n ph\u00edm)",
-                                    Toast.LENGTH_LONG
-                                ).show()
-                                showCapturedPhotoPreview(savedUri)
-                            }
-                        } else {
-                            if (!silentAutoCapture) {
-                                Toast.makeText(this@QrKeyboardService, "\u0110\u00e3 ch\u1ee5p \u1ea3nh nh\u01b0ng kh\u00f4ng l\u1ea5y \u0111\u01b0\u1ee3c \u0111\u01b0\u1eddng d\u1eabn \u1ea3nh \u0111\u00e3 l\u01b0u", Toast.LENGTH_LONG).show()
+                    if (bitmap == null) {
+                        mainHandler.post {
+                            qrCaptureInProgress = false
+                            if (!silentAutoCapture) qrCaptureButton?.isEnabled = true
+                            Toast.makeText(this@QrKeyboardService, "Ch\u1EE5p \u1ea3nh th\u1EA5t b\u1EA1i, th\u1eed l\u1ea1i", Toast.LENGTH_SHORT).show()
+                        }
+                        return
+                    }
+                    val rotation = image.imageInfo.rotationDegrees
+                    val inputImage = InputImage.fromBitmap(bitmap, rotation)
+                    qrTextRecognizer.process(inputImage)
+                        .addOnSuccessListener { result ->
+                            mainHandler.post {
+                                qrCaptureInProgress = false
+                                if (!silentAutoCapture) qrCaptureButton?.isEnabled = true
+                                vibrateKeyPress()
+                                qrToneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP2, 120)
+                                val text = result.text.trim()
+                                if (text.isEmpty()) {
+                                    Toast.makeText(
+                                        this@QrKeyboardService,
+                                        "Kh\u00f4ng nh\u1eadn di\u1ec7n \u0111\u01b0\u1ee3c ch\u1eef n\u00e0o trong \u1EA3nh v\u1EEBa ch\u1EE5p",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                } else {
+                                    // "Chụp liên tục thì dán liên tục, sau mỗi lần chụp thì tự
+                                    // xuống dòng" - noi tiep van ban vao vi tri con tro hien tai
+                                    // (khong xoa noi dung cu), roi xuong dong de lan chup tiep
+                                    // theo (neu co) bat dau tren 1 dong moi, khong dinh lien vao
+                                    // cuoi doan van ban vua dan.
+                                    insertText(text + "\n")
+                                }
                             }
                         }
-                    }
+                        .addOnFailureListener { e ->
+                            mainHandler.post {
+                                qrCaptureInProgress = false
+                                if (!silentAutoCapture) qrCaptureButton?.isEnabled = true
+                                Toast.makeText(this@QrKeyboardService, "Nh\u1eadn di\u1ec7n ch\u1eef th\u1EA5t b\u1EA1i: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        }
                 }
 
                 override fun onError(exception: ImageCaptureException) {
@@ -2324,101 +2359,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         )
     }
 
-    private fun tryCommitPhotoToChat(uri: Uri): Boolean {
-        val ic = currentInputConnection ?: return false
-        val editorInfo = currentInputEditorInfo ?: return false
-        val supportedMimeTypes = androidx.core.view.inputmethod.EditorInfoCompat.getContentMimeTypes(editorInfo)
-        val mimeType = "image/jpeg"
-        val isSupported = supportedMimeTypes.any { ClipDescription.compareMimeTypes(mimeType, it) }
-        if (!isSupported) return false
-
-        val contentInfo = InputContentInfoCompat(
-            uri,
-            ClipDescription("QR Keyboard photo", arrayOf(mimeType)),
-            null
-        )
-        return try {
-            selfInitiatedChange = true
-            InputConnectionCompat.commitContent(
-                ic, editorInfo, contentInfo,
-                InputConnectionCompat.INPUT_CONTENT_GRANT_READ_URI_PERMISSION,
-                null
-            )
-        } catch (e: Exception) {
-            android.util.Log.w("QrKeyboardService", "commitContent that bai: ${e.message}")
-            false
-        }
-    }
-
-    private fun showCapturedPhotoPreview(uri: Uri) {
-        val root = qrOverlayRootLayout ?: return
-
-        qrCapturedPhotoView?.let { root.removeView(it) }
-
-        val imageView = android.widget.ImageView(this).apply {
-            layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT
-            )
-            scaleType = android.widget.ImageView.ScaleType.CENTER_CROP
-            setBackgroundColor(Color.BLACK)
-            contentDescription = "\u1ea2nh v\u1eeba ch\u1ee5p - ch\u1ea1m \u0111\u1ec3 ti\u1ebfp t\u1ee5c qu\u00e9t"
-            setOnClickListener { dismissCapturedPhotoPreview() }
-        }
-        root.addView(imageView)
-        qrCapturedPhotoView = imageView
-        qrShowingCapturedPhoto = true
-
-        val executor = qrCameraExecutor ?: Executors.newSingleThreadExecutor()
-        executor.execute {
-            val bitmap = try {
-                decodeSampledBitmap(uri, 1080)
-            } catch (e: Exception) {
-                null
-            }
-            Handler(Looper.getMainLooper()).post {
-                if (qrCapturedPhotoView === imageView) {
-                    if (bitmap != null) {
-                        imageView.setImageBitmap(bitmap)
-                    } else {
-                        Toast.makeText(
-                            this@QrKeyboardService,
-                            "Kh\u00f4ng hi\u1ec3n th\u1ecb \u0111\u01b0\u1ee3c \u1ea3nh v\u1eeba ch\u1ee5p, nh\u01b0ng \u1ea3nh v\u1eabn \u0111\u00e3 \u0111\u01b0\u1ee3c l\u01b0u",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                        dismissCapturedPhotoPreview()
-                    }
-                }
-            }
-        }
-    }
-
-    private fun dismissCapturedPhotoPreview() {
-        qrCapturedPhotoView?.let { qrOverlayRootLayout?.removeView(it) }
-        qrCapturedPhotoView = null
-        qrShowingCapturedPhoto = false
-        qrFrameHandled.set(false)
-    }
-
-    private fun decodeSampledBitmap(uri: Uri, maxDim: Int): android.graphics.Bitmap? {
-        val boundsOptions = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        val boundsStream = contentResolver.openInputStream(uri) ?: return null
-        boundsStream.use { android.graphics.BitmapFactory.decodeStream(it, null, boundsOptions) }
-
-        var sampleSize = 1
-        while (boundsOptions.outWidth / sampleSize > maxDim || boundsOptions.outHeight / sampleSize > maxDim) {
-            sampleSize *= 2
-        }
-
-        val decodeOptions = android.graphics.BitmapFactory.Options().apply { inSampleSize = sampleSize }
-        val decodeStream = contentResolver.openInputStream(uri) ?: return null
-        return decodeStream.use { android.graphics.BitmapFactory.decodeStream(it, null, decodeOptions) }
-    }
-
     private fun processQrFrame(imageProxy: ImageProxy, scanner: BarcodeScanner) {
-        if (qrShowingCapturedPhoto) {
-            imageProxy.close()
-            return
-        }
         val mediaImage = imageProxy.image
         if (mediaImage == null) {
             imageProxy.close()
@@ -2433,11 +2374,24 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                         it.valueType != Barcode.TYPE_UNKNOWN || it.rawValue != null || it.rawBytes != null
                     }
                     val value = barcode?.let { extractQrBarcodeText(it) }
+                    // SUA (theo yeu cau nguoi dung): TRUOC DAY chi cho xuat DUNG 1
+                    // LAN cho moi du lieu quet duoc, quet trung y het lan nua se bi
+                    // CHAN HAN (value != qrLastDeliveredText). GIO DAY: cho phep
+                    // toi da [ScanLimitPrefs.getConsecutiveLimit] lan LIEN TIEP
+                    // giong het nhau (mac dinh 2, nguoi dung tu chinh trong man
+                    // Cai dat). RIENG ban Google Play (BuildConfig kem theo flavor
+                    // "ggplay"): KHONG GIOI HAN so lan lien tiep - luon cho qua.
+                    val isSameAsLast = !value.isNullOrEmpty() && value == qrLastDeliveredText
+                    val underLimit = BuildConfig.UNLIMITED_CONSECUTIVE_SCAN ||
+                        qrConsecutiveSameCount < ScanLimitPrefs.getConsecutiveLimit(this)
+                    val allowedToDeliver = !isSameAsLast || underLimit
                     if (!value.isNullOrEmpty() && !containsQrSpecialCharacter(value) &&
-                        value != qrLastDeliveredText &&
+                        allowedToDeliver &&
                         qrFrameHandled.compareAndSet(false, true)
                     ) {
+                        qrConsecutiveSameCount = if (isSameAsLast) qrConsecutiveSameCount + 1 else 1
                         qrLastDeliveredText = value
+                        ScanHistoryStore.addEntry(this, value)
                         onQrFound(value)
                     }
                 }

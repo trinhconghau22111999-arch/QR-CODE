@@ -40,6 +40,17 @@
             android:excludeFromRecents="true"
             android:taskAffinity="com.example.qrkeyboard.qrpermission" />
 
+        <!-- Man Cai dat rieng cua app (mau sac, gioi han quet trung lap,
+             du lieu quet hom nay + xuat/chia se Excel) - mo tu nut "Cai dat"
+             tren trang Ky hieu cua ban phim. taskAffinity rieng de khong bi
+             gop chung task voi ban phim (mo tu Context cua Service). -->
+        <activity
+            android:name=".SettingsActivity"
+            android:exported="false"
+            android:label="C\u00e0i \u0111\u1eb7t"
+            android:theme="@style/Theme.QRKeyboard"
+            android:taskAffinity="com.example.qrkeyboard.settings" />
+
         <!-- Dich vu ban phim (Input Method Service) -->
         <service
             android:name=".QrKeyboardService"

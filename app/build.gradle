@@ -33,6 +33,26 @@ android {
 
     buildFeatures {
         viewBinding true
+        buildConfig true
+    }
+
+    // Ban Google Play (ggplay) KHONG gioi han so lan xuat du lieu lien tiep
+    // giong het nhau khi quet QR/ma vach (theo yeu cau nguoi dung: "riêng
+    // bản ggplay: không có giới hạn"). Ban thuong (direct - phat hanh truc
+    // tiep ngoai Google Play) van co gioi han (mac dinh 2 lan lien tiep,
+    // nguoi dung tu chinh trong Cai dat - xem qrConsecutiveSameLimit trong
+    // QrKeyboardService.kt). CA 2 flavor dung CHUNG 1 applicationId (khong
+    // doi) de khong lam gian doan nguoi dung dang dung ban cu.
+    flavorDimensions = ["distribution"]
+    productFlavors {
+        direct {
+            dimension "distribution"
+            buildConfigField "boolean", "UNLIMITED_CONSECUTIVE_SCAN", "false"
+        }
+        ggplay {
+            dimension "distribution"
+            buildConfigField "boolean", "UNLIMITED_CONSECUTIVE_SCAN", "true"
+        }
     }
 }
 
@@ -50,4 +70,10 @@ dependencies {
 
     // ML Kit Barcode Scanning (quet QR offline, khong can mang)
     implementation 'com.google.mlkit:barcode-scanning:17.3.0'
+    // THEM: nhan dien van ban trong anh (OCR) - dung cho tinh nang "chup
+    // van ban" moi (thay the tinh nang "chup anh" cu, xem QrKeyboardService.kt).
+    // Dung ban Latin-only (nhe hon nhieu so voi ban "text-recognition"
+    // day du ho tro Trung/Nhat/Han - Tieng Viet dung bang chu Latin nen ban
+    // nay du dung, khong can tai them cac model ngon ngu nang khac).
+    implementation 'com.google.mlkit:text-recognition:16.0.1'
 }
