@@ -779,23 +779,30 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 }
                 root.addView(buildCharRow(numberRows[0]))
                 letterRows.forEachIndexed { index, row ->
-                    // SUA (theo yeu cau nguoi dung): hang chu THU 2 tu tren
-                    // xuong (letterRows[0] = "asdfghjkl", 9 ky tu, index==0)
-                    // truoc day dung buildCharRow() nhu moi hang khac - vi
-                    // chi co 9 phim thay vi 10 nhu hang tren ("qwertyuiop"),
-                    // MOI PHIM BI PHONG TO len de tu lap day het chieu rong
-                    // hang, khien phim hang nay TO HON han hang tren, khong
+                    // SUA LOI (theo yeu cau nguoi dung): hang chu THU 2 tu
+                    // tren xuong ("asdfghjkl", 9 ky tu) TRUOC DAY bi kiem
+                    // tra SAI VI TRI - dieu kien dung `index == 0` (tro vao
+                    // letterRows[0] = "qwertyuiop", DA DU 10 ky tu nen dieu
+                    // kien do dai luon SAI, KHONG BAO GIO kich hoat) thay vi
+                    // `index == 1` (letterRows[1] = "asdfghjkl", DUNG hang
+                    // co 9 ky tu can co giãn). Hau qua: hang "asdfghjkl" chi
+                    // dung buildCharRow() nhu moi hang khac - vi chi co 9
+                    // phim thay vi 10 nhu hang tren ("qwertyuiop"), MOI PHIM
+                    // BI PHONG TO len de tu lap day het chieu rong hang,
+                    // khien phim hang nay TO HON han hang tren/duoi, khong
                     // thang hang/xen ke nhu ban phim vat ly that. GIO DAY
-                    // dung buildStaggeredCharRow(): giu NGUYEN kich thuoc
-                    // tung phim bang dung hang tren (10), chen 2 khoang
-                    // trong nua-phim vao 2 ben de lap day phan con thieu.
-                    // CHi ap dung cho DUNG hang nay (index==0) - KHONG ap
-                    // dung cho hang CUOI (letterRows.lastIndex, "zxcvbnm")
-                    // vi hang do con duoc CHEN THEM phim Shift/Xoa ngay ben
-                    // duoi day - neu cung stagger hang do, tong do rong se
-                    // TANG THEM (13 thay vi 10), lam hang do RONG HON han
-                    // cac hang khac, pha vo su can bang da co san tu truoc.
-                    val rowView = if (index == 0 && row.length < numberRows[0].length)
+                    // (da sua index) dung buildStaggeredCharRow(): giu
+                    // NGUYEN kich thuoc tung phim bang dung hang tren (10),
+                    // chen 2 khoang trong nua-phim vao 2 ben de lap day phan
+                    // con thieu - vua dung KICH CO tung phim, vua TU CAN
+                    // GIUA ca hang (2 khoang trong 2 ben bang nhau).
+                    // KHONG ap dung cho hang CUOI (letterRows.lastIndex,
+                    // "zxcvbnm") vi hang do con duoc CHEN THEM phim
+                    // Shift/Xoa ngay ben duoi day - neu cung stagger hang
+                    // do, tong do rong se TANG THEM (13 thay vi 10), lam
+                    // hang do RONG HON han cac hang khac, pha vo su can
+                    // bang da co san tu truoc.
+                    val rowView = if (index == 1 && row.length < numberRows[0].length)
                         buildStaggeredCharRow(row, numberRows[0].length, applyShiftCase = true)
                     else
                         buildCharRow(row, applyShiftCase = true)
