@@ -176,7 +176,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         private const val DELETE_REPEAT_INITIAL_DELAY_MS = 400L
         private const val DELETE_REPEAT_INTERVAL_MS = 50L
 
-        /** Khoang thoi gian toi da (ms) giua 2 lan cham nut [QR] de tinh la
         /** Khoang thoi gian (ms) toi da giua 2 lan cham nut Shift (⇧) de tinh
          *  la mot cu DUP-TAP (cham 2 lan lien tiep, trong khoang thoi gian
          *  nay). Xem [buildKeyboardView] (buildLettersPage), phan xu ly nut
