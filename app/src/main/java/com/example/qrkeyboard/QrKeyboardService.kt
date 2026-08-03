@@ -159,7 +159,18 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         private var onCameraPermissionResult: ((granted: Boolean) -> Unit)? = null
 
         fun notifyCameraPermissionResult(granted: Boolean) {
-            onCameraPermissionResult?.invoke(granted)
+            // SUA (phong ve them, gop vao nhom sua loi "tu dong dong ban
+            // phim"): [onCameraPermissionResult] la callback TINH (companion
+            // object) co the con giu tham chieu toi 1 instance Service DA BI
+            // HUY neu he thong tai tao Service dung luc nguoi dung dang tra
+            // loi hop thoai xin quyen Camera (hiem nhung khong phai khong
+            // the xay ra). Boc try/catch de loi (neu co) khong lam crash
+            // toan bo tien trinh.
+            try {
+                onCameraPermissionResult?.invoke(granted)
+            } catch (e: Exception) {
+                // Bo qua - Service co the da bi huy truoc khi callback chay.
+            }
             onCameraPermissionResult = null
         }
 
@@ -1351,6 +1362,12 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  dup-tap thua nay, CHi con cham 1 lan don gian, ap dung DUNG logic cu
      *  (continuous = true) - dung y muon "giu nguyen toan bo logic cu cua
      *  nhan 2 lan, ap dat het qua nhan 1 lan". */
+    /** SUA (theo yeu cau nguoi dung): kich co CAC PHIM hang duoi cung trang
+     *  nay TRUOC DAY khac voi trang Chu (page 1)/trang Ky hieu (page 3) -
+     *  tong trong so 9.8 (1.6/1.2/4.2/1.2/1.6) thay vi 9 (1.4/1/4.2/1/1.4)
+     *  nhu 2 trang kia. GIO DAY dung DUNG kich co 1.4/1/4.2/1/1.4 giong het
+     *  [buildLettersBottomRow]/[buildExtendedSymbolsBottomRow] - CHi doi
+     *  kich co, GIU NGUYEN 5 phim/hanh dong cu (ABC, QR, Cach, 123, Enter). */
     private fun buildNumbersBottomRow(): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1359,18 +1376,13 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             ).apply { bottomMargin = dp(6) }
         }
 
-        row.addView(buildKey("ABC", weight = 1.6f, fillRowHeight = true) { switchMode(KeyboardMode.LETTERS) })
-        row.addView(buildKey("QR", weight = 1.2f, highlight = true, fillRowHeight = true) {
+        row.addView(buildKey("ABC", weight = 1.4f, fillRowHeight = true) { switchMode(KeyboardMode.LETTERS) })
+        row.addView(buildKey("QR", weight = 1f, highlight = true, fillRowHeight = true) {
             openQrScanner(continuous = true)
         })
-        // SUA (theo yeu cau nguoi dung): "rút ngắn bên phải của dấu cách để
-        // thêm nút bàn phím số 123 vào" - giam trong so dau cach (5.4 ->
-        // 4.2, tuc rut ngan dung o BEN PHAI vi nut moi duoc chen NGAY SAU
-        // no), them nut "123" (weight = 1.2, bang dung nut QR de can doi 2
-        // ben) chuyen sang ban phim so rieng (NUMPAD - xem buildNumpadPage).
         row.addView(buildSpaceKey(weight = 4.2f))
-        row.addView(buildKey("123", weight = 1.2f, fillRowHeight = true) { switchMode(KeyboardMode.NUMPAD) })
-        row.addView(buildKey("\u21b5", weight = 1.6f, highlight = true, fillRowHeight = true) { sendEnter() })
+        row.addView(buildKey("123", weight = 1f, fillRowHeight = true) { switchMode(KeyboardMode.NUMPAD) })
+        row.addView(buildKey("\u21b5", weight = 1.4f, highlight = true, fillRowHeight = true) { sendEnter() })
 
         return row
     }
@@ -2232,25 +2244,34 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener({
-            val cameraProvider = cameraProviderFuture.get()
-
-            val previewUseCase = Preview.Builder().build().also {
-                it.setSurfaceProvider(preview.surfaceProvider)
-            }
-            val scanner = BarcodeScanning.getClient()
-            val imageAnalysis = ImageAnalysis.Builder()
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .build()
-            val executor = qrCameraExecutor ?: return@addListener
-            imageAnalysis.setAnalyzer(executor) { imageProxy ->
-                processQrFrame(imageProxy, scanner)
-            }
-
-            val imageCaptureUseCase = ImageCapture.Builder()
-                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                .build()
-
+            // SUA (rat quan trong): BOC try/catch quanh TOAN BO than cua
+            // listener nay - TRUOC DAY chi bindToLifecycle() duoc bao ve,
+            // nhung cameraProviderFuture.get() VA cac buoc dung use-case o
+            // duoi CUNG co the nem loi (vd camera dang bi app khac chiem
+            // dung, thiet bi khong ho tro use-case nao do...). Loi nem ra
+            // TRONG mot Runnable chay tren main executor SE KHONG duoc
+            // JVM/Android tu dong bat - lam CRASH toan bo tien trinh ban
+            // phim (nguyen nhan gay "ban phim tu dong dong, khong bat lai
+            // duoc" nguoi dung bao cao).
             try {
+                val cameraProvider = cameraProviderFuture.get()
+
+                val previewUseCase = Preview.Builder().build().also {
+                    it.setSurfaceProvider(preview.surfaceProvider)
+                }
+                val scanner = BarcodeScanning.getClient()
+                val imageAnalysis = ImageAnalysis.Builder()
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .build()
+                val executor = qrCameraExecutor ?: return@addListener
+                imageAnalysis.setAnalyzer(executor) { imageProxy ->
+                    processQrFrame(imageProxy, scanner)
+                }
+
+                val imageCaptureUseCase = ImageCapture.Builder()
+                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                    .build()
+
                 cameraProvider.unbindAll()
                 qrCamera = cameraProvider.bindToLifecycle(
                     this, CameraSelector.DEFAULT_BACK_CAMERA,
@@ -2314,6 +2335,12 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             executor,
             object : ImageCapture.OnImageCapturedCallback() {
                 override fun onCaptureSuccess(image: androidx.camera.core.ImageProxy) {
+                    // SUA (rat quan trong): doc [rotationDegrees] TRUOC khi
+                    // dong [image] - TRUOC DAY doc SAU khi image.close() da
+                    // chay (o finally ben duoi), truy cap ImageProxy DA DONG
+                    // co the nem loi tuy thiet bi/phien ban CameraX (them 1
+                    // nguyen nhan co the gay crash ban phim khi chup anh OCR).
+                    val rotation = image.imageInfo.rotationDegrees
                     val bitmap = try {
                         val buffer = image.planes[0].buffer
                         val bytes = ByteArray(buffer.remaining())
@@ -2333,7 +2360,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                         }
                         return
                     }
-                    val rotation = image.imageInfo.rotationDegrees
                     val inputImage = InputImage.fromBitmap(bitmap, rotation)
                     qrTextRecognizer.process(inputImage)
                         .addOnSuccessListener { result ->
@@ -2381,43 +2407,57 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     }
 
     private fun processQrFrame(imageProxy: ImageProxy, scanner: BarcodeScanner) {
-        val mediaImage = imageProxy.image
-        if (mediaImage == null) {
-            imageProxy.close()
-            return
-        }
-        val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
+        // SUA (rat quan trong, sua loi "tu dong dong ban phim, khong bat lai
+        // duoc"): BOC try/catch toan bo than ham nay. Ham nay chay LIEN TUC
+        // (~30 lan/giay) tren 1 luong nen rieng (executor). TRUOC DAY neu
+        // InputImage.fromMediaImage()/scanner.process() nem loi (vd khung
+        // hinh bi hong do rung/dong camera, dinh dang anh khong ho tro...) -
+        // loi do KHONG duoc bat, se lam CRASH toan bo tien trinh ban phim.
+        // Dam bao imageProxy LUON duoc close() (ke ca khi loi) - khong thi
+        // camera se bi "tac", ngung gui khung hinh moi, giong het trieu
+        // chung "khong bat len duoc" ma nguoi dung mo ta.
+        try {
+            val mediaImage = imageProxy.image
+            if (mediaImage == null) {
+                imageProxy.close()
+                return
+            }
+            val image = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
 
-        scanner.process(image)
-            .addOnSuccessListener { barcodes ->
-                if (!qrFrameHandled.get()) {
-                    val barcode = barcodes.firstOrNull {
-                        it.valueType != Barcode.TYPE_UNKNOWN || it.rawValue != null || it.rawBytes != null
-                    }
-                    val value = barcode?.let { extractQrBarcodeText(it) }
-                    // SUA (theo yeu cau nguoi dung): TRUOC DAY chi cho xuat DUNG 1
-                    // LAN cho moi du lieu quet duoc, quet trung y het lan nua se bi
-                    // CHAN HAN (value != qrLastDeliveredText). GIO DAY: cho phep
-                    // toi da [ScanLimitPrefs.getConsecutiveLimit] lan LIEN TIEP
-                    // giong het nhau (mac dinh 2, nguoi dung tu chinh trong man
-                    // Cai dat). RIENG ban Google Play (BuildConfig kem theo flavor
-                    // "ggplay"): KHONG GIOI HAN so lan lien tiep - luon cho qua.
-                    val isSameAsLast = !value.isNullOrEmpty() && value == qrLastDeliveredText
-                    val underLimit = BuildConfig.UNLIMITED_CONSECUTIVE_SCAN ||
-                        qrConsecutiveSameCount < ScanLimitPrefs.getConsecutiveLimit(this)
-                    val allowedToDeliver = !isSameAsLast || underLimit
-                    if (!value.isNullOrEmpty() && !containsQrSpecialCharacter(value) &&
-                        allowedToDeliver &&
-                        qrFrameHandled.compareAndSet(false, true)
-                    ) {
-                        qrConsecutiveSameCount = if (isSameAsLast) qrConsecutiveSameCount + 1 else 1
-                        qrLastDeliveredText = value
-                        ScanHistoryStore.addEntry(this, value)
-                        onQrFound(value)
+            scanner.process(image)
+                .addOnSuccessListener { barcodes ->
+                    if (!qrFrameHandled.get()) {
+                        val barcode = barcodes.firstOrNull {
+                            it.valueType != Barcode.TYPE_UNKNOWN || it.rawValue != null || it.rawBytes != null
+                        }
+                        val value = barcode?.let { extractQrBarcodeText(it) }
+                        // SUA (theo yeu cau nguoi dung): TRUOC DAY chi cho xuat DUNG 1
+                        // LAN cho moi du lieu quet duoc, quet trung y het lan nua se bi
+                        // CHAN HAN (value != qrLastDeliveredText). GIO DAY: cho phep
+                        // toi da [ScanLimitPrefs.getConsecutiveLimit] lan LIEN TIEP
+                        // giong het nhau (mac dinh 2, nguoi dung tu chinh trong man
+                        // Cai dat). RIENG ban Google Play (BuildConfig kem theo flavor
+                        // "ggplay"): KHONG GIOI HAN so lan lien tiep - luon cho qua.
+                        val isSameAsLast = !value.isNullOrEmpty() && value == qrLastDeliveredText
+                        val underLimit = BuildConfig.UNLIMITED_CONSECUTIVE_SCAN ||
+                            qrConsecutiveSameCount < ScanLimitPrefs.getConsecutiveLimit(this)
+                        val allowedToDeliver = !isSameAsLast || underLimit
+                        if (!value.isNullOrEmpty() && !containsQrSpecialCharacter(value) &&
+                            allowedToDeliver &&
+                            qrFrameHandled.compareAndSet(false, true)
+                        ) {
+                            qrConsecutiveSameCount = if (isSameAsLast) qrConsecutiveSameCount + 1 else 1
+                            qrLastDeliveredText = value
+                            ScanHistoryStore.addEntry(this, value)
+                            onQrFound(value)
+                        }
                     }
                 }
-            }
-            .addOnCompleteListener { imageProxy.close() }
+                .addOnFailureListener { /* Bo qua 1 khung loi - se co khung tiep theo */ }
+                .addOnCompleteListener { imageProxy.close() }
+        } catch (e: Exception) {
+            try { imageProxy.close() } catch (ignored: Exception) { }
+        }
     }
 
     private val qrAllowedCharacterRegex = Regex("^[\\p{L}\\p{N}\\s.,!?:;'\"()/@_-]*$")
