@@ -18,15 +18,15 @@
         android:icon="@mipmap/ic_launcher"
         android:label="QR Keyboard"
         android:theme="@style/Theme.QRKeyboard">
-        <!-- Activity chinh: huong dan nguoi dung bat ban phim -->
+        <!-- Activity huong dan nguoi dung bat ban phim (xin quyen Camera roi
+             chuyen toi man Cai dat he thong de bat ban phim) - KHONG con la
+             man LAUNCHER nua (theo yeu cau nguoi dung: bam icon app gio mo
+             thang toi SettingsActivity ben duoi). Van giu lai activity nay
+             (khong xoa) phong khi can dung lai luong huong dan nay sau nay -
+             hien khong con noi nao trong code goi toi no nua. -->
         <activity
             android:name=".MainActivity"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-        </activity>
+            android:exported="false" />
 
         <!-- Activity toi gian, CHI dung de hien hop thoai xin quyen Camera
              he thong (Android bat buoc phai gan hop thoai nay voi mot
@@ -42,14 +42,19 @@
 
         <!-- Man Cai dat rieng cua app (mau sac, gioi han quet trung lap,
              du lieu quet hom nay + xuat/chia se Excel) - mo tu nut "Cai dat"
-             tren trang Ky hieu cua ban phim. taskAffinity rieng de khong bi
-             gop chung task voi ban phim (mo tu Context cua Service). -->
+             tren trang Ky hieu cua ban phim. THEM (theo yeu cau nguoi dung):
+             GIO LA MAN LAUNCHER CHINH cua app - bam icon app se mo thang toi
+             day thay vi MainActivity nhu truoc. Da BO taskAffinity rieng (vi
+             gio la task chinh cua app, khong con can tach task nua). -->
         <activity
             android:name=".SettingsActivity"
-            android:exported="false"
-            android:label="Cài đặt"
-            android:theme="@style/Theme.QRKeyboard"
-            android:taskAffinity="com.example.qrkeyboard.settings" />
+            android:exported="true"
+            android:label="Cài đặt">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
 
         <!-- Dich vu ban phim (Input Method Service) -->
         <service

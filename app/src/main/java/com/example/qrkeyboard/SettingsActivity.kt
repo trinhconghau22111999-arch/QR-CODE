@@ -68,6 +68,21 @@ class SettingsActivity : AppCompatActivity() {
     private val textSecondary = Color.parseColor("#B9A8D0")
     private val accentNow get() = KeyboardThemePrefs.getAccentColor(this)
 
+    /** THEM (theo yeu cau nguoi dung): mau nen THAT SU cua ban phim khi bat/
+     *  tat nen Toi - PHAI khop CHINH XAC voi [keyboardBackgroundColor] trong
+     *  QrKeyboardService.kt. Dung de nut chon Sang/Toi trong Cai dat HIEN
+     *  THI DUNG mau nen ban phim thuc te, thay vi mot mau tim co dinh khong
+     *  lien quan nhu truoc day - nguoi dung xem nut la thay ngay ket qua se
+     *  giong nhu the nao tren ban phim. */
+    private val keyboardBgDark = Color.parseColor("#050507")
+    private val keyboardBgLight = Color.parseColor("#FAFAFA")
+
+    private fun themeToggleBackground(borderColor: Int): GradientDrawable = GradientDrawable().apply {
+        setColor(if (KeyboardThemePrefs.isDarkTheme(this@SettingsActivity)) keyboardBgDark else keyboardBgLight)
+        cornerRadius = dp(10).toFloat()
+        setStroke(dp(2), borderColor)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
@@ -191,11 +206,7 @@ class SettingsActivity : AppCompatActivity() {
                 setOnClickListener {
                     KeyboardThemePrefs.setAccentColor(this@SettingsActivity, color)
                     renderColorSwatches()
-                    themeToggleBtn.background = GradientDrawable().apply {
-                        setColor(Color.parseColor("#1C0F2E"))
-                        cornerRadius = dp(10).toFloat()
-                        setStroke(dp(2), color)
-                    }
+                    themeToggleBtn.background = themeToggleBackground(color)
                 }
             }
             colorSwatchContainer.addView(swatch)
@@ -211,6 +222,12 @@ class SettingsActivity : AppCompatActivity() {
     private fun refreshThemeToggleLabel() {
         val dark = KeyboardThemePrefs.isDarkTheme(this)
         themeToggleBtn.text = if (dark) "\ud83c\udf19  \u0110ang d\u00f9ng n\u1ec1n T\u1ed1i" else "\u2600\ufe0f  \u0110ang d\u00f9ng n\u1ec1n S\u00e1ng"
+        // THEM (theo yeu cau nguoi dung): nen nut = DUNG mau nen ban phim
+        // that (khong con mau tim co dinh) - chu cung doi Trang/Den theo,
+        // giong het cach primaryTextColor() lam trong QrKeyboardService.kt,
+        // de chu luon doc duoc tren nen moi.
+        themeToggleBtn.background = themeToggleBackground(accentNow)
+        themeToggleBtn.setTextColor(if (dark) Color.WHITE else Color.BLACK)
     }
 
     // ─────────────────── 2. Gioi han quet trung lap ───────────────────

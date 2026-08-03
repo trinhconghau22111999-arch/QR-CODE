@@ -1875,6 +1875,28 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         while (i > 0 && before[i - 1].isLetter()) i--
         val recoveredCased = before.substring(i)
         val recovered = recoveredCased.lowercase()
+
+        // SUA LOI nguoi dung phan anh: "go 2 chu a/e/o/d ngay khi vua vao go
+        // thi ra han 2 chu thay vi hop nhat thanh â/ê/ô/đ" va "go chu nao la
+        // no xoa ngay chu do". NGUYEN NHAN: InputConnection cua o nhap DICH
+        // co the CHUA KIP cap nhat kip thoi vao luc ham nay doc lai (dac
+        // biet ngay sau keystroke truoc do, hoac go rat nhanh lien tiep) -
+        // ket qua doc duoc ([recovered]) bi CU/TRE hon currentWord dang co
+        // THAT SU trong bo nho (dung, da duoc [insertVietnameseChar] cap
+        // nhat dung tu truoc). Neu cu ghi de currentWord bang du lieu TRE
+        // nay, keystroke tiep theo se tinh sai commonPrefixLen/deleteCount
+        // (tuong nham tu dang go NGAN/RONG hon that), lam applyDoubleModifier
+        // KHONG hop nhat duoc (vd "aa" van la "aa" thay vi "â"), hoac lam
+        // insertVietnameseChar xoa NHAM ky tu vua go. SUA: CHi ghi de
+        // currentWord/currentWordCased khi du lieu doc duoc THAT SU khac biet
+        // theo kieu KHONG PHAI la truong hop "tre" nay (tuc [recovered]
+        // KHONG phai la mot TIEN TO ngan hon cua currentWord hien tai) - neu
+        // la tien to ngan hon, coi nhu do tre, GIU NGUYEN currentWord dang co
+        // (chinh xac hon ban doc duoc).
+        val isStaleLag = recovered.length < currentWord.length &&
+            currentWord.startsWith(recovered)
+        if (isStaleLag) return
+
         if (recovered != currentWord.toString()) {
             currentWord = StringBuilder(recovered)
         }
@@ -2638,12 +2660,64 @@ private object VietnameseTelex {
         map
     }
 
+    /** THEM (theo yeu cau nguoi dung, sua loi go "rever" -> "rểv"): dem so
+     *  CUM NGUYEN AM rieng biet trong [word] - 1 "cum" la 1 day lien tiep cac
+     *  ky tu nguyen am (vd "oa","uu"...). Mot am tiet tieng Viet hop le CHi
+     *  co DUNG 1 cum nguyen am (phu am chi dung truoc/sau, khong xen giua 2
+     *  nguyen am khac nhom). Neu tu dang go da co >= 2 cum (vd "rev" + go
+     *  them 'e' -> "reve" co 2 cum: "e" va "e" cach nhau boi "v") thi KHONG
+     *  con la 1 am tiet tieng Viet nua (nhieu kha nang la tu tieng Anh/nuoc
+     *  ngoai go lien, vd "rever") - se dung [processKey] o duoi de TAT HAN
+     *  viec bo dau/gop chu cho phan con lai cua tu do. */
+    private fun vowelGroupCount(word: String): Int {
+        var count = 0
+        var inGroup = false
+        for (c in word) {
+            val isVowel = charToGroupTone.containsKey(c)
+            if (isVowel && !inGroup) count++
+            inGroup = isVowel
+        }
+        return count
+    }
+
+    /** THEM (sua loi go "rever"): tim VI TRI BAT DAU cua "am tiet cuoi cung"
+     *  dang go trong [word] - la vi tri NGAY SAU cum nguyen am GAN NHAT ma
+     *  cum do co phu am theo SAU no (tuc mot cum nguyen am da bi "dong" lai
+     *  boi 1 phu am, bao hieu am tiet MOI se bat dau tu phu am do). Dung de
+     *  [applyDoubleModifier]/[applyTone] o duoi CHi duoc phep gop/bo dau
+     *  trong PHAM VI am tiet cuoi cung nay - KHONG duoc "voi" qua ranh gioi
+     *  phu am de gop voi 1 nguyen am o am tiet TRUOC DO (vd "rev" + go 'e'
+     *  KHONG duoc gop voi 'e' dau tien - ca 2 da bi ngan cach boi 'v' - phai
+     *  giu nguyen thanh "reve", khong duoc ra "rêv"). Neu khong tim thay
+     *  ranh gioi nao, tra ve 0 (toan bo [word] la 1 am tiet dang go, xu ly
+     *  binh thuong nhu truoc gio). */
+    private fun lastSyllableStart(word: String): Int {
+        var boundary = 0
+        var i = 0
+        while (i < word.length) {
+            if (charToGroupTone.containsKey(word[i])) {
+                var j = i
+                while (j < word.length && charToGroupTone.containsKey(word[j])) j++
+                if (j < word.length) boundary = j
+                i = j
+            } else {
+                i++
+            }
+        }
+        return boundary
+    }
+
     /** [wordCased]: ban GIU NGUYEN hoa/thuong THAT SU cua [word] (cung do
      *  dai, tung vi tri khop voi [word]) - dung DUY NHAT de kiem tra "lech
      *  hoa/thuong" trong [applyDoubleModifier] (xem giai thich chi tiet o
      *  do). [keyIsUpper]: case THAT SU (hoa hay thuong) cua CHINH phim vua
      *  go (truoc khi ha thanh [keyLower]). */
     fun processKey(word: String, keyLower: Char, wordCased: String, keyIsUpper: Boolean): String {
+        // THEM (sua loi go "rever" -> "rểv"): tu da co >= 2 cum nguyen am
+        // rieng biet (khong con la 1 am tiet tieng Viet hop le, vd dang go
+        // lien 1 tu tieng Anh nhu "rever") -> TAT HAN bo dau/gop chu cho
+        // PHAN CON LAI cua tu nay, chi go y nguyen tu day tro di.
+        if (vowelGroupCount(word) >= 2) return word + keyLower
         applyDoubleModifier(word, keyLower, wordCased, keyIsUpper)?.let { return it }
         applyTone(word, keyLower)?.let { return it }
         return word + keyLower
@@ -2661,8 +2735,12 @@ private object VietnameseTelex {
     private fun applyDoubleModifier(word: String, key: Char, wordCased: String, keyIsUpper: Boolean): String? {
         if (word.isEmpty()) return null
 
+        // THEM (sua loi go "rever"): CHI tim trong pham vi am tiet CUOI CUNG
+        // dang go - khong "voi" qua ranh gioi phu am de gop voi nguyen am o
+        // am tiet TRUOC do (xem giai thich chi tiet o [lastSyllableStart]).
+        val syllableStart = lastSyllableStart(word)
         fun lastIndexOfGroup(groupIdx: Int): Int? =
-            word.indices.lastOrNull { i -> charToGroupTone[word[i]]?.first == groupIdx }
+            word.indices.lastOrNull { i -> i >= syllableStart && charToGroupTone[word[i]]?.first == groupIdx }
 
         // Case (hoa/thuong) THAT SU cua ky tu dang o vi tri [pos] trong tu,
         // dua vao [wordCased] - false (coi nhu thuong) neu vi tri khong hop
