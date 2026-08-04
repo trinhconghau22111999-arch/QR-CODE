@@ -2929,14 +2929,25 @@ private object VietnameseTelex {
         // trong tu ([end < 0] o tren), chi khac la truong hop nay "u"/"i" VE
         // MAT KY TU thuoc vowelGroups nen khong roi vao nhanh do, can kiem
         // tra rieng.
-        val isPrematureQuOrGiGlide = clusterIndices.size == 1 &&
+        // SUA LOI nguoi dung phan anh: chu "gi" KHONG THE them dau thanh
+        // duoc (vd go "gi" + "f" mong muon ra "gì" nhung khong co gi xay
+        // ra). NGUYEN NHAN: dieu kien duoi day TRUOC DAY chan CA "qu" LAN
+        // "gi" nhu nhau khi chi moi co DUNG 1 nguyen am ("u"/"i") ngay sau
+        // "q"/"g" - nhung 2 truong hop nay KHONG GIONG NHAU: "qu" MOT MINH
+        // (chua co nguyen am nao khac) THUC SU khong phai la 1 am tiet hop
+        // le (Tieng Viet KHONG co tu nao chi la "qu" + dau thanh - luon can
+        // it nhat 1 nguyen am khac phía sau, vd "quá", "quý"), nhung "gi"
+        // THI CO THE la 1 am tiet HOAN CHINH mot minh - "gì" (nghia la "cai
+        // gi") la mot tu Tieng Viet rat pho bien, cung nhu "gỉ" (ri set).
+        // SUA: CHi con chan rieng cho "qu" ("q" + nguyen am nhom "u"),
+        // KHONG con chan cho "gi" nua - "i" ngay sau "g" duoc bo dau thanh
+        // BINH THUONG nhu moi nguyen am khac khi la nguyen am DUY NHAT cua
+        // tu (vd "gi" + "f" -> "gì" dung nhu mong doi).
+        val isPrematureQuGlide = clusterIndices.size == 1 &&
             clusterIndices[0] > 0 &&
-            when (word[clusterIndices[0] - 1]) {
-                'q' -> charToGroupTone[word[clusterIndices[0]]]?.first == 9 // "qu"
-                'g' -> charToGroupTone[word[clusterIndices[0]]]?.first == 5 // "gi"
-                else -> false
-            }
-        if (isPrematureQuOrGiGlide) return null
+            word[clusterIndices[0] - 1] == 'q' &&
+            charToGroupTone[word[clusterIndices[0]]]?.first == 9 // "qu"
+        if (isPrematureQuGlide) return null
 
         val preferred = clusterIndices.lastOrNull { pos ->
             charToGroupTone[word[pos]]!!.first in modifiedGroupIndices
