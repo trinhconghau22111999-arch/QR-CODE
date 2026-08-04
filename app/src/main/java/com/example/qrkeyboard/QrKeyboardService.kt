@@ -19,7 +19,6 @@ import android.os.Vibrator
 import android.os.VibratorManager
 import android.util.TypedValue
 import android.view.Gravity
-import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
@@ -1480,47 +1479,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             )
             addView(btn)
-        }
-    }
-
-    /** Xoa TOAN BO cache (ca 4 trang) roi rebuild container tu dau - can
-     *  thiet khi doi MAU VIEN hoac NEN/CHU (mau da "nuong" san vao tung
-     *  Drawable/mau chu ngay luc build). [mode] (dang o trang nao) VAN GIU
-     *  NGUYEN. Chi goi khi nguoi dung THAT SU doi cai dat (hiem gap, khong
-     *  phai moi lan go phim) nen chi phi rebuild toan bo la chap nhan duoc -
-     *  KHONG anh huong toi toi uu "lazy build" ap dung cho luong go phim
-     *  binh thuong. */
-    private fun rebuildAllKeyboardPages() {
-        // SUA LOI nguoi dung phan anh ("doi mau xong, bam ve trang Chu cai
-        // la treo ban phim luon"): ham nay duoc goi TU BEN TRONG onClick cua
-        // CHINH nut vua duoc cham (o mau / nut tron doi nen) - nut do la con
-        // cua trang Ky hieu SAP BI THAY THE ngay lap tuc qua setInputView()
-        // neu goi DONG BO tai day. Thay the toan bo cay View NGAY TRONG LUC
-        // he thong Android con dang xu ly/dispatch chinh su kien cham do
-        // (onClick chi la MOT buoc giua chung cua qua trinh xu ly MotionEvent,
-        // chua ket thuc hoan toan khi onClick tra ve) la nguyen nhan kinh
-        // dien gay treo/crash IME - Android co the tiep tuc dong bo/goi
-        // callback tren cay View VUA BI THAO ROI KHOI CHA, dan den loi
-        // trang thai lam hong ca ban phim cho toi khi nguoi dung dong/mo lai
-        // (dung y het hien tuong "phai khoi dong lai ca ban phim moi dung
-        // duoc" nguoi dung phan anh).
-        //
-        // SUA: HOAN viec xoa cache + thay View lai bang Handler.post{} - dua
-        // vao cuoi hang doi cua main thread, chi thuc su chay SAU KHI toan
-        // bo qua trinh xu ly su kien cham hien tai (bao gom ca dispatch cua
-        // Android sau khi onClick tra ve) da xong HOAN TOAN. Luc do cay View
-        // cu khong con dang "ban ron" giua chung nua, thay the an toan,
-        // khong con treo/crash, va mau/theme moi cung ap dung NGAY LAP TUC
-        // (chi tre mot nhip rat nho, khong the nhan ra bang mat thuong) cho
-        // CA trang dang hien (vd Ky hieu) LAN trang Chu cai/cac trang khac.
-        val mainHandler = Handler(Looper.getMainLooper())
-        mainHandler.post {
-            cachedNumbersView = null
-            cachedSymbolsView = null
-            cachedNumpadView = null
-            keyboardRootContainer = null
-            lettersPageView = null
-            setInputView(buildKeyboardContainer())
         }
     }
 

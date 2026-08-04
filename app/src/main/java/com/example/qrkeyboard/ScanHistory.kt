@@ -82,10 +82,6 @@ object ScanHistoryStore {
         return list.sortedByDescending { it.timestampMs }
     }
 
-    fun clearToday(ctx: Context) {
-        prefs(ctx).edit().putString(KEY_ENTRIES, "[]").apply()
-    }
-
     private fun readArray(p: android.content.SharedPreferences): JSONArray = try {
         JSONArray(p.getString(KEY_ENTRIES, "[]"))
     } catch (e: Exception) {
