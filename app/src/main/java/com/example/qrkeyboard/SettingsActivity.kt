@@ -421,7 +421,18 @@ class SettingsActivity : AppCompatActivity() {
                 if (!dir.exists()) dir.mkdirs()
                 val file = File(dir, fileName)
                 FileOutputStream(file).use { XlsxWriter.write(it, "QuetHomNay", rows) }
-                Uri.fromFile(file)
+                // SUA LOI (crash "app tu tat khi chuyen man"): TRUOC DAY dung
+                // Uri.fromFile(file) - tao ra "file://" Uri. App nay target
+                // API 34 (>= 24) nen he thong CAM TUYET DOI truyen loai Uri
+                // nay qua Intent sang app khac (vd o nhanh "share" ngay ben
+                // duoi ham nay) - se nem FileUriExposedException, CRASH APP
+                // NGAY LAP TUC khi man hinh chia se cua he thong vua hien
+                // len. Dung FileProvider (xem AndroidManifest.xml +
+                // res/xml/file_paths.xml) de tao "content://" Uri AN TOAN
+                // thay the - hoat dong dung tren MOI phien ban Android.
+                androidx.core.content.FileProvider.getUriForFile(
+                    this, "${packageName}.fileprovider", file
+                )
             }
         } catch (e: Exception) {
             null

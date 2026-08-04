@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    SUA LOI (crash "app tu tat khi chuyen man" khi Chia se Excel tren may
+    Android cu, duoi Android 10/API 29): file_paths cho FileProvider - chi
+    cho phep truy cap thu muc Downloads CONG KHAI (external-path), dung
+    "Downloads/" lam ten - PHAI khop voi noi [SettingsActivity.doExport()]
+    thuc su luu file (Environment.DIRECTORY_DOWNLOADS) o nhanh SDK < Q.
+-->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <external-path name="downloads" path="Download/" />
+</paths>

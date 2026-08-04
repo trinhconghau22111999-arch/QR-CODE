@@ -2074,7 +2074,17 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             val intent = Intent(this, QrCameraPermissionActivity::class.java).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
-            startActivity(intent)
+            // SUA (gop vao nhom sua loi "app tu tat khi chuyen man"): TRUOC
+            // DAY startActivity() o day KHONG duoc bao ve - neu nem loi (vd
+            // ActivityNotFoundException/SecurityException trong truong hop
+            // hiem gap) se lam crash toan bo tien trinh ban phim NGAY LUC
+            // dang chuyen sang man xin quyen Camera.
+            try {
+                startActivity(intent)
+            } catch (e: Exception) {
+                onCameraPermissionResult = null
+                Toast.makeText(this, "Kh\u00f4ng m\u1edf \u0111\u01b0\u1ee3c m\u00e0n xin quy\u1ec1n Camera", Toast.LENGTH_SHORT).show()
+            }
             return
         }
 

@@ -70,5 +70,23 @@
                 android:resource="@xml/method" />
         </service>
 
+        <!-- SUA LOI (crash "app tu tat khi chuyen man" - FileUriExposedException):
+             app target API 34 (xem app/build.gradle) nen tu Android 7.0 (API
+             24) tro len, he thong CAM tuyet doi truyen "file://" Uri qua
+             Intent sang app khac (vd khi bam "Chia se Excel" o SettingsActivity,
+             nhanh Android < 10 dung Uri.fromFile() truoc day) - lam CRASH
+             ngay khi man hinh chia se cua he thong hien len. FileProvider
+             nay tao "content://" Uri AN TOAN thay the (xem
+             SettingsActivity.doExport() va res/xml/file_paths.xml). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
     </application>
 </manifest>
