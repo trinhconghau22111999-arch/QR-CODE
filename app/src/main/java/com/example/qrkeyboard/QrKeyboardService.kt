@@ -2785,18 +2785,36 @@ private object VietnameseTelex {
         // THEM (sua loi go "rever"): CHI tim trong pham vi am tiet CUOI CUNG
         // dang go - khong "voi" qua ranh gioi phu am de gop voi nguyen am o
         // am tiet TRUOC do (xem giai thich chi tiet o [lastSyllableStart]).
+        // CHi ap dung cho truong hop go LAP LAI 1 nguyen am (a/e/o) - vi day
+        // la truong hop THAT SU dang go THEM 1 nguyen am moi, co the la khoi
+        // dau 1 am tiet MOI.
         val syllableStart = lastSyllableStart(word)
         fun lastIndexOfGroup(groupIdx: Int): Int? =
             word.indices.lastOrNull { i -> i >= syllableStart && charToGroupTone[word[i]]?.first == groupIdx }
+
+        // SUA LOI nguoi dung phan anh: "van" + "w" khong ra "văn" ma giu
+        // nguyen "vanw". NGUYEN NHAN: phim 'w' KHONG PHAI dang go THEM 1
+        // nguyen am moi - no la 1 phim "BIEN DOI" nguyen am GAN NHAT co san
+        // trong tu (a->ă, o->ơ, u->ư), tuong tu dau thanh (s/f/r/x/j) chu
+        // KHONG giong truong hop go LAP LAI mot nguyen am (a/e/o) o tren. Vi
+        // vay 'w' (va tuong tu, dau thanh trong [applyTone]) PHAI duoc tim
+        // KHONG GIOI HAN pham vi am tiet - "van" (v-a-n) la 1 am tiet BINH
+        // THUONG, "n" chi la phu am CUOI (coda) bthg, hoan toan hop le, KHONG
+        // phai la ranh gioi sang 1 am tiet moi (vi chua co nguyen am nao
+        // khac go THEM sau no ca). Dung ham nay (khong bi chan boi
+        // syllableStart) rieng cho nhanh 'w' o duoi.
+        fun lastIndexOfGroupAny(groupIdx: Int): Int? =
+            word.indices.lastOrNull { i -> charToGroupTone[word[i]]?.first == groupIdx }
 
         // Case (hoa/thuong) THAT SU cua ky tu dang o vi tri [pos] trong tu,
         // dua vao [wordCased] - false (coi nhu thuong) neu vi tri khong hop
         // le (hiem gap, phong ve).
         fun isUpperAt(pos: Int): Boolean = wordCased.getOrNull(pos)?.isUpperCase() ?: false
 
-        fun toggleGroup(fromGroupIdx: Int, toGroupIdx: Int): String? {
-            val fromIdx = lastIndexOfGroup(fromGroupIdx)
-            val toIdx = lastIndexOfGroup(toGroupIdx)
+        fun toggleGroup(fromGroupIdx: Int, toGroupIdx: Int, unrestricted: Boolean = false): String? {
+            val lookup = if (unrestricted) ::lastIndexOfGroupAny else ::lastIndexOfGroup
+            val fromIdx = lookup(fromGroupIdx)
+            val toIdx = lookup(toGroupIdx)
             val toIsNearer = toIdx != null && (fromIdx == null || toIdx > fromIdx)
             if (toIsNearer) {
                 val toneIdx = charToGroupTone[word[toIdx!!]]!!.second
@@ -2843,10 +2861,10 @@ private object VietnameseTelex {
                 } else {
                     val pairs = listOf(0 to 1, 6 to 8, 9 to 10)
                     val best = pairs.mapNotNull { (fromG, toG) ->
-                        val pos = maxOf(lastIndexOfGroup(fromG) ?: -1, lastIndexOfGroup(toG) ?: -1)
+                        val pos = maxOf(lastIndexOfGroupAny(fromG) ?: -1, lastIndexOfGroupAny(toG) ?: -1)
                         if (pos < 0) null else Triple(pos, fromG, toG)
                     }.maxByOrNull { it.first }
-                    if (best == null) null else toggleGroup(best.second, best.third)
+                    if (best == null) null else toggleGroup(best.second, best.third, unrestricted = true)
                 }
             }
             'd' -> {
