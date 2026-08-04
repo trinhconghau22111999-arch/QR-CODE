@@ -1829,10 +1829,28 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // [capitalizeAppliedAtPrefixLen]) - xem [keyIsUpper] ben duoi va
         // [VietnameseTelex.applyDoubleModifier].
         val oldWordCased = currentWordCased.toString()
-        val keyIsUpper = isShiftOn || (
-            capitalizeNextLetter &&
-                (capitalizeAppliedAtPrefixLen == null || capitalizeAppliedAtPrefixLen == oldWordLower.length)
-        )
+        // SUA LOI nguoi dung phan anh: chu cai DAU CAU (viet hoa tu dong)
+        // khong gop duoc dau khi go lap (vd "Aa" khong ra "Â", "Ee" khong ra
+        // "Ê"...). NGUYEN NHAN: dieu kien cu "capitalizeAppliedAtPrefixLen ==
+        // oldWordLower.length" so sanh SAI 2 dai luong khac nhau -
+        // [capitalizeAppliedAtPrefixLen] la VI TRI CO DINH (luon la 0, ghi
+        // nhan luc tu con rong) cua ky tu da duoc viet hoa tu dong, trong
+        // khi [oldWordLower.length] la DO DAI tu HIEN TAI (da tang len 1
+        // ngay sau ky tu dau tien) - 2 gia tri nay KHONG BAO GIO bang nhau
+        // ke tu ky tu THU HAI tro di, lam [keyIsUpper] luon tinh sai thanh
+        // false cho lan go thu hai (dù dau cau van dang trong trang thai
+        // viet hoa), khien [VietnameseTelex.applyDoubleModifier] tuong nham
+        // la nguoi dung dang co y go LECH hoa/thuong (vd "Aa" muon giu
+        // nguyen, khong gop) roi CHAN gop dau. SUA: CHi can [capitalizeNextLetter]
+        // con dang bat (true) la coi nhu keyIsUpper=true - co gia tri nay
+        // dam bao dung vi no da duoc tu dong tat ([justConsumedSingleShift])
+        // ngay khi ky tu tiep theo KHONG con lien quan toi vi tri viet hoa
+        // nua, nen neu no VAN con true nghia la van dang trong pham vi hop
+        // le de gop/viet hoa. Truong hop nguoi dung THAT SU tu bam Shift roi
+        // go chu thuong (khong lien quan viet hoa tu dong dau cau) van duoc
+        // phat hien dung binh thuong qua [isShiftOn] doi rieng cho tung lan
+        // go, khong bi anh huong boi thay doi nay.
+        val keyIsUpper = isShiftOn || capitalizeNextLetter
         val wordAlreadyHasLiteralFOrW = oldWordLower.any { it == 'f' || it == 'w' }
         val newWordLower = if (wordAlreadyHasLiteralFOrW) {
             oldWordLower + lower
