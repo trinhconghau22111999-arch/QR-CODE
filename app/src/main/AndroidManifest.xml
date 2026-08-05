@@ -13,6 +13,23 @@
         android:maxSdkVersion="28" />
     <uses-feature android:name="android.hardware.camera.any" android:required="true" />
 
+    <!-- SUA LOI (tinh nang nhap lieu bang giong noi luon bao "may khong ho
+         tro" du may co cai Google/tro ly ao): tu Android 11 (API 30), he
+         thong AN MAC DINH moi app/component khac khoi tam nhin cua app nay
+         (package visibility) - [resolveActivity()]/[startActivity()] trong
+         VoiceInputActivity.kt se KHONG "thay" duoc app xu ly
+         RecognizerIntent.ACTION_RECOGNIZE_SPEECH (vd Google) NEU khong khai
+         bao truoc o day, DU may co cai san. App nay target API 34 (chac
+         chan bi anh huong) nen BAT BUOC phai co khai bao nay. -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+        <intent>
+            <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="true"
         android:icon="@mipmap/ic_launcher"
