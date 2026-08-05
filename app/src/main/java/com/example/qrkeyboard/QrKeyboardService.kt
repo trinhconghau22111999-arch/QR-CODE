@@ -2506,33 +2506,46 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
-        if (finishingInput) {
-            cancelPendingFinishHide()
-            val hideRunnable = Runnable {
-                pendingFinishHide = null
-                if (qrOverlayView != null) {
-                    // Khung quet QR dang mo luc ban phim THAT SU tat - GIU
-                    // NGUYEN trang phim hien tai (KHONG dat co reset ve Chu
-                    // cai), chi danh dau de tu MO LAI khung quet o lan mo
-                    // ban phim ke tiep - dung yeu cau "tru phi co mo qr
-                    // quet" cua nguoi dung.
-                    reopenQrScannerOnNextStart = true
-                    reopenQrScannerDeadline =
-                        android.os.SystemClock.uptimeMillis() + QR_AUTO_REOPEN_WINDOW_MS
-                } else {
-                    // THEM (theo yeu cau nguoi dung): khung quet QR KHONG mo
-                    // luc nay - day la luc ban phim THAT SU bi "tat" (da qua
-                    // debounce, khong phai gian doan tam thoi) - danh dau de
-                    // lan MO LAI ke tiep ([onStartInputView]) tu dong quay
-                    // ve trang Chu cai, bat ke la cung mot o nhap cu hay o
-                    // nhap moi.
-                    shouldResetModeToLettersOnNextStart = true
-                }
-                hideQrOverlay()
+        // SUA LOI nguoi dung phan anh ("dang go binh thuong, dong ban phim
+        // xuong roi bat lai khong tu ve trang Chu cai"): TRUOC DAY toan bo
+        // logic duoi day CHi chay khi [finishingInput] = true - nhung theo
+        // co che InputMethodService cua Android, hanh dong "dong ban phim
+        // xuong" THONG THUONG nhat (bam mui ten xuong / Back / vuot xuong)
+        // MA VAN O NGUYEN trong CUNG mot o nhap (khong chuyen app/o nhap
+        // khac) lai goi onFinishInputView VOI finishingInput = FALSE (chi
+        // "an" ban phim, KHONG ket thuc phien nhap lieu) - nen toan bo logic
+        // (bao gom viec dat co reset ve trang Chu cai) CHUA BAO GIO duoc
+        // chay cho dung tinh huong pho bien nay. SUA: bo dieu kien
+        // if(finishingInput), luon chay logic ben duoi moi khi ham nay duoc
+        // goi (bat ke true/false) - co che debounce co san (cho
+        // [FINISH_INPUT_HIDE_DEBOUNCE_MS], huy neu ban phim mo lai nhanh
+        // qua [cancelPendingFinishHide] trong onStartInputView) da tu loc
+        // dung truong hop gian doan tam thoi (vd chuyen app nhanh roi quay
+        // lai ngay) roi nen an toan khi bo dieu kien nay.
+        cancelPendingFinishHide()
+        val hideRunnable = Runnable {
+            pendingFinishHide = null
+            if (qrOverlayView != null) {
+                // Khung quet QR dang mo luc ban phim THAT SU tat - GIU
+                // NGUYEN trang phim hien tai (KHONG dat co reset ve Chu
+                // cai), chi danh dau de tu MO LAI khung quet o lan mo
+                // ban phim ke tiep - dung yeu cau "tru phi co mo qr
+                // quet" cua nguoi dung.
+                reopenQrScannerOnNextStart = true
+                reopenQrScannerDeadline =
+                    android.os.SystemClock.uptimeMillis() + QR_AUTO_REOPEN_WINDOW_MS
+            } else {
+                // Khung quet QR KHONG mo luc nay - day la luc ban phim
+                // THAT SU bi "dong" (da qua debounce, khong phai gian
+                // doan tam thoi) - danh dau de lan MO LAI ke tiep
+                // ([onStartInputView]) tu dong quay ve trang Chu cai,
+                // bat ke la cung mot o nhap cu hay o nhap moi.
+                shouldResetModeToLettersOnNextStart = true
             }
-            pendingFinishHide = hideRunnable
-            finishInputHideHandler.postDelayed(hideRunnable, FINISH_INPUT_HIDE_DEBOUNCE_MS)
+            hideQrOverlay()
         }
+        pendingFinishHide = hideRunnable
+        finishInputHideHandler.postDelayed(hideRunnable, FINISH_INPUT_HIDE_DEBOUNCE_MS)
         hideKeyPreview()
         deleteRepeatHandler.removeCallbacksAndMessages(null)
     }
