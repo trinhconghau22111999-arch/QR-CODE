@@ -173,6 +173,23 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             onCameraPermissionResult = null
         }
 
+        /** THEM (theo yeu cau nguoi dung, tinh nang nhap lieu bang giong noi):
+         *  callback tinh, duoc [VoiceInputActivity] goi ngay sau khi he
+         *  thong nhan dien giong noi xong (hoac nguoi dung huy/loi). Cung
+         *  ly do can 1 Activity rieng nhu luong xin quyen Camera - Service
+         *  khong the tu mo man hinh nhan dien giong noi cua he thong. [text]
+         *  la null neu nguoi dung huy hoac khong nhan dien duoc gi. */
+        private var onVoiceInputResult: ((text: String?) -> Unit)? = null
+
+        fun notifyVoiceInputResult(text: String?) {
+            try {
+                onVoiceInputResult?.invoke(text)
+            } catch (e: Exception) {
+                // Bo qua - Service co the da bi huy truoc khi callback chay.
+            }
+            onVoiceInputResult = null
+        }
+
         /** Khoang cach toi thieu (dp) ngon tay phai di chuyen theo chieu
          *  ngang tren phim cach de tinh la mot cu VUOT (swipe) doi ngon ngu,
          *  thay vi mot cai CHAM (tap) chen dau cach binh thuong. */
@@ -1490,13 +1507,80 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 }
             }
         }
+        // THEM (theo yeu cau nguoi dung, tinh nang nhap lieu bang giong noi):
+        // nut hinh micro, DUNG HANG voi nut "Cai dat" o tren, canh SAT BEN
+        // PHAI CUNG cua hang (dung 1 View "dem" co trong so (weight) = 1f de
+        // day no ra sat le phai, xem [addView] ben duoi).
+        val micBtn = Button(this).apply {
+            text = "\ud83c\udfa4"
+            textSize = 18f
+            setTextColor(if (isDarkTheme) Color.WHITE else Color.BLACK)
+            stateListAnimator = null
+            elevation = 0f
+            outlineProvider = null
+            background = buildGlowKeyBackground(cornerDp = 10, borderColor = glowColor, borderWidthDp = 2)
+            setPadding(dp(14), dp(10), dp(14), dp(10))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(keyHeightDp)
+            ).apply { setMargins(dp(4), dp(3), dp(4), dp(6)) }
+            isHapticFeedbackEnabled = true
+            contentDescription = "Nh\u1eadp li\u1ec7u b\u1eb1ng gi\u1ecdng n\u00f3i"
+            setOnClickListener {
+                vibrateKeyPress()
+                playKeyClickTone()
+                startVoiceInput()
+            }
+        }
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             )
             addView(btn)
+            addView(View(this@QrKeyboardService).apply {
+                layoutParams = LinearLayout.LayoutParams(0, 0, 1f)
+            })
+            addView(micBtn)
         }
+    }
+
+    /** THEM (theo yeu cau nguoi dung): mo man hinh nhan dien giong noi cua he
+     *  thong qua [VoiceInputActivity] (xem giai thich chi tiet trong file do
+     *  - Service khong the tu mo man hinh nay, can 1 Activity trung gian
+     *  giong het luong xin quyen Camera). Uu tien ngon ngu THEO DUNG ngon
+     *  ngu dang active tren ban phim luc bam nut (xem [LanguagePrefs]), de
+     *  nhan dien dung thu tieng nguoi dung dinh noi. */
+    private fun startVoiceInput() {
+        onVoiceInputResult = { text ->
+            if (!text.isNullOrBlank()) insertRecognizedVoiceText(text)
+        }
+        try {
+            val locale = VoiceInputActivity.localeForLangCode(activeLangCode)
+            startActivity(Intent(this, VoiceInputActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                putExtra(VoiceInputActivity.EXTRA_LOCALE, locale)
+            })
+        } catch (e: Exception) {
+            onVoiceInputResult = null
+            Toast.makeText(this, "Kh\u00f4ng m\u1edf \u0111\u01b0\u1ee3c nh\u1eadp li\u1ec7u b\u1eb1ng gi\u1ecdng n\u00f3i", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** THEM: chen van ban da nhan dien tu giong noi vao vi tri con tro.
+     *  Chen NGUYEN VAN qua commitText (KHONG di qua tung ky tu cua bo xu ly
+     *  Telex nhu insertVietnameseChar) - vi day la 1 cau/cum tu DA HOAN
+     *  CHINH tu he thong nhan dien (da co san dau cau tieng Viet neu co), di
+     *  qua Telex tung ky tu se lam SAI/mat dau. Tu dong them 1 dau cach phia
+     *  truoc neu ngay truoc con tro dang co san 1 ky tu KHONG PHAI khoang
+     *  trang (tranh dinh lien vao tu truoc do). */
+    private fun insertRecognizedVoiceText(text: String) {
+        val ic = currentInputConnection ?: return
+        currentWord.clear()
+        currentWordCased.clear()
+        val before = ic.getTextBeforeCursor(1, 0)?.toString()
+        val needsLeadingSpace = !before.isNullOrEmpty() && !before.last().isWhitespace()
+        selfInitiatedChange = true
+        ic.commitText(if (needsLeadingSpace) " $text" else text, 1)
     }
 
     /** Phim cach: chuc nang chinh la chen dau cach khi CHAM binh thuong.

@@ -40,6 +40,18 @@
             android:excludeFromRecents="true"
             android:taskAffinity="com.example.qrkeyboard.qrpermission" />
 
+        <!-- THEM (theo yeu cau nguoi dung, tinh nang nhap lieu bang giong
+             noi): Activity toi gian, CHI dung de mo man hinh nhan dien giong
+             noi cua he thong (xem giai thich chi tiet trong
+             VoiceInputActivity.kt). Cung mau voi QrCameraPermissionActivity
+             o tren. -->
+        <activity
+            android:name=".VoiceInputActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Transparent"
+            android:excludeFromRecents="true"
+            android:taskAffinity="com.example.qrkeyboard.voiceinput" />
+
         <!-- Man Cai dat rieng cua app (mau sac, gioi han quet trung lap,
              du lieu quet hom nay + xuat/chia se Excel) - mo tu nut "Cai dat"
              tren trang Ky hieu cua ban phim. THEM (theo yeu cau nguoi dung):
