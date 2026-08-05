@@ -11,9 +11,11 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
+import android.provider.Settings
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
@@ -86,6 +88,17 @@ class SettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // THEM (theo yeu cau nguoi dung): ngay khi mo icon app (moi tao
+        // Activity nay lan dau, KHONG lap lai moi lan quay lai man hinh nay
+        // qua onResume - tranh vong lap "dua qua dua lai" phien toai neu
+        // nguoi dung bam Back ma chua bat) - kiem tra he thong DA bat ban
+        // phim QR Keyboard trong danh sach ban phim duoc phep dung chua. Neu
+        // CHUA, mo thang trang chon ban phim he thong
+        // (Settings.ACTION_INPUT_METHOD_SETTINGS) de nguoi dung bat len -
+        // man Cai dat cua app van duoc dung ben duoi, quay lai (Back) tu
+        // trang he thong la thay ngay.
+        ensureKeyboardEnabled()
+
         val root = ScrollView(this).apply {
             setBackgroundColor(bgColor)
             layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
@@ -105,6 +118,27 @@ class SettingsActivity : AppCompatActivity() {
         content.addView(buildScanLimitSection())
         content.addView(spacer(24))
         content.addView(buildHistorySection())
+    }
+
+    /** THEM (theo yeu cau nguoi dung): kiem tra he thong DA bat Ban phim QR
+     *  Keyboard trong danh sach ban phim duoc phep dung (Settings > He thong
+     *  > Ban phim > Quan ly ban phim) hay CHUA - day la buoc RIENG, KHAC voi
+     *  viec DA CHON no lam ban phim MAC DINH dang go (khong the/khong nen tu
+     *  dong chuyen ban phim mac dinh thay nguoi dung). Neu CHUA bat, mo
+     *  thang trang chon ban phim he thong de nguoi dung bat len. Boc
+     *  try/catch phong ve - khong de loi truy van/mo Settings (hiem gap) lam
+     *  crash luc vua mo app. */
+    private fun ensureKeyboardEnabled() {
+        try {
+            val imm = getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager ?: return
+            val myImeId = "$packageName/${QrKeyboardService::class.java.name}"
+            val alreadyEnabled = imm.enabledInputMethodList.any { it.id == myImeId }
+            if (!alreadyEnabled) {
+                startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
+            }
+        } catch (e: Exception) {
+            // Bo qua - khong de loi hiem gap o day chan nguoi dung vao man Cai dat.
+        }
     }
 
     override fun onResume() {
