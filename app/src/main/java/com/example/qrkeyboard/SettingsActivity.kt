@@ -48,12 +48,32 @@ import java.util.Locale
  */
 class SettingsActivity : AppCompatActivity() {
 
+    companion object {
+        /** THEM (theo yeu cau nguoi dung): key Intent extra - QrKeyboardService
+         *  gan gia tri true khi mo man nay TU NUT "Cai dat" ngay ben trong
+         *  ban phim, bao cho [onCreate] biet de BO QUA buoc kiem tra/chuyen
+         *  huong sang trang chon ban phim he thong (chi thuc hien buoc do
+         *  khi mo TU ICON APP tren man hinh chinh). */
+        const val EXTRA_SKIP_KEYBOARD_CHECK = "extra_skip_keyboard_check"
+    }
+
     private lateinit var colorSwatchContainer: LinearLayout
     private lateinit var themeToggleBtn: Button
     private lateinit var limitValueText: TextView
     private lateinit var historyContainer: LinearLayout
     private lateinit var languageListContainer: LinearLayout
     private lateinit var languageStatusText: TextView
+    /** THEM (theo yeu cau nguoi dung, kieu dau check): tap hop CAC MA NGON
+     *  NGU dang duoc "tick" (chon) trong luc nguoi dung TUONG TAC voi phan
+     *  Ngon ngu - dung LinkedHashSet de GIU DUNG THU TU tick (ngon ngu tick
+     *  TRUOC la ngon ngu 1). Khoi tao tu 2 ngon ngu DA LUU san
+     *  ([LanguagePrefs]). CHi thuc su GHI ("Luu") xuong [LanguagePrefs] khi
+     *  tap hop nay co DUNG 2 phan tu tro lai (xem [toggleLanguage]) - trong
+     *  luc chi co 0 hoac 1 ngon ngu duoc tick (nguoi dung vua bo tick 1/2 de
+     *  chon lai), 2 ngon ngu DA LUU truoc do o [LanguagePrefs] VAN GIU
+     *  NGUYEN khong doi (ban phim van dang dung dung cap ngon ngu CU cho
+     *  toi khi nguoi dung tick du 2 ngon ngu MOI). */
+    private lateinit var pendingSelectedLanguages: LinkedHashSet<String>
     private var historyPanelOpen = false
     private var pendingExportAction: (() -> Unit)? = null
 
@@ -90,16 +110,34 @@ class SettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // THEM (theo yeu cau nguoi dung): ngay khi mo icon app (moi tao
-        // Activity nay lan dau, KHONG lap lai moi lan quay lai man hinh nay
-        // qua onResume - tranh vong lap "dua qua dua lai" phien toai neu
-        // nguoi dung bam Back ma chua bat) - kiem tra he thong DA bat ban
-        // phim QR Keyboard trong danh sach ban phim duoc phep dung chua. Neu
-        // CHUA, mo thang trang chon ban phim he thong
-        // (Settings.ACTION_INPUT_METHOD_SETTINGS) de nguoi dung bat len -
-        // man Cai dat cua app van duoc dung ben duoi, quay lai (Back) tu
-        // trang he thong la thay ngay.
-        ensureKeyboardEnabled()
+        // THEM (theo yeu cau nguoi dung): CHi kiem tra + chuyen huong sang
+        // trang chon ban phim he thong khi mo TU ICON APP tren man hinh
+        // chinh (KHONG co [EXTRA_SKIP_KEYBOARD_CHECK]) - khi mo TU NUT "Cai
+        // dat" NGAY BEN TRONG ban phim thi BO QUA buoc nay hoan toan (co
+        // [EXTRA_SKIP_KEYBOARD_CHECK] = true), vi ro rang ban phim DANG
+        // duoc dung/da bat roi, kiem tra lai la thua va gay phien luc dang
+        // go do.
+        val skipKeyboardCheck = intent?.getBooleanExtra(EXTRA_SKIP_KEYBOARD_CHECK, false) ?: false
+        if (!skipKeyboardCheck && !isKeyboardEnabled()) {
+            try {
+                startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
+            } catch (e: Exception) {
+                // Bo qua - khong de loi hiem gap o day chan nguoi dung.
+            }
+            // SUA LOI nguoi dung phan anh ("cai dat xong bam thoat ra bi
+            // lap lai trang 1 cai roi moi thoat"): TRUOC DAY Activity nay
+            // KHONG finish() o day - van con "song" duoi trang he thong vua
+            // mo. Nguoi dung bat ban phim xong bam Back se QUAY LAI man Cai
+            // dat nay (hien ra 1 lan nua), phai bam Back THEM 1 LAN NUA moi
+            // thuc su thoat khoi app - "lap lai trang" dung nhu mo ta. SUA:
+            // finish() NGAY va return - KHONG build giao dien Cai dat trong
+            // truong hop nay - bam Back tu trang he thong se ra thang MAN
+            // HINH CHINH/app truoc do, khong con quay lai day nua. Lan sau
+            // mo lai app (da bat ban phim roi) se vao thang man Cai dat binh
+            // thuong, khong con bi chuyen huong nua.
+            finish()
+            return
+        }
 
         val root = ScrollView(this).apply {
             setBackgroundColor(bgColor)
@@ -128,21 +166,15 @@ class SettingsActivity : AppCompatActivity() {
      *  Keyboard trong danh sach ban phim duoc phep dung (Settings > He thong
      *  > Ban phim > Quan ly ban phim) hay CHUA - day la buoc RIENG, KHAC voi
      *  viec DA CHON no lam ban phim MAC DINH dang go (khong the/khong nen tu
-     *  dong chuyen ban phim mac dinh thay nguoi dung). Neu CHUA bat, mo
-     *  thang trang chon ban phim he thong de nguoi dung bat len. Boc
-     *  try/catch phong ve - khong de loi truy van/mo Settings (hiem gap) lam
-     *  crash luc vua mo app. */
-    private fun ensureKeyboardEnabled() {
-        try {
-            val imm = getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager ?: return
-            val myImeId = "$packageName/${QrKeyboardService::class.java.name}"
-            val alreadyEnabled = imm.enabledInputMethodList.any { it.id == myImeId }
-            if (!alreadyEnabled) {
-                startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
-            }
-        } catch (e: Exception) {
-            // Bo qua - khong de loi hiem gap o day chan nguoi dung vao man Cai dat.
-        }
+     *  dong chuyen ban phim mac dinh thay nguoi dung). Boc try/catch phong
+     *  ve - loi truy van (hiem gap) se coi nhu "da bat" (tra ve true) de
+     *  KHONG chan nguoi dung vao man Cai dat vi 1 loi vat vanh. */
+    private fun isKeyboardEnabled(): Boolean = try {
+        val imm = getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager
+        val myImeId = "$packageName/${QrKeyboardService::class.java.name}"
+        imm?.enabledInputMethodList?.any { it.id == myImeId } ?: true
+    } catch (e: Exception) {
+        true
     }
 
     override fun onResume() {
@@ -205,12 +237,17 @@ class SettingsActivity : AppCompatActivity() {
      *  chuyen doi qua lai GIUA 2 ngon ngu chon o day, giong het co che VI/EN
      *  cu. MAC DINH van la Tieng Viet + Tieng Anh neu chua tung doi.
      *
-     *  Cach chon: bam vao 1 ngon ngu CHUA duoc chon se THAY THE ngon ngu
-     *  duoc chon LAU HON trong 2 ngon ngu hien tai (kieu FIFO - "vao sau
-     *  cung, o lai lau nhat thi bi thay") - luon giu dung 2 ngon ngu duoc
-     *  chon, khong bao gio it hon. Bam vao ngon ngu DA duoc chon roi thi
-     *  khong lam gi (da dang duoc chon san). */
+     *  Cach chon (kieu dau check, theo dung yeu cau nguoi dung): moi ngon
+     *  ngu la 1 dong co the TICK/BO TICK. Muon doi 1 ngon ngu: BO TICH no
+     *  truoc (luc nay chi con 1 ngon ngu duoc tick), roi TICK ngon ngu moi
+     *  muon dung - luc do du 2 tick tro lai se TU DONG LUU. Muon doi CA 2:
+     *  bo tich CA HAI truoc, roi tick 2 ngon ngu moi. KHONG the tick qua 2
+     *  ngon ngu cung luc (se bao can bo tick bot truoc). */
     private fun buildLanguageSection(): View {
+        pendingSelectedLanguages = LinkedHashSet(
+            LanguagePrefs.getSelectedLanguages(this).toList()
+        )
+
         val wrap = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             background = cardBackground()
@@ -218,8 +255,9 @@ class SettingsActivity : AppCompatActivity() {
         }
         wrap.addView(sectionTitle("Ng\u00f4n ng\u1eef b\u00e0n ph\u00edm"))
         wrap.addView(sectionSubtitle(
-            "M\u1eb7c \u0111\u1ecbnh Ti\u1ebfng Vi\u1ec7t + Ti\u1ebfng Anh nh\u01b0 c\u0169. Ch\u1ecdn \u0111\u00fang 2 ng\u00f4n ng\u1eef " +
+            "M\u1eb7c \u0111\u1ecbnh Ti\u1ebfng Vi\u1ec7t + Ti\u1ebfng Anh nh\u01b0 c\u0169. \u0110\u00e1nh d\u1ea5u \u0111\u00fang 2 ng\u00f4n ng\u1eef " +
             "- vu\u1ed1t ngang tr\u00ean ph\u00edm c\u00e1ch \u0111\u1ec3 chuy\u1ec3n \u0111\u1ed5i qua l\u1ea1i gi\u1eefa 2 ng\u00f4n ng\u1eef n\u00e0y. " +
+            "Mu\u1ed1n \u0111\u1ed5i 1 ng\u00f4n ng\u1eef: b\u1ecf d\u1ea5u check ng\u00f4n ng\u1eef \u0111\u00f3 tr\u01b0\u1edbc r\u1ed3i ch\u1ecdn ng\u00f4n ng\u1eef m\u1edbi. " +
             "Ch\u1ec9 ri\u00eang Ti\u1ebfng Vi\u1ec7t c\u00f3 b\u1ed9 g\u00f5 d\u1ea5u Telex, c\u00e1c ng\u00f4n ng\u1eef kh\u00e1c g\u00f5 nh\u01b0 b\u00ecnh th\u01b0\u1eddng."
         ))
         wrap.addView(spacer(10))
@@ -240,41 +278,63 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun renderLanguageRows() {
-        val (l1, l2) = LanguagePrefs.getSelectedLanguages(this)
-        languageStatusText.text = "\u0110ang d\u00f9ng: ${LanguagePrefs.displayName(l1)}  \u2194  ${LanguagePrefs.displayName(l2)}"
+        languageStatusText.text = when (pendingSelectedLanguages.size) {
+            2 -> {
+                val (a, b) = pendingSelectedLanguages.toList()
+                "\u0110ang d\u00f9ng: ${LanguagePrefs.displayName(a)}  \u2194  ${LanguagePrefs.displayName(b)}"
+            }
+            1 -> "\u0110\u00e3 ch\u1ecdn ${LanguagePrefs.displayName(pendingSelectedLanguages.first())} " +
+                "- ch\u1ecdn th\u00eam 1 ng\u00f4n ng\u1eef n\u1eefa\u2026"
+            else -> "H\u00e3y ch\u1ecdn \u0111\u00fang 2 ng\u00f4n ng\u1eef"
+        }
 
         languageListContainer.removeAllViews()
         LanguagePrefs.SUPPORTED_LANGUAGES.forEach { (code, name, _) ->
-            val selected = code == l1 || code == l2
+            val checked = pendingSelectedLanguages.contains(code)
             val row = TextView(this).apply {
-                text = if (selected) "\u2713  $name" else "    $name"
-                setTextColor(if (selected) accentNow else textSecondary)
+                text = if (checked) "\u2611  $name" else "\u2610  $name"
+                setTextColor(if (checked) accentNow else textSecondary)
                 textSize = 15f
                 setPadding(dp(12), dp(10), dp(12), dp(10))
                 background = GradientDrawable().apply {
                     cornerRadius = dp(8).toFloat()
-                    setColor(if (selected) Color.parseColor("#221533") else Color.TRANSPARENT)
-                    if (selected) setStroke(dp(1), accentNow)
+                    setColor(if (checked) Color.parseColor("#221533") else Color.TRANSPARENT)
+                    if (checked) setStroke(dp(1), accentNow)
                 }
                 isClickable = true
                 isFocusable = true
                 layoutParams = LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
                 ).apply { bottomMargin = dp(6) }
-                setOnClickListener {
-                    if (!selected) selectLanguage(code)
-                }
+                setOnClickListener { toggleLanguage(code) }
             }
             languageListContainer.addView(row)
         }
     }
 
-    private fun selectLanguage(newCode: String) {
-        val (l1, l2) = LanguagePrefs.getSelectedLanguages(this)
-        // Thay the ngon ngu 1 (duoc chon LAU HON trong 2 ngon ngu hien tai)
-        // bang ngon ngu vua bam - ngon ngu 2 (con lai) truot len thanh ngon
-        // ngu 1 moi, giu dung luon co 2 ngon ngu duoc chon.
-        LanguagePrefs.setSelectedLanguages(this, l2, newCode)
+    private fun toggleLanguage(code: String) {
+        if (pendingSelectedLanguages.contains(code)) {
+            // Da duoc tick - BO TICH (cho phep giam ve 0 hoac 1, theo dung
+            // yeu cau nguoi dung "bo check roi chon lai").
+            pendingSelectedLanguages.remove(code)
+        } else {
+            if (pendingSelectedLanguages.size >= 2) {
+                Toast.makeText(
+                    this,
+                    "Ch\u1ec9 \u0111\u01b0\u1ee3c ch\u1ecdn 2 ng\u00f4n ng\u1eef - b\u1ecf d\u1ea5u check 1 ng\u00f4n ng\u1eef tr\u01b0\u1edbc \u0111\u00e3",
+                    Toast.LENGTH_SHORT
+                ).show()
+                return
+            }
+            pendingSelectedLanguages.add(code)
+        }
+        // Du dung 2 tick - TU DONG LUU ngay (khong can nut "Luu" rieng).
+        // Neu dang < 2 tick, KHONG ghi gi ca - 2 ngon ngu CU van con nguyen
+        // trong LanguagePrefs cho toi khi nguoi dung tick du 2 ngon ngu MOI.
+        if (pendingSelectedLanguages.size == 2) {
+            val (a, b) = pendingSelectedLanguages.toList()
+            LanguagePrefs.setSelectedLanguages(this, a, b)
+        }
         renderLanguageRows()
     }
 

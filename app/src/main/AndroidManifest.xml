@@ -69,16 +69,17 @@
             android:excludeFromRecents="true"
             android:taskAffinity="com.example.qrkeyboard.voiceinput" />
 
-        <!-- Man Cai dat rieng cua app (mau sac, gioi han quet trung lap,
-             du lieu quet hom nay + xuat/chia se Excel) - mo tu nut "Cai dat"
-             tren trang Ky hieu cua ban phim. THEM (theo yeu cau nguoi dung):
-             GIO LA MAN LAUNCHER CHINH cua app - bam icon app se mo thang toi
-             day thay vi MainActivity nhu truoc. Da BO taskAffinity rieng (vi
-             gio la task chinh cua app, khong con can tach task nua). -->
+        <!-- SUA LOI nguoi dung phan anh ("ten app luc cai/sau khi cai bi
+             sai, khong phai QR Keyboard"): activity nay TRUOC DAY co
+             android:label="Cài đặt" RIENG - vi day la man LAUNCHER (icon
+             app tren man hinh chinh tro thang vao day), label rieng do se
+             GHI DE len ten hien thi cua CHINH ICON APP (thanh "Cài đặt"
+             thay vi "QR Keyboard" ke thua tu <application> o tren) - la
+             nguyen nhan icon/ten app hien sai. BO han label rieng nay di,
+             de no TU KE THUA dung "QR Keyboard" tu <application>. -->
         <activity
             android:name=".SettingsActivity"
-            android:exported="true"
-            android:label="Cài đặt">
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

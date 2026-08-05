@@ -1501,6 +1501,14 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 try {
                     startActivity(Intent(this@QrKeyboardService, SettingsActivity::class.java).apply {
                         addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        // THEM (theo yeu cau nguoi dung): bao cho SettingsActivity
+                        // biet la dang mo TU BEN TRONG ban phim (nut "Cai dat")
+                        // - KHONG duoc tu dong mo "trang chon ban phim he thong"
+                        // trong truong hop nay (khac voi mo tu icon app tren man
+                        // hinh chinh). Neu nguoi dung dang go duoc bang CHINH ban
+                        // phim nay de bam vao nut do, ro rang no DA duoc bat/dang
+                        // active roi - kiem tra lai la thua va gay phien.
+                        putExtra(SettingsActivity.EXTRA_SKIP_KEYBOARD_CHECK, true)
                     })
                 } catch (e: Exception) {
                     android.util.Log.w("QrKeyboardService", "Khong mo duoc SettingsActivity: ${e.message}")
@@ -2129,7 +2137,33 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             lang1 = newLang1
             lang2 = newLang2
             if (!stillValid) activeIsLang1 = true
-            redrawKeyboard()
+
+            // SUA LOI nguoi dung phan anh ("doi mau gio no chi ap dung cho
+            // man 1", "doi nen phai ap dung ca ben trong phim luon"):
+            // TRUOC DAY goi [redrawKeyboard()] - ham nay CHi ve lai DUY NHAT
+            // trang Chu cai (toi uu de tranh giat khi go phim binh thuong -
+            // xem giai thich o [redrawKeyboard]), 3 trang con lai
+            // (Numbers/Symbols/Numpad) VAN GIU NGUYEN cache CU voi mau/nen
+            // "nuong san" tu truoc do - dan den hien tuong doi mau/nen
+            // CHi thay doi tren trang dang xem luc do, cac trang khac (va ca
+            // mau nen TUNG PHIM ben trong, vi keyFillColor() chi duoc tinh
+            // lai khi PHIM do THAT SU duoc XAY LAI) van giu mau cu cho toi
+            // khi bi buoc build lai vi ly do khac.
+            //
+            // SUA: xoa SACH toan bo cache (ca 4 trang + container goc) roi
+            // XAY LAI HOAN TOAN qua setInputView(buildKeyboardContainer())
+            // - day la truong hop nguoi dung CHU DONG doi mau/nen trong man
+            // Cai dat (RAT HIEM khi xay ra, khac han voi moi lan go phim
+            // binh thuong), nen chi phi xay lai toan bo ca 4 trang cung 1
+            // luc la HOAN TOAN chap nhan duoc, dam bao MOI thu (nen ngoai
+            // LAN mau nen tung phim ben trong) deu dung mau/nen MOI NHAT
+            // tren CA 4 trang ngay lap tuc.
+            cachedNumbersView = null
+            cachedSymbolsView = null
+            cachedNumpadView = null
+            lettersPageView = null
+            keyboardRootContainer = null
+            setInputView(buildKeyboardContainer())
         }
     }
 
