@@ -52,6 +52,8 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var themeToggleBtn: Button
     private lateinit var limitValueText: TextView
     private lateinit var historyContainer: LinearLayout
+    private lateinit var languageListContainer: LinearLayout
+    private lateinit var languageStatusText: TextView
     private var historyPanelOpen = false
     private var pendingExportAction: (() -> Unit)? = null
 
@@ -113,6 +115,8 @@ class SettingsActivity : AppCompatActivity() {
         content.addView(sectionTitle("C\u00e0i \u0111\u1eb7t QR Keyboard", big = true))
         content.addView(spacer(20))
 
+        content.addView(buildLanguageSection())
+        content.addView(spacer(24))
         content.addView(buildColorSection())
         content.addView(spacer(24))
         content.addView(buildScanLimitSection())
@@ -193,6 +197,88 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     // ───────────────────────── 1. Mau sac ─────────────────────────
+
+    // ─────────────────── 0. Ngon ngu ban phim (toi da 2) ───────────────────
+
+    /** THEM (theo yeu cau nguoi dung): chon 2 trong so cac ngon ngu duoc ho
+     *  tro (xem [LanguagePrefs]) - vuot ngang tren phim cach cua ban phim se
+     *  chuyen doi qua lai GIUA 2 ngon ngu chon o day, giong het co che VI/EN
+     *  cu. MAC DINH van la Tieng Viet + Tieng Anh neu chua tung doi.
+     *
+     *  Cach chon: bam vao 1 ngon ngu CHUA duoc chon se THAY THE ngon ngu
+     *  duoc chon LAU HON trong 2 ngon ngu hien tai (kieu FIFO - "vao sau
+     *  cung, o lai lau nhat thi bi thay") - luon giu dung 2 ngon ngu duoc
+     *  chon, khong bao gio it hon. Bam vao ngon ngu DA duoc chon roi thi
+     *  khong lam gi (da dang duoc chon san). */
+    private fun buildLanguageSection(): View {
+        val wrap = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = cardBackground()
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+        }
+        wrap.addView(sectionTitle("Ng\u00f4n ng\u1eef b\u00e0n ph\u00edm"))
+        wrap.addView(sectionSubtitle(
+            "M\u1eb7c \u0111\u1ecbnh Ti\u1ebfng Vi\u1ec7t + Ti\u1ebfng Anh nh\u01b0 c\u0169. Ch\u1ecdn \u0111\u00fang 2 ng\u00f4n ng\u1eef " +
+            "- vu\u1ed1t ngang tr\u00ean ph\u00edm c\u00e1ch \u0111\u1ec3 chuy\u1ec3n \u0111\u1ed5i qua l\u1ea1i gi\u1eefa 2 ng\u00f4n ng\u1eef n\u00e0y. " +
+            "Ch\u1ec9 ri\u00eang Ti\u1ebfng Vi\u1ec7t c\u00f3 b\u1ed9 g\u00f5 d\u1ea5u Telex, c\u00e1c ng\u00f4n ng\u1eef kh\u00e1c g\u00f5 nh\u01b0 b\u00ecnh th\u01b0\u1eddng."
+        ))
+        wrap.addView(spacer(10))
+
+        languageStatusText = TextView(this).apply {
+            setTextColor(accentNow)
+            textSize = 14f
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+        }
+        wrap.addView(languageStatusText)
+        wrap.addView(spacer(10))
+
+        languageListContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        wrap.addView(languageListContainer)
+        renderLanguageRows()
+
+        return wrap
+    }
+
+    private fun renderLanguageRows() {
+        val (l1, l2) = LanguagePrefs.getSelectedLanguages(this)
+        languageStatusText.text = "\u0110ang d\u00f9ng: ${LanguagePrefs.displayName(l1)}  \u2194  ${LanguagePrefs.displayName(l2)}"
+
+        languageListContainer.removeAllViews()
+        LanguagePrefs.SUPPORTED_LANGUAGES.forEach { (code, name, _) ->
+            val selected = code == l1 || code == l2
+            val row = TextView(this).apply {
+                text = if (selected) "\u2713  $name" else "    $name"
+                setTextColor(if (selected) accentNow else textSecondary)
+                textSize = 15f
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(8).toFloat()
+                    setColor(if (selected) Color.parseColor("#221533") else Color.TRANSPARENT)
+                    if (selected) setStroke(dp(1), accentNow)
+                }
+                isClickable = true
+                isFocusable = true
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply { bottomMargin = dp(6) }
+                setOnClickListener {
+                    if (!selected) selectLanguage(code)
+                }
+            }
+            languageListContainer.addView(row)
+        }
+    }
+
+    private fun selectLanguage(newCode: String) {
+        val (l1, l2) = LanguagePrefs.getSelectedLanguages(this)
+        // Thay the ngon ngu 1 (duoc chon LAU HON trong 2 ngon ngu hien tai)
+        // bang ngon ngu vua bam - ngon ngu 2 (con lai) truot len thanh ngon
+        // ngu 1 moi, giu dung luon co 2 ngon ngu duoc chon.
+        LanguagePrefs.setSelectedLanguages(this, l2, newCode)
+        renderLanguageRows()
+    }
+
+    // ─────────────────────────── 1. Mau sac ───────────────────────────
 
     private fun buildColorSection(): View {
         val wrap = LinearLayout(this).apply {

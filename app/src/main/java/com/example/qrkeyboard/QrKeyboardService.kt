@@ -246,9 +246,26 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     private var mode = KeyboardMode.LETTERS
     private var isShiftOn = false
 
-    /** Bat/tat go Tieng Viet kieu Telex, chuyen doi bang cach VUOT ngang tren
-     *  phim cach (xem [buildSpaceKey]). */
-    private var isVietnameseMode = false
+    /** THEM (theo yeu cau nguoi dung, thay the [isVietnameseMode] cu):
+     *  2 ngon ngu DANG DUOC CHON de vuot ngang tren phim cach chuyen doi qua
+     *  lai (xem [buildSpaceKey]) - doc tu [LanguagePrefs] (dong bo o
+     *  [onCreate]/[onWindowShown], giong het co che mau vien/sang-toi). MAC
+     *  DINH van la ("vi","en") nhu truoc gio neu nguoi dung chua tung doi
+     *  trong man Cai dat. */
+    private var lang1 = LanguagePrefs.DEFAULT_LANG_1
+    private var lang2 = LanguagePrefs.DEFAULT_LANG_2
+
+    /** True = dang dung [lang1], false = dang dung [lang2]. GIU NGUYEN gia
+     *  tri mac dinh CU (false) de KHONG doi hanh vi nguoi dung dang quen -
+     *  truoc day "isVietnameseMode = false" nghia la mac dinh mo len dang o
+     *  che do go thuong/Anh, tuong duong voi active = lang2 ("en") o day. */
+    private var activeIsLang1 = false
+
+    private val activeLangCode: String get() = if (activeIsLang1) lang1 else lang2
+
+    /** Bat/tat go Tieng Viet kieu Telex - CHi true khi ngon ngu DANG DUOC
+     *  CHON THAT SU la "vi" (Tieng Viet), bat ke no la ngon ngu 1 hay 2. */
+    private val isVietnameseMode: Boolean get() = activeLangCode == "vi"
 
     /** True neu ky tu (CHU CAI) tiep theo can duoc TU DONG VIET HOA - dat
      *  thanh true ngay sau khi go dau "." (xem nut "." trong
@@ -1046,7 +1063,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // CHU DONG bat lai Tieng Viet ngay tren CHINH o mat khau nay trong
         // luc ban phim bi he thong tai tao View tam thoi.
         if (!isSameFieldAsBefore && isPasswordField(info) && isVietnameseMode) {
-            isVietnameseMode = false
+            activeIsLang1 = !activeIsLang1
             currentWord.clear()
         }
 
@@ -1502,25 +1519,25 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             if (active) Color.parseColor("#8AB4F8") else Color.parseColor("#80868B")
 
         val vLabel = TextView(this).apply {
-            text = "V"
+            text = LanguagePrefs.shortLabel(lang1).take(1)
             textSize = 12f
-            setTextColor(edgeColor(isVietnameseMode))
+            setTextColor(edgeColor(activeIsLang1))
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.CENTER_VERTICAL or Gravity.START
             ).apply { setMargins(dp(10), 0, 0, 0) }
         }
         val eLabel = TextView(this).apply {
-            text = "E"
+            text = LanguagePrefs.shortLabel(lang2).take(1)
             textSize = 12f
-            setTextColor(edgeColor(!isVietnameseMode))
+            setTextColor(edgeColor(!activeIsLang1))
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.CENTER_VERTICAL or Gravity.END
             ).apply { setMargins(0, 0, dp(10), 0) }
         }
         val centerLabel = TextView(this).apply {
-            text = "\u2423 " + if (isVietnameseMode) "VI" else "EN"
+            text = "\u2423 " + LanguagePrefs.shortLabel(activeLangCode)
             textSize = 13f
             setTextColor(primaryTextColor())
             gravity = Gravity.CENTER
@@ -1545,7 +1562,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 MotionEvent.ACTION_UP -> {
                     val deltaX = event.rawX - downX
                     if (kotlin.math.abs(deltaX) >= swipeThresholdPx) {
-                        setLanguageMode(vietnamese = deltaX < 0)
+                        setLanguageMode(useLang1 = deltaX < 0)
                     } else {
                         insertChar(' ')
                     }
@@ -1559,15 +1576,12 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         return container
     }
 
-    private fun setLanguageMode(vietnamese: Boolean) {
-        if (isVietnameseMode == vietnamese) return
-        isVietnameseMode = vietnamese
+    private fun setLanguageMode(useLang1: Boolean) {
+        if (activeIsLang1 == useLang1) return
+        activeIsLang1 = useLang1
         currentWord.clear()
-        Toast.makeText(
-            this,
-            if (isVietnameseMode) "Go Ti\u1ebfng Vi\u1ec7t (Telex)" else "Go Ti\u1ebfng Anh",
-            Toast.LENGTH_SHORT
-        ).show()
+        val label = LanguagePrefs.displayName(activeLangCode)
+        Toast.makeText(this, "G\u00f5 $label", Toast.LENGTH_SHORT).show()
         redrawKeyboard()
     }
 
@@ -2001,6 +2015,9 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // do). Neu chua tung doi gi ca, dung gia tri mac dinh (tim neon, nen toi).
         glowColor = KeyboardThemePrefs.getAccentColor(this)
         isDarkTheme = KeyboardThemePrefs.isDarkTheme(this)
+        val (l1, l2) = LanguagePrefs.getSelectedLanguages(this)
+        lang1 = l1
+        lang2 = l2
     }
 
     /** THEM: man Cai dat (SettingsActivity) gio la noi DUY NHAT nguoi dung
@@ -2015,9 +2032,19 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         super.onWindowShown()
         val newColor = KeyboardThemePrefs.getAccentColor(this)
         val newDark = KeyboardThemePrefs.isDarkTheme(this)
-        if (newColor != glowColor || newDark != isDarkTheme) {
+        val (newLang1, newLang2) = LanguagePrefs.getSelectedLanguages(this)
+        if (newColor != glowColor || newDark != isDarkTheme || newLang1 != lang1 || newLang2 != lang2) {
             glowColor = newColor
             isDarkTheme = newDark
+            // THEM: neu 2 ngon ngu vua doi trong man Cai dat KHONG con chua
+            // ngon ngu DANG active hien tai (vd dang o "en" nhung nguoi dung
+            // vua doi bo "en" ra khoi 2 lua chon) - ve lai ngon ngu 1 cho an
+            // toan, tranh active "treo" vao 1 ma ngon ngu khong con duoc
+            // chon nua.
+            val stillValid = activeLangCode == newLang1 || activeLangCode == newLang2
+            lang1 = newLang1
+            lang2 = newLang2
+            if (!stillValid) activeIsLang1 = true
             redrawKeyboard()
         }
     }
