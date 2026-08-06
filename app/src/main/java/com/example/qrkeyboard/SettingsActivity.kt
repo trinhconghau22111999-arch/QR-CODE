@@ -157,6 +157,8 @@ class SettingsActivity : AppCompatActivity() {
         content.addView(spacer(24))
         content.addView(buildColorSection())
         content.addView(spacer(24))
+        content.addView(buildRgbEffectSection())
+        content.addView(spacer(24))
         content.addView(buildScanLimitSection())
         content.addView(spacer(24))
         content.addView(buildHistorySection())
@@ -408,6 +410,87 @@ class SettingsActivity : AppCompatActivity() {
         // de chu luon doc duoc tren nen moi.
         themeToggleBtn.background = themeToggleBackground(accentNow)
         themeToggleBtn.setTextColor(if (dark) Color.WHITE else Color.BLACK)
+    }
+
+    // ─────────────────── 1b. Hieu ung den RGB chay ───────────────────
+
+    private lateinit var rgbToggleBtn: Button
+    private lateinit var rgbDirectionRow: LinearLayout
+
+    /** THEM (theo yeu cau nguoi dung): hieu ung "den RGB chay" tren vien
+     *  phim, giong ban phim co gaming that. MAC DINH TAT (khong doi hanh vi
+     *  nguoi dung dang quen, va vi hieu ung nay ton pin hon mau tinh binh
+     *  thuong). Bat len se hien them 3 nut chon huong chay. */
+    private fun buildRgbEffectSection(): View {
+        val wrap = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = cardBackground()
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+        }
+        wrap.addView(sectionTitle("Hi\u1ec7u \u1ee9ng \u0111\u00e8n RGB ch\u1ea1y"))
+        wrap.addView(sectionSubtitle(
+            "M\u00e0u vi\u1ec1n ph\u00edm t\u1ef1 \u0111\u1ed9ng \u201cch\u1ea1y\u201d li\u00ean t\u1ee5c qua d\u1ea3i m\u00e0u c\u1ea7u v\u1ed3ng " +
+            "(gi\u1ed1ng b\u00e0n ph\u00edm c\u01a1 gaming th\u1eadt). M\u1eb7c \u0111\u1ecbnh t\u1eaft (t\u1ed1n pin h\u01a1n m\u00e0u t\u0129nh b\u00ecnh th\u01b0\u1eddng)."
+        ))
+        wrap.addView(spacer(10))
+
+        rgbToggleBtn = neonButton("", accentNow) { toggleRgbEffect() }
+        wrap.addView(rgbToggleBtn)
+        wrap.addView(spacer(10))
+
+        rgbDirectionRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        wrap.addView(rgbDirectionRow)
+
+        refreshRgbEffectUi()
+        return wrap
+    }
+
+    private fun toggleRgbEffect() {
+        RgbEffectPrefs.setEnabled(this, !RgbEffectPrefs.isEnabled(this))
+        refreshRgbEffectUi()
+    }
+
+    private fun setRgbDirection(direction: String) {
+        RgbEffectPrefs.setDirection(this, direction)
+        refreshRgbEffectUi()
+    }
+
+    private fun refreshRgbEffectUi() {
+        val enabled = RgbEffectPrefs.isEnabled(this)
+        rgbToggleBtn.text = if (enabled) "\u2705  \u0110ang B\u1eacT hi\u1ec7u \u1ee9ng RGB ch\u1ea1y" else "\u26aa  \u0110ang T\u1eaeT hi\u1ec7u \u1ee9ng RGB ch\u1ea1y"
+        rgbToggleBtn.setTextColor(textPrimary)
+
+        rgbDirectionRow.removeAllViews()
+        if (!enabled) return
+
+        val currentDir = RgbEffectPrefs.getDirection(this)
+        val directions = listOf(
+            RgbEffectPrefs.DIRECTION_LEFT_TO_RIGHT,
+            RgbEffectPrefs.DIRECTION_TOP_TO_BOTTOM,
+            RgbEffectPrefs.DIRECTION_DIAGONAL
+        )
+        directions.forEachIndexed { i, dir ->
+            val selected = dir == currentDir
+            val btn = TextView(this).apply {
+                text = RgbEffectPrefs.directionDisplayName(dir)
+                textSize = 13f
+                gravity = Gravity.CENTER
+                setTextColor(if (selected) accentNow else textSecondary)
+                setPadding(dp(8), dp(10), dp(8), dp(10))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(8).toFloat()
+                    setColor(if (selected) Color.parseColor("#221533") else Color.TRANSPARENT)
+                    if (selected) setStroke(dp(1), accentNow)
+                }
+                isClickable = true
+                isFocusable = true
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    if (i > 0) marginStart = dp(6)
+                }
+                setOnClickListener { setRgbDirection(dir) }
+            }
+            rgbDirectionRow.addView(btn)
+        }
     }
 
     // ─────────────────── 2. Gioi han quet trung lap ───────────────────

@@ -554,6 +554,88 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  SettingsActivity.kt + KeyboardThemePrefs.kt). */
     private var isDarkTheme: Boolean = true
 
+    // ───────────────── THEM: hieu ung "den RGB chay" tren vien phim ─────────────────
+    // (theo yeu cau nguoi dung - giong bàn phim co gaming that). Mac dinh TAT,
+    // doc/dong bo tu [RgbEffectPrefs] giong het co che glowColor/isDarkTheme o tren.
+
+    private var rgbChaseEnabled: Boolean = false
+    private var rgbChaseDirection: String = RgbEffectPrefs.DEFAULT_DIRECTION
+
+    private data class ChaseEntry(val drawable: GradientDrawable, val px: Float, val py: Float)
+
+    /** THEM: danh sach phim dang ky hoat hinh, TACH RIENG theo TUNG TRANG
+     *  (Letters/Numbers/Symbols/Numpad) - vi cac trang duoc CACHE rieng va
+     *  KHONG PHAI luc nao cung duoc xay lai cung nhau (vd bat/tat Shift chi
+     *  xay lai DUY NHAT trang Chu cai qua [redrawKeyboard], cac trang khac
+     *  giu nguyen cache CU khong doi) - neu dung chung 1 danh sach, moi lan
+     *  trang Chu cai duoc xay lai (rat thuong xuyen) se hoac la LAM RONG mat
+     *  hoat hinh cua cac trang KHAC (neu xoa het truoc khi dang ky lai), hoac
+     *  TICH LUY VO HAN cac phim CU DA BI THAY THE (neu khong xoa gi ca) - ca
+     *  2 truong hop deu la loi (mat hoat hinh HOAC ri bo nho). Tach rieng
+     *  theo trang giai quyet dut diem: moi ham build*Page() CHi xoa+dien lai
+     *  DUNG bucket cua chinh no, khong dung cham toi cac trang khac. */
+    private val rgbChaseRegistryByPage = mutableMapOf<KeyboardMode, MutableList<ChaseEntry>>()
+
+    private var rgbChasePhaseDeg: Float = 0f
+    private val rgbChaseHandler = Handler(Looper.getMainLooper())
+    private var rgbChaseRunnable: Runnable? = null
+
+    /** Khoang cach giua 2 khung hinh hoat hinh (ms) - ~15 khung/giay, du
+     *  muot de mat nguoi thay "chay" lien tuc nhung khong ve lai qua nhieu
+     *  lan/giay (do pin, tranh giat khi go phim nhanh cung luc). */
+    private val RGB_CHASE_FRAME_MS = 66L
+    private val RGB_CHASE_DEG_PER_FRAME = 4.2f
+
+    /** Bat dau vong lap hoat hinh (goi khi ban phim hien len, CHi that su
+     *  chay neu [rgbChaseEnabled]). An toan khi goi nhieu lan lien tiep (tu
+     *  huy vong cu truoc khi tao vong moi). */
+    private fun startRgbChaseLoopIfNeeded() {
+        stopRgbChaseLoop()
+        if (!rgbChaseEnabled) return
+        val runnable = object : Runnable {
+            override fun run() {
+                rgbChasePhaseDeg = (rgbChasePhaseDeg + RGB_CHASE_DEG_PER_FRAME) % 360f
+                applyRgbChaseFrame()
+                rgbChaseHandler.postDelayed(this, RGB_CHASE_FRAME_MS)
+            }
+        }
+        rgbChaseRunnable = runnable
+        rgbChaseHandler.postDelayed(runnable, RGB_CHASE_FRAME_MS)
+    }
+
+    private fun stopRgbChaseLoop() {
+        rgbChaseRunnable?.let { rgbChaseHandler.removeCallbacks(it) }
+        rgbChaseRunnable = null
+    }
+
+    /** Tinh mau cho 1 khung hinh va ap dung cho TOAN BO cac phim da dang ky
+     *  trong [rgbChaseRegistry]. Cong thuc: moi phim co 1 "do lech pha"
+     *  rieng dua theo vi tri (px cho Trai->Phai, py cho Tren->Duoi, px+py
+     *  cho Cheo goc), cong voi pha hien tai ([rgbChasePhaseDeg]) ra 1 goc
+     *  Hue (banh xe mau HSV 360 do) - tao cam giac mau "chay" doc theo dung
+     *  huong da chon, lap lai vo han (giong het kieu "Colorwave" tren cac
+     *  ban phim co gaming that). */
+    private fun applyRgbChaseFrame() {
+        if (rgbChaseRegistryByPage.isEmpty()) return
+        val hsv = floatArrayOf(0f, 0.85f, 1f)
+        for (entries in rgbChaseRegistryByPage.values) {
+            for (entry in entries) {
+                val posFactor = when (rgbChaseDirection) {
+                    RgbEffectPrefs.DIRECTION_TOP_TO_BOTTOM -> entry.py
+                    RgbEffectPrefs.DIRECTION_DIAGONAL -> (entry.px + entry.py) / 2f
+                    else -> entry.px // DIRECTION_LEFT_TO_RIGHT (mac dinh)
+                }
+                hsv[0] = (rgbChasePhaseDeg + posFactor * 360f) % 360f
+                val color = Color.HSVToColor(hsv)
+                try {
+                    entry.drawable.setStroke(dp(1), color)
+                } catch (e: Exception) {
+                    // Bo qua 1 phim loi (hiem gap) - khong lam hong ca khung hinh.
+                }
+            }
+        }
+    }
+
     private fun keyboardBackgroundColor(): Int =
         if (isDarkTheme) Color.parseColor("#050507") else Color.parseColor("#FAFAFA")
 
@@ -799,6 +881,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     /** Build trang chu cai (LETTERS). Ham nay duoc goi moi khi can cap nhat
      *  trang thai dong (Shift on/off, ngon ngu, pendingSuggestion). */
     private fun buildLettersPage(): View {
+        clearChaseRegistryForPage(KeyboardMode.LETTERS)
         val verticalPaddingDp = if (keyHeightDp < 48) 2 else 6
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -810,7 +893,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 if (pendingSuggestion != null) {
                     root.addView(buildAutocorrectSuggestionRow())
                 }
-                root.addView(buildCharRow(numberRows[0]))
+                root.addView(buildCharRow(numberRows[0], rowPhase = 0f))
                 letterRows.forEachIndexed { index, row ->
                     // SUA LOI (theo yeu cau nguoi dung): hang chu THU 2 tu
                     // tren xuong ("asdfghjkl", 9 ky tu) TRUOC DAY bi kiem
@@ -835,10 +918,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                     // do, tong do rong se TANG THEM (13 thay vi 10), lam
                     // hang do RONG HON han cac hang khac, pha vo su can
                     // bang da co san tu truoc.
+                    val rowPhase = (index + 1).toFloat() / letterRows.size
                     val rowView = if (index == 1 && row.length < numberRows[0].length)
-                        buildStaggeredCharRow(row, numberRows[0].length, applyShiftCase = true)
+                        buildStaggeredCharRow(row, numberRows[0].length, applyShiftCase = true, rowPhase = rowPhase)
                     else
-                        buildCharRow(row, applyShiftCase = true)
+                        buildCharRow(row, applyShiftCase = true, rowPhase = rowPhase)
                     if (index == letterRows.lastIndex) {
                         rowView.addView(
                             buildKey(
@@ -887,12 +971,13 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  toi trang nay (xem [buildKeyboardContainer]/[switchMode]), ket qua
      *  duoc cache lai qua [cachedNumbersView]. */
     private fun buildNumbersPage(): View {
+        clearChaseRegistryForPage(KeyboardMode.NUMBERS)
         val verticalPaddingDp = if (keyHeightDp < 48) 2 else 6
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(4), dp(verticalPaddingDp), dp(4), dp(verticalPaddingDp + EXTRA_BOTTOM_LIFT_DP))
             addView(buildEmojiRow())
-            numberRows.forEach { row -> addView(buildCharRow(row)) }
+            numberRows.forEachIndexed { i, row -> addView(buildCharRow(row, rowPhase = i.toFloat() / (numberRows.size))) }
             addView(buildNumbersRow3())
             addView(buildNumbersBottomRow())
         }
@@ -905,12 +990,13 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  la 1 thanh chon mau ngay tai day, da chuyen han sang man Cai dat
      *  rieng theo yeu cau nguoi dung). */
     private fun buildSymbolsPage(): View {
+        clearChaseRegistryForPage(KeyboardMode.SYMBOLS)
         val verticalPaddingDp = if (keyHeightDp < 48) 2 else 6
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(4), dp(verticalPaddingDp), dp(4), dp(verticalPaddingDp + EXTRA_BOTTOM_LIFT_DP))
             addView(buildKeyboardSettingsBar())
-            extendedSymbolRows.forEach { row -> addView(buildCharRow(row)) }
+            extendedSymbolRows.forEachIndexed { i, row -> addView(buildCharRow(row, rowPhase = i.toFloat() / (extendedSymbolRows.size))) }
             addView(buildExtendedSymbolsRow3())
             addView(buildExtendedSymbolsBottomRow())
         }
@@ -932,14 +1018,15 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  thay vi 5 nhu 2 dong tren, MOI NUT TU NHIEN se RONG/TO HON han phim
      *  so (dung y "nó to hơn mấy phím số là chắc rồi"). */
     private fun buildNumpadPage(): View {
+        clearChaseRegistryForPage(KeyboardMode.NUMPAD)
         val verticalPaddingDp = if (keyHeightDp < 48) 2 else 6
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(4), dp(verticalPaddingDp), dp(4), dp(verticalPaddingDp + EXTRA_BOTTOM_LIFT_DP))
         }
 
-        root.addView(buildCharRow("12345"))
-        root.addView(buildCharRow("67890"))
+        root.addView(buildCharRow("12345", rowPhase = 0f))
+        root.addView(buildCharRow("67890", rowPhase = 0.5f))
 
         val bottomRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -1151,16 +1238,46 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  bang nhau (weight 1), chen nguyen van ky tu do khi bam. Dung chung cho
      *  ca hang chu cai (co ap dung Shift de HIEN THI hoa/thuong) lan hang
      *  so/ky hieu/NUMPAD. */
-    private fun buildCharRow(chars: String, applyShiftCase: Boolean = false): LinearLayout {
+    /** THEM: dang ky 1 phim (vua duoc xay xong) vao [rgbChaseRegistry] de
+     *  hoat hinh chay mau - CHi lam gi neu [rgbChaseEnabled] dang bat (do
+     *  la loi kiem tra RE, tranh lang phi khi hieu ung dang tat). Lay ra
+     *  drawable VIEN (lop thu 2 trong LayerDrawable tra ve tu
+     *  [buildGlowKeyBackground] - xem chi tiet o do) de sau nay chi can doi
+     *  MAU cua chinh drawable nay moi khung hinh, KHONG can xay lai ca
+     *  Drawable/View - re hon nhieu. */
+    private fun registerChaseKey(page: KeyboardMode, key: Button, px: Float, py: Float) {
+        if (!rgbChaseEnabled) return
+        val layers = key.background as? LayerDrawable ?: return
+        if (layers.numberOfLayers < 2) return
+        val border = layers.getDrawable(1) as? GradientDrawable ?: return
+        rgbChaseRegistryByPage.getOrPut(page) { mutableListOf() }
+            .add(ChaseEntry(border, px.coerceIn(0f, 1f), py.coerceIn(0f, 1f)))
+    }
+
+    /** THEM: goi o DAU moi ham build*Page() - xoa SACH bucket cua DUNG trang
+     *  do (khong dung toi cac trang khac) truoc khi dang ky lai tu dau, tranh
+     *  tich luy vo han cac phim CU da bi thay the moi lan trang do duoc xay
+     *  lai (vd trang Chu cai qua [redrawKeyboard], rat thuong xuyen). */
+    private fun clearChaseRegistryForPage(page: KeyboardMode) {
+        rgbChaseRegistryByPage[page]?.clear()
+    }
+
+    private fun buildCharRow(
+        chars: String, applyShiftCase: Boolean = false, rowPhase: Float = 0.5f,
+        chasePage: KeyboardMode = mode
+    ): LinearLayout {
         val row = LinearLayout(this).apply {
             isBaselineAligned = false
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             )
         }
-        chars.forEach { ch ->
+        val total = chars.length
+        chars.forEachIndexed { idx, ch ->
             val label = if (applyShiftCase && (isShiftOn || showCapitalPreview)) ch.uppercaseChar().toString() else ch.toString()
-            row.addView(buildKey(label) { insertChar(ch) })
+            val key = buildKey(label) { insertChar(ch) }
+            row.addView(key)
+            registerChaseKey(chasePage, key, if (total > 1) idx.toFloat() / (total - 1) else 0.5f, rowPhase)
         }
         return row
     }
@@ -1174,7 +1291,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  XEN KẼ/so le với hàng trên, giống hệt bố cục bàn phím vật lý thật,
      *  thay vì tự phóng to từng phím lên để lấp đầy cả hàng như trước
      *  (khiến phím hàng này to hơn hẳn hàng trên, không thẳng hàng). */
-    private fun buildStaggeredCharRow(chars: String, referenceKeyCount: Int, applyShiftCase: Boolean = false): LinearLayout {
+    private fun buildStaggeredCharRow(
+        chars: String, referenceKeyCount: Int, applyShiftCase: Boolean = false, rowPhase: Float = 0.5f,
+        chasePage: KeyboardMode = mode
+    ): LinearLayout {
         val row = LinearLayout(this).apply {
             isBaselineAligned = false
             layoutParams = LinearLayout.LayoutParams(
@@ -1187,9 +1307,19 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, sideWeight)
             })
         }
-        chars.forEach { ch ->
+        // THEM: vi tri X CHUAN HOA (px) tinh theo DUNG luoi cua hang tham
+        // chieu (referenceKeyCount), KHONG phai theo so ky tu thuc te cua
+        // hang nay - de hieu ung "chay" van thang hang DUNG cot voi hang
+        // tren/duoi (vd chu "a" o hang 2 phai cung pha voi chu "q" o hang 1
+        // vi ca 2 deu nam o cot dau tien), khong bi lech do hang nay it
+        // phim hon.
+        chars.forEachIndexed { idx, ch ->
             val label = if (applyShiftCase && (isShiftOn || showCapitalPreview)) ch.uppercaseChar().toString() else ch.toString()
-            row.addView(buildKey(label) { insertChar(ch) })
+            val key = buildKey(label) { insertChar(ch) }
+            row.addView(key)
+            val gridCol = sideWeight + idx
+            val px = if (referenceKeyCount > 1) gridCol / (referenceKeyCount - 1) else 0.5f
+            registerChaseKey(chasePage, key, px, rowPhase)
         }
         if (sideWeight > 0f) {
             row.addView(View(this).apply {
@@ -2110,6 +2240,8 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val (l1, l2) = LanguagePrefs.getSelectedLanguages(this)
         lang1 = l1
         lang2 = l2
+        rgbChaseEnabled = RgbEffectPrefs.isEnabled(this)
+        rgbChaseDirection = RgbEffectPrefs.getDirection(this)
     }
 
     /** THEM: man Cai dat (SettingsActivity) gio la noi DUY NHAT nguoi dung
@@ -2125,7 +2257,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val newColor = KeyboardThemePrefs.getAccentColor(this)
         val newDark = KeyboardThemePrefs.isDarkTheme(this)
         val (newLang1, newLang2) = LanguagePrefs.getSelectedLanguages(this)
-        if (newColor != glowColor || newDark != isDarkTheme || newLang1 != lang1 || newLang2 != lang2) {
+        val newRgbEnabled = RgbEffectPrefs.isEnabled(this)
+        val newRgbDirection = RgbEffectPrefs.getDirection(this)
+        val needsFullRebuild = newColor != glowColor || newDark != isDarkTheme ||
+            newLang1 != lang1 || newLang2 != lang2 || newRgbEnabled != rgbChaseEnabled
+        if (needsFullRebuild) {
             glowColor = newColor
             isDarkTheme = newDark
             // THEM: neu 2 ngon ngu vua doi trong man Cai dat KHONG con chua
@@ -2137,6 +2273,16 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             lang1 = newLang1
             lang2 = newLang2
             if (!stillValid) activeIsLang1 = true
+            // THEM: bat/tat hieu ung RGB chay - can XAY LAI TOAN BO ban phim
+            // (giong het ly do doi mau/nen o duoi) vi cac phim CHI duoc
+            // DANG KY vao [rgbChaseRegistryByPage] NGAY LUC xay dung (xem
+            // [registerChaseKey]) - bat hieu ung len ma khong xay lai thi
+            // se KHONG CO phim nao duoc dang ky ca (danh sach rong, hoat
+            // hinh khong chay duoc), tat di ma khong xay lai thi cac phim
+            // van con "dinh" mau hoat hinh cuoi cung thay vi tro ve mau tinh
+            // binh thuong.
+            rgbChaseEnabled = newRgbEnabled
+            rgbChaseDirection = newRgbDirection
 
             // SUA LOI nguoi dung phan anh ("doi mau gio no chi ap dung cho
             // man 1", "doi nen phai ap dung ca ben trong phim luon"):
@@ -2164,7 +2310,15 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             lettersPageView = null
             keyboardRootContainer = null
             setInputView(buildKeyboardContainer())
+        } else if (rgbChaseDirection != newRgbDirection) {
+            // Doi HUONG chay nhung van BAT (khong can dang ky lai phim, chi
+            // can nho huong moi - khung hinh KE TIEP se tu ap dung dung).
+            rgbChaseDirection = newRgbDirection
         }
+        // THEM: dam bao vong lap hoat hinh dang CHAY DUNG trang thai bat/tat
+        // moi nhat - goi lai moi lan ban phim hien len (an toan, tu huy vong
+        // cu truoc khi tao vong moi neu co).
+        startRgbChaseLoopIfNeeded()
     }
 
     private fun openQrScanner(continuous: Boolean = false) {
@@ -2651,6 +2805,12 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
+        // THEM: dung NGAY vong lap hoat hinh RGB (khong can cho debounce -
+        // View ban phim da AN ngay lap tuc roi, ve lai mau lien tuc luc
+        // khong ai nhin thay la lang phi pin thuan tuy). Se tu khoi dong lai
+        // trong [onWindowShown] khi ban phim hien len lan sau (neu van dang
+        // bat trong Cai dat).
+        stopRgbChaseLoop()
         // SUA LOI nguoi dung phan anh ("dang go binh thuong, dong ban phim
         // xuong roi bat lai khong tu ve trang Chu cai"): TRUOC DAY toan bo
         // logic duoi day CHi chay khi [finishingInput] = true - nhung theo
@@ -2700,6 +2860,8 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         cancelPendingFinishHide()
         hideQrOverlay()
         qrToneGenerator.release()
+        stopRgbChaseLoop()
+        rgbChaseRegistryByPage.clear()
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
         previewPopup?.let { if (it.isShowing) it.dismiss() }
         previewPopup = null

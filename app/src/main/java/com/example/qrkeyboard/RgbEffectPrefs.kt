@@ -1,0 +1,52 @@
+package com.example.qrkeyboard
+
+import android.content.Context
+
+/**
+ * THEM (theo yeu cau nguoi dung): hieu ung "den RGB chay" tren vien phim -
+ * giong bàn phim co gaming that (Razer Chroma, SteelSeries...). MAC DINH
+ * TAT (khong doi hanh vi on dinh nguoi dung dang quen) - nguoi dung tu bat
+ * trong man Cai dat neu muon, vi hieu ung nay ton pin hon mau tinh binh
+ * thuong (phai ve lai vien phim lien tuc ~15-20 lan/giay khi ban phim dang
+ * hien).
+ */
+object RgbEffectPrefs {
+    private const val PREFS_NAME = "qr_keyboard_rgb_effect_prefs"
+    private const val KEY_ENABLED = "enabled"
+    private const val KEY_DIRECTION = "direction"
+
+    /** Trai -> Phai (mau "quet" ngang qua ban phim). */
+    const val DIRECTION_LEFT_TO_RIGHT = "ltr"
+
+    /** Tren -> Duoi (mau "quet" theo tung hang). */
+    const val DIRECTION_TOP_TO_BOTTOM = "ttb"
+
+    /** Cheo goc trai-tren -> phai-duoi. */
+    const val DIRECTION_DIAGONAL = "diag"
+
+    const val DEFAULT_DIRECTION = DIRECTION_LEFT_TO_RIGHT
+
+    private fun prefs(ctx: Context) =
+        ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    fun isEnabled(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(KEY_ENABLED, false)
+
+    fun setEnabled(ctx: Context, enabled: Boolean) {
+        prefs(ctx).edit().putBoolean(KEY_ENABLED, enabled).apply()
+    }
+
+    fun getDirection(ctx: Context): String =
+        prefs(ctx).getString(KEY_DIRECTION, DEFAULT_DIRECTION) ?: DEFAULT_DIRECTION
+
+    fun setDirection(ctx: Context, direction: String) {
+        prefs(ctx).edit().putString(KEY_DIRECTION, direction).apply()
+    }
+
+    fun directionDisplayName(direction: String): String = when (direction) {
+        DIRECTION_LEFT_TO_RIGHT -> "Tr\u00e1i \u2192 Ph\u1ea3i"
+        DIRECTION_TOP_TO_BOTTOM -> "Tr\u00ean \u2192 D\u01b0\u1edbi"
+        DIRECTION_DIAGONAL -> "Ch\u00e9o g\u00f3c"
+        else -> direction
+    }
+}
