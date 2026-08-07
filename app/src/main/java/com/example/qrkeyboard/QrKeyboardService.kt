@@ -2228,6 +2228,16 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             (inputType and InputType.TYPE_TEXT_FLAG_IME_MULTI_LINE) != 0
         if (isMultiLine) {
             ic.commitText("\n", 1)
+            // THEM (theo yeu cau nguoi dung): tu dong viet hoa chu cai DAU
+            // TIEN cua dong MOI - giong het co che tu dong viet hoa sau dau
+            // "." + dau cach (xem [insertVietnameseChar]/[insertChar] o
+            // tren). [capitalizeAppliedAtPrefixLen] = null de bao hieu "vi
+            // tri MOI, chua ap dung o dau ca" - dung y het cach cac diem
+            // dat co khac trong file nay lam.
+            capitalizeNextLetter = true
+            showCapitalPreview = true
+            capitalizeAppliedAtPrefixLen = null
+            redrawKeyboard()
             return
         }
         val action = currentInputEditorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION)
@@ -2235,6 +2245,14 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             ic.performEditorAction(action)
         } else {
             ic.commitText("\n", 1)
+            // THEM: tuong tu nhanh multi-line o tren - o nhap 1 dong nhung
+            // KHONG co action rieng (Next/Done/Tim kiem...) van chi la chen
+            // ky tu xuong dong thuong, ap dung dung quy tac tu dong viet hoa
+            // giong het nhau.
+            capitalizeNextLetter = true
+            showCapitalPreview = true
+            capitalizeAppliedAtPrefixLen = null
+            redrawKeyboard()
         }
     }
 
