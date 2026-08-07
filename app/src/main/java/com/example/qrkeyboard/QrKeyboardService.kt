@@ -584,7 +584,12 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  muot de mat nguoi thay "chay" lien tuc nhung khong ve lai qua nhieu
      *  lan/giay (do pin, tranh giat khi go phim nhanh cung luc). */
     private val RGB_CHASE_FRAME_MS = 66L
-    private val RGB_CHASE_DEG_PER_FRAME = 4.2f
+    // SUA (theo yeu cau nguoi dung): tang toc do doi mau len 30% (4.2 -> 5.46
+    // do/khung hinh = 4.2 * 1.3) - GIU NGUYEN tan suat khung hinh
+    // (RGB_CHASE_FRAME_MS khong doi) de KHONG ton them pin, chi tang do
+    // LECH mau moi khung hinh -> mau "chay" nhanh hon ma van muot, khong
+    // ve lai nhieu lan/giay hon truoc.
+    private val RGB_CHASE_DEG_PER_FRAME = 5.46f
 
     /** Bat dau vong lap hoat hinh (goi khi ban phim hien len, CHi that su
      *  chay neu [rgbChaseEnabled]). An toan khi goi nhieu lan lien tiep (tu
