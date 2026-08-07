@@ -929,38 +929,39 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                     else
                         buildCharRow(row, applyShiftCase = true, rowPhase = rowPhase)
                     if (index == letterRows.lastIndex) {
-                        rowView.addView(
-                            buildKey(
-                                "\u2b06", weight = 1.5f,
-                                highlight = isShiftOn || showCapitalPreview
-                            ) {
-                                val now = android.os.SystemClock.uptimeMillis()
-                                val isDoubleTap = now - lastShiftTapTime <= SHIFT_DOUBLE_TAP_MAX_INTERVAL_MS
-                                lastShiftTapTime = if (isDoubleTap) 0L else now
-                                when {
-                                    isDoubleTap -> {
-                                        isShiftOn = !isShiftOn
-                                        capitalizeNextLetter = false
-                                        showCapitalPreview = false
-                                        capitalizeAppliedAtPrefixLen = null
-                                    }
-                                    isShiftOn -> {
-                                        isShiftOn = false
-                                        capitalizeNextLetter = false
-                                        showCapitalPreview = false
-                                        capitalizeAppliedAtPrefixLen = null
-                                    }
-                                    else -> {
-                                        capitalizeNextLetter = !capitalizeNextLetter
-                                        showCapitalPreview = capitalizeNextLetter
-                                        capitalizeAppliedAtPrefixLen = null
-                                    }
+                        val shiftKey = buildKey(
+                            "\u2b06", weight = 1.5f,
+                            highlight = isShiftOn || showCapitalPreview
+                        ) {
+                            val now = android.os.SystemClock.uptimeMillis()
+                            val isDoubleTap = now - lastShiftTapTime <= SHIFT_DOUBLE_TAP_MAX_INTERVAL_MS
+                            lastShiftTapTime = if (isDoubleTap) 0L else now
+                            when {
+                                isDoubleTap -> {
+                                    isShiftOn = !isShiftOn
+                                    capitalizeNextLetter = false
+                                    showCapitalPreview = false
+                                    capitalizeAppliedAtPrefixLen = null
                                 }
-                                redrawKeyboard()
-                            },
-                            0
-                        )
-                        rowView.addView(buildKey("\u232b", weight = 1.5f, onRepeat = { deleteChar() }) { deleteChar() })
+                                isShiftOn -> {
+                                    isShiftOn = false
+                                    capitalizeNextLetter = false
+                                    showCapitalPreview = false
+                                    capitalizeAppliedAtPrefixLen = null
+                                }
+                                else -> {
+                                    capitalizeNextLetter = !capitalizeNextLetter
+                                    showCapitalPreview = capitalizeNextLetter
+                                    capitalizeAppliedAtPrefixLen = null
+                                }
+                            }
+                            redrawKeyboard()
+                        }
+                        rowView.addView(shiftKey, 0)
+                        registerChaseKey(KeyboardMode.LETTERS, shiftKey, 0.03f, rowPhase)
+                        val backspaceKey = buildKey("\u232b", weight = 1.5f, onRepeat = { deleteChar() }) { deleteChar() }
+                        rowView.addView(backspaceKey)
+                        registerChaseKey(KeyboardMode.LETTERS, backspaceKey, 0.97f, rowPhase)
                     }
                     root.addView(rowView)
                 }
@@ -1039,9 +1040,15 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(keyHeightDp + 2)
             ).apply { bottomMargin = dp(6) }
         }
-        bottomRow.addView(buildKey("ABC", weight = 1f, fillRowHeight = true) { switchMode(KeyboardMode.LETTERS) })
-        bottomRow.addView(buildKey("\u232b", weight = 1f, fillRowHeight = true, onRepeat = { deleteChar() }) { deleteChar() })
-        bottomRow.addView(buildKey("\u21b5", weight = 1f, highlight = true, fillRowHeight = true) { sendEnter() })
+        val nk1 = buildKey("ABC", weight = 1f, fillRowHeight = true) { switchMode(KeyboardMode.LETTERS) }
+        bottomRow.addView(nk1)
+        registerChaseKey(KeyboardMode.NUMPAD, nk1, 0.17f, 1f)
+        val nk2 = buildKey("\u232b", weight = 1f, fillRowHeight = true, onRepeat = { deleteChar() }) { deleteChar() }
+        bottomRow.addView(nk2)
+        registerChaseKey(KeyboardMode.NUMPAD, nk2, 0.5f, 1f)
+        val nk3 = buildKey("\u21b5", weight = 1f, highlight = true, fillRowHeight = true) { sendEnter() }
+        bottomRow.addView(nk3)
+        registerChaseKey(KeyboardMode.NUMPAD, nk3, 0.83f, 1f)
         root.addView(bottomRow)
 
         return root
@@ -1277,7 +1284,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  [buildGlowKeyBackground] - xem chi tiet o do) de sau nay chi can doi
      *  MAU cua chinh drawable nay moi khung hinh, KHONG can xay lai ca
      *  Drawable/View - re hon nhieu. */
-    private fun registerChaseKey(page: KeyboardMode, key: Button, px: Float, py: Float) {
+    private fun registerChaseKey(page: KeyboardMode, key: View, px: Float, py: Float) {
         if (!rgbChaseEnabled) return
         val layers = key.background as? LayerDrawable ?: return
         if (layers.numberOfLayers < 2) return
@@ -1406,6 +1413,9 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             }
             inner.addView(btn)
         }
+        if (inner.childCount > 0) {
+            registerChaseKey(KeyboardMode.NUMBERS, inner.getChildAt(0), 0.5f, 0f)
+        }
 
         return HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
@@ -1510,10 +1520,14 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             }
         }
 
-        row.addView(buildKey("?123", weight = 1.4f, fillRowHeight = true) { switchMode(KeyboardMode.NUMBERS) })
-        row.addView(buildKey(",", weight = 1f, fillRowHeight = true) { insertText(",") })
+        val k1 = buildKey("?123", weight = 1.4f, fillRowHeight = true) { switchMode(KeyboardMode.NUMBERS) }
+        row.addView(k1)
+        registerChaseKey(KeyboardMode.LETTERS, k1, 0.078f, 1f)
+        val k2 = buildKey(",", weight = 1f, fillRowHeight = true) { insertText(",") }
+        row.addView(k2)
+        registerChaseKey(KeyboardMode.LETTERS, k2, 0.211f, 1f)
         row.addView(buildSpaceKey(weight = 4.2f))
-        row.addView(buildKey(".", weight = 1f, fillRowHeight = true) {
+        val k3 = buildKey(".", weight = 1f, fillRowHeight = true) {
             // SUA (theo yeu cau nguoi dung): TRUOC DAY tu dong bat viet hoa
             // NGAY KHI go dau "." don (chua go dau cach) - nghia la go "."
             // xong go tiep 1 chu cai (khong qua dau cach) van bi viet hoa,
@@ -1523,8 +1537,12 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             // PHIM CACH (xem nhanh xu ly dau cach trong insertChar), CHI KHI
             // ky tu ngay truoc dau cach do THAT SU la ".".
             insertText(".")
-        })
-        row.addView(buildKey("\u21b5", weight = 1.4f, highlight = true, fillRowHeight = true) { sendEnter() })
+        }
+        row.addView(k3)
+        registerChaseKey(KeyboardMode.LETTERS, k3, 0.789f, 1f)
+        val k4 = buildKey("\u21b5", weight = 1.4f, highlight = true, fillRowHeight = true) { sendEnter() }
+        row.addView(k4)
+        registerChaseKey(KeyboardMode.LETTERS, k4, 0.922f, 1f)
 
         return row
     }
@@ -1546,11 +1564,18 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // (chia cho tổng nhỏ hơn). Tăng 2 nút 2 bên lên 1.5 mỗi nút
         // (1.5+7+1.5=10, khớp đúng tổng hàng trên) để TỪNG phím ký hiệu có
         // kích thước bằng CHÍNH XÁC phím hàng trên.
-        row.addView(buildKey("=\\<", weight = 1.5f) { switchMode(KeyboardMode.SYMBOLS) })
-        numberRow3Symbols.forEach { ch ->
-            row.addView(buildKey(ch.toString(), weight = 1f) { insertText(ch.toString()) })
+        val eq = buildKey("=\\<", weight = 1.5f) { switchMode(KeyboardMode.SYMBOLS) }
+        row.addView(eq)
+        registerChaseKey(KeyboardMode.NUMBERS, eq, 0.075f, 0.75f)
+        val symTotal = numberRow3Symbols.length
+        numberRow3Symbols.forEachIndexed { i, ch ->
+            val symKey = buildKey(ch.toString(), weight = 1f) { insertText(ch.toString()) }
+            row.addView(symKey)
+            registerChaseKey(KeyboardMode.NUMBERS, symKey, (1.5f + i + 0.5f) / (1.5f + symTotal + 1.5f), 0.75f)
         }
-        row.addView(buildKey("\u232b", weight = 1.5f, onRepeat = { deleteChar() }) { deleteChar() })
+        val bsKey = buildKey("\u232b", weight = 1.5f, onRepeat = { deleteChar() }) { deleteChar() }
+        row.addView(bsKey)
+        registerChaseKey(KeyboardMode.NUMBERS, bsKey, 0.925f, 0.75f)
 
         return row
     }
@@ -1578,13 +1603,21 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             ).apply { bottomMargin = dp(6) }
         }
 
-        row.addView(buildKey("ABC", weight = 1.4f, fillRowHeight = true) { switchMode(KeyboardMode.LETTERS) })
-        row.addView(buildKey("QR", weight = 1f, highlight = true, fillRowHeight = true) {
+        val nb1 = buildKey("ABC", weight = 1.4f, fillRowHeight = true) { switchMode(KeyboardMode.LETTERS) }
+        row.addView(nb1)
+        registerChaseKey(KeyboardMode.NUMBERS, nb1, 0.078f, 1f)
+        val nb2 = buildKey("QR", weight = 1f, highlight = true, fillRowHeight = true) {
             openQrScanner(continuous = true)
-        })
+        }
+        row.addView(nb2)
+        registerChaseKey(KeyboardMode.NUMBERS, nb2, 0.211f, 1f)
         row.addView(buildSpaceKey(weight = 4.2f))
-        row.addView(buildKey("123", weight = 1f, fillRowHeight = true) { switchMode(KeyboardMode.NUMPAD) })
-        row.addView(buildKey("\u21b5", weight = 1.4f, highlight = true, fillRowHeight = true) { sendEnter() })
+        val nb3 = buildKey("123", weight = 1f, fillRowHeight = true) { switchMode(KeyboardMode.NUMPAD) }
+        row.addView(nb3)
+        registerChaseKey(KeyboardMode.NUMBERS, nb3, 0.789f, 1f)
+        val nb4 = buildKey("\u21b5", weight = 1.4f, highlight = true, fillRowHeight = true) { sendEnter() }
+        row.addView(nb4)
+        registerChaseKey(KeyboardMode.NUMBERS, nb4, 0.922f, 1f)
 
         return row
     }
@@ -1597,11 +1630,19 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             )
         }
 
-        row.addView(buildKey("?123", weight = 1.3f) { switchMode(KeyboardMode.NUMBERS) })
-        extendedSymbolRow3.forEach { ch ->
-            row.addView(buildKey(ch.toString(), weight = 1f) { insertText(ch.toString()) })
+        val sq1 = buildKey("?123", weight = 1.3f) { switchMode(KeyboardMode.NUMBERS) }
+        row.addView(sq1)
+        registerChaseKey(KeyboardMode.SYMBOLS, sq1, 0.061f, 0.75f)
+        val symTotal2 = extendedSymbolRow3.length
+        val totalW2 = 1.3f + symTotal2 + 1.3f
+        extendedSymbolRow3.forEachIndexed { i, ch ->
+            val symKey = buildKey(ch.toString(), weight = 1f) { insertText(ch.toString()) }
+            row.addView(symKey)
+            registerChaseKey(KeyboardMode.SYMBOLS, symKey, (1.3f + i + 0.5f) / totalW2, 0.75f)
         }
-        row.addView(buildKey("\u232b", weight = 1.3f, onRepeat = { deleteChar() }) { deleteChar() })
+        val sq2 = buildKey("\u232b", weight = 1.3f, onRepeat = { deleteChar() }) { deleteChar() }
+        row.addView(sq2)
+        registerChaseKey(KeyboardMode.SYMBOLS, sq2, 1f - 0.061f, 0.75f)
 
         return row
     }
@@ -1623,11 +1664,19 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             ).apply { bottomMargin = dp(6) }
         }
 
-        row.addView(buildKey("ABC", weight = 1.4f, fillRowHeight = true) { switchMode(KeyboardMode.LETTERS) })
-        row.addView(buildKey("<", weight = 1f, fillRowHeight = true) { insertText("<") })
+        val sb1 = buildKey("ABC", weight = 1.4f, fillRowHeight = true) { switchMode(KeyboardMode.LETTERS) }
+        row.addView(sb1)
+        registerChaseKey(KeyboardMode.SYMBOLS, sb1, 0.078f, 1f)
+        val sb2 = buildKey("<", weight = 1f, fillRowHeight = true) { insertText("<") }
+        row.addView(sb2)
+        registerChaseKey(KeyboardMode.SYMBOLS, sb2, 0.211f, 1f)
         row.addView(buildSpaceKey(weight = 4.2f))
-        row.addView(buildKey(">", weight = 1f, fillRowHeight = true) { insertText(">") })
-        row.addView(buildKey("\u21b5", weight = 1.4f, highlight = true, fillRowHeight = true) { sendEnter() })
+        val sb3 = buildKey(">", weight = 1f, fillRowHeight = true) { insertText(">") }
+        row.addView(sb3)
+        registerChaseKey(KeyboardMode.SYMBOLS, sb3, 0.789f, 1f)
+        val sb4 = buildKey("\u21b5", weight = 1.4f, highlight = true, fillRowHeight = true) { sendEnter() }
+        row.addView(sb4)
+        registerChaseKey(KeyboardMode.SYMBOLS, sb4, 0.922f, 1f)
 
         return row
     }
@@ -1701,6 +1750,8 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 startVoiceInput()
             }
         }
+        registerChaseKey(KeyboardMode.SYMBOLS, btn, 0.1f, 1f)
+        registerChaseKey(KeyboardMode.SYMBOLS, micBtn, 0.9f, 1f)
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
@@ -1756,7 +1807,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     /** Phim cach: chuc nang chinh la chen dau cach khi CHAM binh thuong.
      *  Neu ngon tay VUOT ngang qua nguong [SPACE_SWIPE_THRESHOLD_DP] truoc
      *  khi tha ra, xem la mot cu vuot doi ngon ngu thay vi mot cai cham. */
-    private fun buildSpaceKey(weight: Float): View {
+    private fun buildSpaceKey(weight: Float, chasePage: KeyboardMode = mode): View {
         val bg = buildGlowKeyBackground()
         val container = FrameLayout(this).apply {
             background = bg
@@ -1827,6 +1878,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             }
         }
 
+        registerChaseKey(chasePage, container, 0.5f, 1f)
         return container
     }
 
