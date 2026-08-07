@@ -39,6 +39,14 @@ class VoiceInputActivity : AppCompatActivity() {
             } catch (e: Exception) {
                 null
             }
+            // THEM: log chan doan (khong hien ra nguoi dung) - de xem lai
+            // qua logcat neu van con truong hop "khong viet ra" sau ban sua
+            // nay, biet duoc la do resultCode/EXTRA_RESULTS that su rong
+            // (may/app nhan dien tra ve khong co gi) hay do loi khac.
+            android.util.Log.d(
+                "VoiceInputActivity",
+                "resultCode=${result.resultCode} text=${text ?: "(null/rong)"}"
+            )
             QrKeyboardService.notifyVoiceInputResult(text)
             finish()
         }
@@ -58,6 +66,19 @@ class VoiceInputActivity : AppCompatActivity() {
             if (!preferredLocale.isNullOrBlank()) {
                 putExtra(RecognizerIntent.EXTRA_LANGUAGE, preferredLocale)
             }
+            // SUA LOI nguoi dung phan anh ("nghe va nhan dien duoc nhung
+            // khong viet ra"): TRUOC DAY THIEU 2 extra nay - bo nhan dien
+            // giong noi cua Google mac dinh co the CHO IM LANG RAT LAU
+            // (hoac cho toi khi nguoi dung tu bam nut dung) truoc khi coi la
+            // "noi xong" va TRA KET QUA VE cho app - neu nguoi dung khong tu
+            // bam dung, ket qua khong bao gio duoc tra ve, giong het trieu
+            // chung "nghe duoc nhung khong viet ra". 2 extra nay BAO Google
+            // bo nhan dien: im lang lien tuc 2000ms (2 giay) la COI NHU DA
+            // NOI XONG, TU DONG dung nghe va tra ket qua ve NGAY - dung yeu
+            // cau "sau 2s ngung noi la phai viet van ban ra" cua nguoi dung.
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 500L)
         }
 
         if (recognizeIntent.resolveActivity(packageManager) == null) {
