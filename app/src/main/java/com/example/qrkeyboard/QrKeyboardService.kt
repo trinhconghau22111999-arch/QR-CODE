@@ -1075,26 +1075,53 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  nhu code truoc day tung lam trong [redrawKeyboard]. Neu container
      *  chua duoc tao (hiem gap), fallback ve buildKeyboardContainer. */
     private fun switchMode(newMode: KeyboardMode) {
-        mode = newMode
-        val container = keyboardRootContainer
-        val letters = lettersPageView
-        if (container == null || letters == null) {
-            setInputView(buildKeyboardContainer())
-            return
+        // SUA (theo yeu cau nguoi dung, sua loi "chuyen trang la an ban phim
+        // luon, khong bat lai duoc"): BOC try/catch TOAN BO than ham nay.
+        // Day la ham duoc goi TRUC TIEP tu onClick cua cac nut chuyen trang
+        // (?123/ABC/123 tren ban phim). TRUOC DAY neu qua trinh build trang
+        // moi (Numbers/Symbols/Numpad - vd buildNumbersPage()) nem loi bat
+        // ky (du la loi gi), no se KHONG duoc bat, lam CRASH toan bo tien
+        // trinh ban phim NGAY LAP TUC - khop dung trieu chung nguoi dung mo
+        // ta. Neu loi xay ra, co gang khoi phuc VE TRANG CHU CAI (trang on
+        // dinh nhat, it code nhat) thay vi de ban phim treo/bien mat hoan
+        // toan.
+        try {
+            mode = newMode
+            val container = keyboardRootContainer
+            val letters = lettersPageView
+            if (container == null || letters == null) {
+                setInputView(buildKeyboardContainer())
+                return
+            }
+            when (newMode) {
+                KeyboardMode.LETTERS -> { /* da co san */ }
+                KeyboardMode.NUMBERS -> if (cachedNumbersView == null) {
+                    cachedNumbersView = buildNumbersPage().also { container.addView(it) }
+                }
+                KeyboardMode.SYMBOLS -> if (cachedSymbolsView == null) {
+                    cachedSymbolsView = buildSymbolsPage().also { container.addView(it) }
+                }
+                KeyboardMode.NUMPAD -> if (cachedNumpadView == null) {
+                    cachedNumpadView = buildNumpadPage().also { container.addView(it) }
+                }
+            }
+            applyModeVisibility(container, letters, cachedNumbersView, cachedSymbolsView, cachedNumpadView)
+        } catch (e: Exception) {
+            android.util.Log.e("QrKeyboardService", "Loi khi chuyen sang trang $newMode: ${e.message}", e)
+            try {
+                mode = KeyboardMode.LETTERS
+                cachedNumbersView = null
+                cachedSymbolsView = null
+                cachedNumpadView = null
+                lettersPageView = null
+                keyboardRootContainer = null
+                setInputView(buildKeyboardContainer())
+            } catch (e2: Exception) {
+                // Neu ca buoc khoi phuc nay cung loi (rat hiem), danh chiu -
+                // it nhat da co log ro rang ("Loi khi chuyen sang trang...")
+                // de xem lai sau, khong con gi khac lam duoc o day.
+            }
         }
-        when (newMode) {
-            KeyboardMode.LETTERS -> { /* da co san */ }
-            KeyboardMode.NUMBERS -> if (cachedNumbersView == null) {
-                cachedNumbersView = buildNumbersPage().also { container.addView(it) }
-            }
-            KeyboardMode.SYMBOLS -> if (cachedSymbolsView == null) {
-                cachedSymbolsView = buildSymbolsPage().also { container.addView(it) }
-            }
-            KeyboardMode.NUMPAD -> if (cachedNumpadView == null) {
-                cachedNumpadView = buildNumpadPage().also { container.addView(it) }
-            }
-        }
-        applyModeVisibility(container, letters, cachedNumbersView, cachedSymbolsView, cachedNumpadView)
     }
 
     /** Ve lai trang LETTERS (Shift/ngon ngu doi) va cap nhat visibility.
