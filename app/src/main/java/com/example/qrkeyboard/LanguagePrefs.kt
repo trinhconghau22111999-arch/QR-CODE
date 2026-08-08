@@ -52,6 +52,66 @@ object LanguagePrefs {
     fun shortLabel(code: String): String =
         SUPPORTED_LANGUAGES.firstOrNull { it.first == code }?.third ?: code.uppercase()
 
+    /** THEM (theo yeu cau nguoi dung "bo sung duoc gi thi bo sung, nao can
+     *  them dau thi cho them"): bang cac ky tu CO DAU PHU cho tung chu cai
+     *  GOC, THEO DUNG TUNG NGON NGU can - dung khi nguoi dung NHAN GIU 1
+     *  phim chu cai de hien popup chon dau (xem [QrKeyboardService]).
+     *
+     *  CO Y KHONG dinh nghia cho "vi" (Tieng Viet - da co bo go Telex rieng,
+     *  day du hon nhieu) va "en" (Tieng Anh - khong can dau phu) - popup
+     *  chon dau nay se KHONG BAO GIO hien len khi dang dung 2 ngon ngu do,
+     *  dung theo yeu cau "khong ap dung no voi ban phim Anh-Viet hien tai".
+     *  Cung khong dinh nghia cho "id"/"ms" (Indonesia/Ma Lai) vi 2 ngon ngu
+     *  nay dung bang chu Latin THUAN, khong can dau phu. */
+    val ACCENT_VARIANTS: Map<String, Map<Char, List<Char>>> = mapOf(
+        "fr" to mapOf(
+            'a' to listOf('\u00e0', '\u00e2', '\u00e6'),
+            'e' to listOf('\u00e9', '\u00e8', '\u00ea', '\u00eb'),
+            'i' to listOf('\u00ee', '\u00ef'),
+            'o' to listOf('\u00f4', '\u0153'),
+            'u' to listOf('\u00f9', '\u00fb', '\u00fc'),
+            'c' to listOf('\u00e7'),
+            'y' to listOf('\u00ff')
+        ),
+        "es" to mapOf(
+            'a' to listOf('\u00e1'),
+            'e' to listOf('\u00e9'),
+            'i' to listOf('\u00ed'),
+            'o' to listOf('\u00f3'),
+            'u' to listOf('\u00fa', '\u00fc'),
+            'n' to listOf('\u00f1')
+        ),
+        "de" to mapOf(
+            'a' to listOf('\u00e4'),
+            'o' to listOf('\u00f6'),
+            'u' to listOf('\u00fc'),
+            's' to listOf('\u00df')
+        ),
+        "pt" to mapOf(
+            'a' to listOf('\u00e1', '\u00e0', '\u00e2', '\u00e3'),
+            'e' to listOf('\u00e9', '\u00ea'),
+            'i' to listOf('\u00ed'),
+            'o' to listOf('\u00f3', '\u00f4', '\u00f5'),
+            'u' to listOf('\u00fa'),
+            'c' to listOf('\u00e7')
+        ),
+        "it" to mapOf(
+            'a' to listOf('\u00e0'),
+            'e' to listOf('\u00e8', '\u00e9'),
+            'i' to listOf('\u00ec', '\u00ed'),
+            'o' to listOf('\u00f2', '\u00f3'),
+            'u' to listOf('\u00f9', '\u00fa')
+        ),
+        "tr" to mapOf(
+            'c' to listOf('\u00e7'),
+            'g' to listOf('\u011f'),
+            'i' to listOf('\u0131', '\u0130'),
+            'o' to listOf('\u00f6'),
+            's' to listOf('\u015f'),
+            'u' to listOf('\u00fc')
+        )
+    )
+
     private fun prefs(ctx: Context) =
         ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 

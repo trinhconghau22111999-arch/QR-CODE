@@ -328,6 +328,19 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     private var previewPopup: PopupWindow? = null
     private var previewBubble: TextView? = null
 
+    // ─────────── THEM: popup chon ky tu co dau khi NHAN GIU 1 phim chu cai ───────────
+    // (theo yeu cau nguoi dung - CHi ap dung cho 6 ngon ngu can dau phu: fr/es/de/pt/it/tr,
+    // KHONG ap dung cho "vi"/"en" - xem [LanguagePrefs.ACCENT_VARIANTS]).
+
+    private var accentPopup: PopupWindow? = null
+    private var accentPopupRow: LinearLayout? = null
+    private var accentPopupOptions: List<Char> = emptyList()
+    private var accentPopupSelectedIndex: Int = 0
+    private var accentPopupShowing: Boolean = false
+    private var accentLongPressRunnable: Runnable? = null
+    private val accentLongPressHandler = Handler(Looper.getMainLooper())
+    private val ACCENT_LONG_PRESS_MS = 350L
+
     /** Goi y sua loi Tieng Viet (xem [VietnameseAutocorrect]). */
     private var pendingSuggestion: String? = null
     private var pendingSuggestionOriginalWord: String? = null
@@ -1955,6 +1968,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
         var repeatRunnable: Runnable? = null
         var repeatTriggered = false
+        // THEM: danh sach bien the co dau cho phim NAY (chi tinh 1 LAN luc
+        // xay phim, khong doi trong luc ban phim dang hien - neu nguoi dung
+        // doi ngon ngu giua chung, phim se duoc XAY LAI hoan toan qua co che
+        // dong bo co san [onWindowShown] nen van luon dung).
+        val accentVariants = if (label.length == 1 && label[0].isLetter()) accentVariantsFor(label[0]) else emptyList()
         button.setOnTouchListener { v, event ->
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
@@ -1973,12 +1991,42 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                         repeatRunnable = runnable
                         deleteRepeatHandler.postDelayed(runnable, DELETE_REPEAT_INITIAL_DELAY_MS)
                     }
+                    // THEM: neu phim nay CO bien the dau (dung ngon ngu dang
+                    // active, KHONG phai "vi"/"en" - xem [accentVariantsFor]),
+                    // hen gio hien popup chon dau sau [ACCENT_LONG_PRESS_MS]
+                    // neu ngon tay VAN con giu (chua nha/di chuyen ra ngoai).
+                    if (accentVariants.isNotEmpty()) {
+                        val runnable = Runnable {
+                            hideKeyPreview()
+                            showAccentPopup(v, label[0], accentVariants, label[0].isUpperCase())
+                        }
+                        accentLongPressRunnable = runnable
+                        accentLongPressHandler.postDelayed(runnable, ACCENT_LONG_PRESS_MS)
+                    }
+                    false
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (accentPopupShowing) {
+                        updateAccentPopupSelection(event.rawX)
+                        return@setOnTouchListener true
+                    }
                     false
                 }
                 MotionEvent.ACTION_UP -> {
                     hideKeyPreview()
                     repeatRunnable?.let { deleteRepeatHandler.removeCallbacks(it) }
                     repeatRunnable = null
+                    accentLongPressRunnable?.let { accentLongPressHandler.removeCallbacks(it) }
+                    accentLongPressRunnable = null
+                    if (accentPopupShowing) {
+                        // Nguoi dung DA giu du lau de hien popup - nha tay ra
+                        // la CHOT lua chon dang to sang (KHONG chen chu cai
+                        // goc qua duong onClick binh thuong nua - consume
+                        // (tra ve true) de ngan onClick tu dong chay tiep,
+                        // tranh chen 2 lan/sai ky tu).
+                        commitAccentSelectionAndDismiss()
+                        return@setOnTouchListener true
+                    }
                     if (repeatTriggered) {
                         return@setOnTouchListener true
                     }
@@ -1988,6 +2036,9 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                     hideKeyPreview()
                     repeatRunnable?.let { deleteRepeatHandler.removeCallbacks(it) }
                     repeatRunnable = null
+                    accentLongPressRunnable?.let { accentLongPressHandler.removeCallbacks(it) }
+                    accentLongPressRunnable = null
+                    if (accentPopupShowing) dismissAccentPopup()
                     false
                 }
                 else -> false
@@ -2048,6 +2099,125 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
     private fun hideKeyPreview() {
         previewPopup?.let { if (it.isShowing) it.dismiss() }
+    }
+
+    /** THEM: tra ve danh sach ky tu co dau cho chu cai GOC [ch] (khong phan
+     *  biet hoa/thuong khi tra bang), theo DUNG ngon ngu DANG active tren
+     *  ban phim luc goi ham. Tra ve list RONG (khong co popup) neu:
+     *  - Ngon ngu dang active la "vi" hoac "en" (theo dung yeu cau nguoi
+     *    dung "khong ap dung no voi ban phim Anh-Viet hien tai").
+     *  - Chu cai do khong co bien the dau nao trong ngon ngu dang active. */
+    private fun accentVariantsFor(ch: Char): List<Char> {
+        if (activeLangCode == "vi" || activeLangCode == "en") return emptyList()
+        return LanguagePrefs.ACCENT_VARIANTS[activeLangCode]?.get(ch.lowercaseChar()) ?: emptyList()
+    }
+
+    /** Hien popup chon dau ngay phia tren [anchor] - hang ngang gom chu cai
+     *  GOC (dau tien) roi den cac bien the co dau. [isUpper]: hien TAT CA
+     *  lua chon o dang HOA neu dung dang go phim SHIFT/viet hoa dau cau, de
+     *  khop voi case dang go. */
+    private fun showAccentPopup(anchor: View, baseChar: Char, variants: List<Char>, isUpper: Boolean) {
+        val options = (listOf(baseChar) + variants).map { if (isUpper) it.uppercaseChar() else it }
+        accentPopupOptions = options
+        accentPopupSelectedIndex = 0
+
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            background = GradientDrawable().apply {
+                cornerRadius = dp(6).toFloat()
+                setColor(Color.parseColor("#3C4043"))
+            }
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+        }
+        options.forEachIndexed { i, c ->
+            row.addView(TextView(this).apply {
+                text = c.toString()
+                textSize = 20f
+                setTextColor(Color.WHITE)
+                gravity = Gravity.CENTER
+                setPadding(dp(12), dp(8), dp(12), dp(8))
+                if (i == 0) {
+                    background = GradientDrawable().apply {
+                        cornerRadius = dp(4).toFloat()
+                        setColor(Color.parseColor("#5F6368"))
+                    }
+                }
+            })
+        }
+        accentPopupRow = row
+
+        val popup = PopupWindow(
+            row, ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, false
+        ).apply { isClippingEnabled = false }
+        accentPopup = popup
+
+        val loc = IntArray(2)
+        anchor.getLocationInWindow(loc)
+        row.measure(
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        )
+        val x = loc[0] + anchor.width / 2 - row.measuredWidth / 2
+        val y = loc[1] - row.measuredHeight - dp(4)
+        try {
+            popup.showAtLocation(anchor, Gravity.NO_GRAVITY, x, y)
+            accentPopupShowing = true
+        } catch (e: Exception) {
+            // Bo qua neu window chua san sang de hien popup (hiem gap) -
+            // coi nhu KHONG hien popup, phim se roi ve hanh vi go binh
+            // thuong (chu cai goc) khi nha tay ra.
+            accentPopupShowing = false
+        }
+    }
+
+    /** Cap nhat lua chon dang duoc "to sang" trong popup dua theo toa do X
+     *  TUYET DOI cua ngon tay tren man hinh (rawX) - goi lien tuc trong luc
+     *  ngon tay con di chuyen (ACTION_MOVE) de mo phong dung kieu "vuot chon
+     *  dau" quen thuoc cua Gboard/ban phim Android chuan. */
+    private fun updateAccentPopupSelection(rawX: Float) {
+        val row = accentPopupRow ?: return
+        if (row.childCount == 0) return
+        val loc = IntArray(2)
+        row.getLocationOnScreen(loc)
+        val relativeX = rawX - loc[0]
+        val childWidth = if (row.childCount > 0) row.width.toFloat() / row.childCount else 1f
+        if (childWidth <= 0f) return
+        var idx = (relativeX / childWidth).toInt().coerceIn(0, row.childCount - 1)
+        if (idx == accentPopupSelectedIndex) return
+        accentPopupSelectedIndex = idx
+        for (i in 0 until row.childCount) {
+            val child = row.getChildAt(i) as? TextView ?: continue
+            child.background = if (i == idx) {
+                GradientDrawable().apply {
+                    cornerRadius = dp(4).toFloat()
+                    setColor(Color.parseColor("#5F6368"))
+                }
+            } else null
+        }
+    }
+
+    /** Chen ky tu dang duoc chon (to sang) trong popup vao vi tri con tro,
+     *  roi dong popup lai. Goi khi nguoi dung nha tay ra ([ACTION_UP]) TRONG
+     *  luc popup dang hien. */
+    private fun commitAccentSelectionAndDismiss() {
+        val options = accentPopupOptions
+        val idx = accentPopupSelectedIndex.coerceIn(0, options.size - 1).takeIf { options.isNotEmpty() }
+        dismissAccentPopup()
+        if (idx != null) {
+            insertChar(options[idx])
+        }
+    }
+
+    private fun dismissAccentPopup() {
+        try {
+            accentPopup?.let { if (it.isShowing) it.dismiss() }
+        } catch (e: Exception) {
+            // Bo qua.
+        }
+        accentPopup = null
+        accentPopupRow = null
+        accentPopupOptions = emptyList()
+        accentPopupShowing = false
     }
 
     private fun insertChar(ch: Char) {
@@ -2907,6 +3077,12 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
+        // THEM: dep sach popup chon dau (neu dang hien) + huy timer nhan giu
+        // dang cho (neu co) - ban phim sap an, khong de popup "mo coi" tren
+        // man hinh hoac timer chay ngam vo ich.
+        accentLongPressRunnable?.let { accentLongPressHandler.removeCallbacks(it) }
+        accentLongPressRunnable = null
+        dismissAccentPopup()
         // THEM: dung NGAY vong lap hoat hinh RGB (khong can cho debounce -
         // View ban phim da AN ngay lap tuc roi, ve lai mau lien tuc luc
         // khong ai nhin thay la lang phi pin thuan tuy). Se tu khoi dong lai
@@ -2964,6 +3140,9 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         qrToneGenerator.release()
         stopRgbChaseLoop()
         rgbChaseRegistryByPage.clear()
+        accentLongPressRunnable?.let { accentLongPressHandler.removeCallbacks(it) }
+        accentLongPressRunnable = null
+        dismissAccentPopup()
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
         previewPopup?.let { if (it.isShowing) it.dismiss() }
         previewPopup = null
