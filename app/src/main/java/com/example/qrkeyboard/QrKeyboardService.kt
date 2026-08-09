@@ -312,6 +312,16 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  Enter, hoac chuyen o nhap. */
     private var currentWord = StringBuilder()
 
+    /** THEM (theo yeu cau nguoi dung, tinh nang goi y emoji): bo dem RIENG,
+     *  DOC LAP voi [currentWord] o tren - chua ky tu (thuong, GIU dau neu
+     *  la Tieng Viet) cua "tu" dang go, dung DUY NHAT de doi chieu voi
+     *  [EMOJI_TRIGGERS] va quyet dinh co hien goi y emoji hay khong. Tach
+     *  RIENG (khong dung chung [currentWord]) de KHONG dung cham/anh huong
+     *  toi co che Telex von da rat tinh vi (currentWord bi [insertText] tu
+     *  dong xoa sau MOI lan chen van ban, khong phu hop de theo doi tu qua
+     *  nhieu ky tu lien tiep o che do go THUONG/khong phai Tieng Viet). */
+    private var emojiTrackWord = StringBuilder()
+
     /** THEM (theo yeu cau nguoi dung): ban sao GIU NGUYEN hoa/thuong THAT SU
      *  cua [currentWord] (currentWord luon la chu THUONG, dung lam "goc" cho
      *  Telex xu ly) - CUNG do dai, CUNG vi tri voi [currentWord] tai MOI thoi
@@ -344,6 +354,13 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     /** Goi y sua loi Tieng Viet (xem [VietnameseAutocorrect]). */
     private var pendingSuggestion: String? = null
     private var pendingSuggestionOriginalWord: String? = null
+
+    /** THEM (theo yeu cau nguoi dung, tinh nang goi y emoji): emoji dang duoc
+     *  goi y (vd go "hihi" -> goi y "\ud83d\ude02") va tu GOC da go ra no
+     *  (dung de XOA DUNG SO KY TU khi nguoi dung chon emoji - xem
+     *  [acceptEmojiSuggestion]). null nghia la KHONG co goi y nao dang hien. */
+    private var pendingEmojiSuggestion: String? = null
+    private var pendingEmojiOriginalWord: String? = null
 
     /** Danh dau lan thay doi selection/con tro SAP TOI trong o nhap lieu la
      *  do CHINH ban phim nay gay ra (qua commitText/deleteSurroundingText). */
@@ -797,6 +814,66 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     // ky hieu "care of").
     private val extendedSymbolRow3 = "%\u00a9\u00ae\u2122\u2105\u00b1[]"
 
+    /** THEM (theo yeu cau nguoi dung "bo sung tu goi y nhieu nhat co the"):
+     *  bang tu khoa -> emoji GOI Y khi go TRUNG KHOP HOAN TOAN 1 tu (khong
+     *  phai chuoi con) - CHi dung lai cac emoji DA CO SAN trong [emojiList]
+     *  o trang Ky hieu/So (trang 2), KHONG them emoji moi nao ca, dung yeu
+     *  cau "phan icon o trang 2 co dinh giu nguyen, phan nay chi truy xuat
+     *  no". Ca ban KHONG dau (go nhanh, go tieng Anh) LAN CO dau (Tieng
+     *  Viet chuan) deu duoc liet ke rieng de khop chinh xac voi
+     *  [emojiTrackWord] (giu nguyen dau neu dang go Tieng Viet). */
+    private val EMOJI_TRIGGERS: Map<String, String> = mapOf(
+        // Cuoi
+        "hihi" to "\ud83d\ude02", "haha" to "\ud83d\ude02", "hehe" to "\ud83d\ude04",
+        "khakha" to "\ud83e\udd23", "lol" to "\ud83e\udd23",
+        "cuoi" to "\ud83d\ude04", "c\u01b0\u1eddi" to "\ud83d\ude04",
+        "vui" to "\ud83d\ude0a",
+        // Yeu thich
+        "yeu" to "\u2764\ufe0f", "y\u00eau" to "\u2764\ufe0f", "iu" to "\u2764\ufe0f",
+        "thich" to "\ud83d\ude0d", "th\u00edch" to "\ud83d\ude0d",
+        "tim" to "\u2764\ufe0f",
+        "hon" to "\ud83d\ude18", "h\u00f4n" to "\ud83d\ude18",
+        "ngau" to "\ud83d\ude0e", "ng\u1ea7u" to "\ud83d\ude0e",
+        // Buon / gian / so
+        "buon" to "\ud83d\ude22", "bu\u1ed3n" to "\ud83d\ude22",
+        "khoc" to "\ud83d\ude2d", "kh\u00f3c" to "\ud83d\ude2d",
+        "gian" to "\ud83d\ude20", "gi\u1eadn" to "\ud83d\ude20",
+        "tuc" to "\ud83d\ude21", "t\u1ee9c" to "\ud83d\ude21",
+        "so" to "\ud83d\ude31", "s\u1ee3" to "\ud83d\ude31",
+        "soc" to "\ud83d\ude33", "s\u1ed1c" to "\ud83d\ude33",
+        "ngu" to "\ud83d\ude34", "ng\u1ee7" to "\ud83d\ude34",
+        // Nghi/dong y
+        "nghi" to "\ud83e\udd14", "ngh\u0129" to "\ud83e\udd14",
+        "ok" to "\ud83d\udc4c", "oke" to "\ud83d\udc4c", "okay" to "\ud83d\udc4c",
+        "tot" to "\ud83d\udc4d", "t\u1ed1t" to "\ud83d\udc4d",
+        "xau" to "\ud83d\udc4e", "x\u1ea5u" to "\ud83d\udc4e",
+        "done" to "\u2705", "xong" to "\u2705",
+        "sai" to "\u274c", "no" to "\u274c",
+        // Chao hoi / cam on
+        "chao" to "\ud83d\udc4b", "ch\u00e0o" to "\ud83d\udc4b",
+        "hi" to "\ud83d\udc4b", "hello" to "\ud83d\udc4b",
+        "camon" to "\ud83d\ude4f", "c\u1ea3m\u01a1n" to "\ud83d\ude4f",
+        "thanks" to "\ud83d\ude4f", "thank" to "\ud83d\ude4f",
+        "khoe" to "\ud83d\udcaa", "kh\u1ecfe" to "\ud83d\udcaa",
+        // Thien nhien / do vat
+        "lua" to "\ud83d\udd25", "l\u1eeda" to "\ud83d\udd25",
+        "sao" to "\u2b50",
+        "nang" to "\u2600\ufe0f", "n\u1eafng" to "\u2600\ufe0f",
+        "mua" to "\ud83c\udf27\ufe0f", "m\u01b0a" to "\ud83c\udf27\ufe0f",
+        "hoa" to "\ud83c\udf38",
+        "tiec" to "\ud83c\udf89", "ti\u1ec7c" to "\ud83c\udf89",
+        "cafe" to "\u2615", "caphe" to "\u2615", "c\u00e0ph\u00ea" to "\u2615",
+        "tien" to "\ud83d\udcb0", "ti\u1ec1n" to "\ud83d\udcb0",
+        "dienthoai" to "\ud83d\udcf1",
+        // Dong vat
+        "cho" to "\ud83d\udc36", "ch\u00f3" to "\ud83d\udc36",
+        "meo" to "\ud83d\udc31", "m\u00e8o" to "\ud83d\udc31", "meocon" to "\ud83d\udc31",
+        "ca" to "\ud83d\udc20", "c\u00e1" to "\ud83d\udc20",
+        // Khac
+        "robot" to "\ud83e\udd16",
+        "gio" to "\u23f0", "gi\u1edd" to "\u23f0"
+    )
+
     private fun dp(value: Int): Int =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics).toInt()
 
@@ -908,7 +985,9 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
         when (mode) {
             KeyboardMode.LETTERS -> {
-                if (pendingSuggestion != null) {
+                if (pendingEmojiSuggestion != null) {
+                    root.addView(buildEmojiSuggestionRow())
+                } else if (pendingSuggestion != null) {
                     root.addView(buildAutocorrectSuggestionRow())
                 }
                 root.addView(buildCharRow(numberRows[0], rowPhase = 0f))
@@ -1220,10 +1299,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // luc ban phim bi he thong tai tao View tam thoi.
         if (!isSameFieldAsBefore && isPasswordField(info) && isVietnameseMode) {
             activeIsLang1 = !activeIsLang1
-            currentWord.clear()
+            currentWord.clear(); emojiTrackWord.clear()
         }
 
-        currentWord.clear()
+        currentWord.clear(); emojiTrackWord.clear()
         capitalizeNextLetter = false
         showCapitalPreview = false
         capitalizeAppliedAtPrefixLen = null
@@ -1519,6 +1598,104 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             pendingSuggestion = null
             pendingSuggestionOriginalWord = null
         }
+        // THEM: dep luon goi y emoji (2 loai goi y dung CHUNG 1 hang tren
+        // cung cua trang Chu cai, chi hien 1 trong 2 tai 1 thoi diem - xem
+        // [buildLettersPage]) - moi diem goi ham nay TRUOC DAY (bat dau tu
+        // dong go moi, xoa het, chuyen o nhap...) deu la thoi diem HOP LY de
+        // dep goi y emoji cu di.
+        pendingEmojiSuggestion = null
+        pendingEmojiOriginalWord = null
+    }
+
+    /** THEM (theo yeu cau nguoi dung, tinh nang goi y emoji): kiem tra [word]
+     *  (chu thuong) co trung khop HOAN TOAN voi 1 tu khoa trong
+     *  [EMOJI_TRIGGERS] khong - neu co, hien goi y; khong thi dep goi y cu
+     *  (neu co) di. Goi lai sau MOI ky tu duoc go/xoa (ca 2 luong Tieng Viet
+     *  va ngon ngu khac). */
+    private fun checkEmojiSuggestion(word: String) {
+        val emoji = EMOJI_TRIGGERS[word.lowercase()]
+        if (emoji != null) {
+            if (pendingEmojiSuggestion != emoji || pendingEmojiOriginalWord != word) {
+                pendingEmojiSuggestion = emoji
+                pendingEmojiOriginalWord = word
+                pendingSuggestion = null
+                pendingSuggestionOriginalWord = null
+                redrawKeyboard()
+            }
+        } else if (pendingEmojiSuggestion != null) {
+            pendingEmojiSuggestion = null
+            pendingEmojiOriginalWord = null
+            redrawKeyboard()
+        }
+    }
+
+    /** THEM: nguoi dung bam vao emoji dang duoc goi y - XOA DUNG so ky tu
+     *  cua tu GOC da go ra no roi CHEN emoji vao dung vi tri do (thay the
+     *  hoan toan, KHONG phai chen them giu nguyen chu - dung yeu cau ro rang
+     *  cua nguoi dung "khong xoa chu thi sai"), kem 1 dau cach phia sau. */
+    private fun acceptEmojiSuggestion() {
+        val original = pendingEmojiOriginalWord ?: return
+        val emoji = pendingEmojiSuggestion ?: return
+        val ic = currentInputConnection
+        if (ic != null) {
+            selfInitiatedChange = true
+            ic.beginBatchEdit()
+            try {
+                ic.deleteSurroundingText(original.length, 0)
+                ic.commitText("$emoji ", 1)
+            } finally {
+                ic.endBatchEdit()
+            }
+        }
+        currentWord.clear(); emojiTrackWord.clear()
+        currentWordCased.clear()
+        clearAutocorrectSuggestion()
+        redrawKeyboard()
+    }
+
+    private fun buildEmojiSuggestionRow(): LinearLayout {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        }
+        val emoji = pendingEmojiSuggestion
+        if (emoji == null) return row
+
+        val bg = GradientDrawable().apply {
+            cornerRadius = dp(4).toFloat()
+            setColor(Color.parseColor("#1A0F2E"))
+            setStroke(dp(1), glowColor)
+        }
+        val suggestionBtn = Button(this).apply {
+            text = "$emoji  \u0110\u1ec3 g\u00f5 emoji n\u00e0y?"
+            isAllCaps = false
+            setTextColor(Color.parseColor("#D4BBFF"))
+            textSize = 15f
+            includeFontPadding = true
+            isSingleLine = true
+            background = bg
+            gravity = Gravity.CENTER
+            stateListAnimator = null
+            elevation = 0f
+            outlineProvider = null
+            layoutParams = LinearLayout.LayoutParams(0, dp(keyHeightDp - 8), 6f).apply {
+                setMargins(dp(2), dp(2), dp(2), dp(2))
+            }
+            setOnClickListener {
+                vibrateKeyPress()
+                playKeyClickTone()
+                acceptEmojiSuggestion()
+            }
+        }
+        row.addView(suggestionBtn)
+        row.addView(buildKey("\u2715", weight = 1.2f) {
+            pendingEmojiSuggestion = null
+            pendingEmojiOriginalWord = null
+            redrawKeyboard()
+        })
+        return row
     }
 
     /** Hang duoi cung trang chu cai: "," / phim cach / "." / Enter, cung
@@ -1809,7 +1986,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  trang (tranh dinh lien vao tu truoc do). */
     private fun insertRecognizedVoiceText(text: String) {
         val ic = currentInputConnection ?: return
-        currentWord.clear()
+        currentWord.clear(); emojiTrackWord.clear()
         currentWordCased.clear()
         val before = ic.getTextBeforeCursor(1, 0)?.toString()
         val needsLeadingSpace = !before.isNullOrEmpty() && !before.last().isWhitespace()
@@ -1898,7 +2075,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     private fun setLanguageMode(useLang1: Boolean) {
         if (activeIsLang1 == useLang1) return
         activeIsLang1 = useLang1
-        currentWord.clear()
+        currentWord.clear(); emojiTrackWord.clear()
         val label = LanguagePrefs.displayName(activeLangCode)
         Toast.makeText(this, "G\u00f5 $label", Toast.LENGTH_SHORT).show()
         redrawKeyboard()
@@ -2241,6 +2418,8 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 showCapitalPreview = true
                 capitalizeAppliedAtPrefixLen = null
                 insertText(" ")
+                emojiTrackWord.clear()
+                checkEmojiSuggestion("")
                 redrawKeyboard()
                 return
             }
@@ -2253,6 +2432,16 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
         val out = if (isShiftOn || shouldCapitalize) ch.uppercaseChar() else ch
         insertText(out.toString())
+        // THEM (theo yeu cau nguoi dung, tinh nang goi y emoji): cap nhat tu
+        // dang go RIENG (xem [emojiTrackWord]) - neu la chu cai thi noi
+        // them, khong phai (dau cach/dau cau/so...) thi coi nhu HET tu, xoa
+        // sach de bat dau tu MOI. Kiem tra goi y sau MOI lan cap nhat.
+        if (out.isLetter()) {
+            emojiTrackWord.append(out.lowercaseChar())
+        } else {
+            emojiTrackWord.clear()
+        }
+        checkEmojiSuggestion(emojiTrackWord.toString())
         if (shouldCapitalize) redrawKeyboard()
     }
 
@@ -2306,6 +2495,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             VietnameseTelex.processKey(oldWordLower, lower, oldWordCased, keyIsUpper)
         }
         currentWord = StringBuilder(newWordLower)
+        // THEM (theo yeu cau nguoi dung, tinh nang goi y emoji): dong bo tu
+        // dang go (co dau, dung y nghia) sang bo theo doi RIENG cho goi y
+        // emoji, kiem tra ngay sau moi lan Telex cap nhat xong.
+        emojiTrackWord = StringBuilder(newWordLower)
+        checkEmojiSuggestion(newWordLower)
 
         var commonPrefixLen = 0
         val minLen = minOf(oldWordLower.length, newWordLower.length)
@@ -2398,7 +2592,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val boundaryWord = currentWord.toString()
         selfInitiatedChange = true
         currentInputConnection?.commitText(text, 1)
-        currentWord.clear()
+        currentWord.clear(); emojiTrackWord.clear()
 
         if (pendingSuggestion != null) {
             clearAutocorrectSuggestion()
@@ -2414,7 +2608,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val selectedText = ic?.getSelectedText(0)
         if (!selectedText.isNullOrEmpty()) {
             ic.commitText("", 1)
-            currentWord.clear()
+            currentWord.clear(); emojiTrackWord.clear()
             currentWordCased.clear()
         } else {
             ic?.deleteSurroundingText(1, 0)
@@ -2424,7 +2618,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             if (currentWordCased.isNotEmpty()) {
                 currentWordCased.deleteCharAt(currentWordCased.length - 1)
             }
+            if (emojiTrackWord.isNotEmpty()) {
+                emojiTrackWord.deleteCharAt(emojiTrackWord.length - 1)
+            }
         }
+        checkEmojiSuggestion(emojiTrackWord.toString())
 
         // THEM (theo yeu cau nguoi dung): "xoa het viet lai thi van [tu dong
         // viet hoa chu dau]" - neu SAU khi xoa, O NHAP TRO THANH RONG HOAN
@@ -2447,7 +2645,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
     private fun sendEnter() {
         val ic = currentInputConnection ?: return
-        currentWord.clear()
+        currentWord.clear(); emojiTrackWord.clear()
         clearAutocorrectSuggestion()
         selfInitiatedChange = true
         val inputType = currentInputEditorInfo?.inputType ?: InputType.TYPE_NULL
@@ -2493,7 +2691,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     ) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
         if (!selfInitiatedChange) {
-            currentWord.clear()
+            currentWord.clear(); emojiTrackWord.clear()
             capitalizeNextLetter = false
             showCapitalPreview = false
             capitalizeAppliedAtPrefixLen = null
@@ -3052,7 +3250,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             selfInitiatedChange = true
             ic?.commitText(text, 1)
             ic?.commitText("\n", 1)
-            currentWord.clear()
+            currentWord.clear(); emojiTrackWord.clear()
             val hadPendingSuggestion = pendingSuggestion != null
             clearAutocorrectSuggestion()
             if (hadPendingSuggestion) redrawKeyboard()
