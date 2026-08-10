@@ -1501,6 +1501,8 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                     vibrateKeyPress()
                     playKeyClickTone()
                     insertText(emoji)
+                    emojiTrackWord.clear()
+                    checkEmojiSuggestion("")
                 }
             }
             inner.addView(btn)
@@ -1713,7 +1715,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val k1 = buildKey("?123", weight = 1.4f, fillRowHeight = true) { switchMode(KeyboardMode.NUMBERS) }
         row.addView(k1)
         registerChaseKey(KeyboardMode.LETTERS, k1, 0.078f, 1f)
-        val k2 = buildKey(",", weight = 1f, fillRowHeight = true) { insertText(",") }
+        val k2 = buildKey(",", weight = 1f, fillRowHeight = true) {
+            insertText(",")
+            emojiTrackWord.clear(); checkEmojiSuggestion("")
+        }
         row.addView(k2)
         registerChaseKey(KeyboardMode.LETTERS, k2, 0.211f, 1f)
         row.addView(buildSpaceKey(weight = 4.2f))
@@ -1727,6 +1732,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             // PHIM CACH (xem nhanh xu ly dau cach trong insertChar), CHI KHI
             // ky tu ngay truoc dau cach do THAT SU la ".".
             insertText(".")
+            emojiTrackWord.clear(); checkEmojiSuggestion("")
         }
         row.addView(k3)
         registerChaseKey(KeyboardMode.LETTERS, k3, 0.789f, 1f)
@@ -1759,7 +1765,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         registerChaseKey(KeyboardMode.NUMBERS, eq, 0.075f, 0.75f)
         val symTotal = numberRow3Symbols.length
         numberRow3Symbols.forEachIndexed { i, ch ->
-            val symKey = buildKey(ch.toString(), weight = 1f) { insertText(ch.toString()) }
+            val symKey = buildKey(ch.toString(), weight = 1f) {
+                insertText(ch.toString())
+                emojiTrackWord.clear(); checkEmojiSuggestion("")
+            }
             row.addView(symKey)
             registerChaseKey(KeyboardMode.NUMBERS, symKey, (1.5f + i + 0.5f) / (1.5f + symTotal + 1.5f), 0.75f)
         }
@@ -1826,7 +1835,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val symTotal2 = extendedSymbolRow3.length
         val totalW2 = 1.3f + symTotal2 + 1.3f
         extendedSymbolRow3.forEachIndexed { i, ch ->
-            val symKey = buildKey(ch.toString(), weight = 1f) { insertText(ch.toString()) }
+            val symKey = buildKey(ch.toString(), weight = 1f) {
+                insertText(ch.toString())
+                emojiTrackWord.clear(); checkEmojiSuggestion("")
+            }
             row.addView(symKey)
             registerChaseKey(KeyboardMode.SYMBOLS, symKey, (1.3f + i + 0.5f) / totalW2, 0.75f)
         }
@@ -1857,11 +1869,17 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val sb1 = buildKey("ABC", weight = 1.4f, fillRowHeight = true) { switchMode(KeyboardMode.LETTERS) }
         row.addView(sb1)
         registerChaseKey(KeyboardMode.SYMBOLS, sb1, 0.078f, 1f)
-        val sb2 = buildKey("<", weight = 1f, fillRowHeight = true) { insertText("<") }
+        val sb2 = buildKey("<", weight = 1f, fillRowHeight = true) {
+            insertText("<")
+            emojiTrackWord.clear(); checkEmojiSuggestion("")
+        }
         row.addView(sb2)
         registerChaseKey(KeyboardMode.SYMBOLS, sb2, 0.211f, 1f)
         row.addView(buildSpaceKey(weight = 4.2f))
-        val sb3 = buildKey(">", weight = 1f, fillRowHeight = true) { insertText(">") }
+        val sb3 = buildKey(">", weight = 1f, fillRowHeight = true) {
+            insertText(">")
+            emojiTrackWord.clear(); checkEmojiSuggestion("")
+        }
         row.addView(sb3)
         registerChaseKey(KeyboardMode.SYMBOLS, sb3, 0.789f, 1f)
         val sb4 = buildKey("\u21b5", weight = 1.4f, highlight = true, fillRowHeight = true) { sendEnter() }
@@ -2592,7 +2610,20 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val boundaryWord = currentWord.toString()
         selfInitiatedChange = true
         currentInputConnection?.commitText(text, 1)
-        currentWord.clear(); emojiTrackWord.clear()
+        currentWord.clear()
+        // SUA LOI nguoi dung phan anh ("chon emoji khong xoa chu, hihi
+        // thanh hihi 😂"): TRUOC DAY co [emojiTrackWord.clear()] o day -
+        // ham nay duoc GOI CHO TUNG KY TU trong luong go thuong (qua
+        // [insertChar]), nen moi lan go 1 chu cai, [emojiTrackWord] bi XOA
+        // SACH ngay truoc khi [insertChar] kip noi them ky tu do vao - lam
+        // [emojiTrackWord] KHONG BAO GIO tich luy qua 1 ky tu, [pendingEmojiOriginalWord]
+        // vi vay LUON SAI (qua ngan/rong) - khi bam chon emoji,
+        // [ic.deleteSurroundingText] xoa SAI so ky tu (qua it hoac 0), chu
+        // van con nguyen tren man hinh. SUA: BO xoa [emojiTrackWord] o day -
+        // de CHINH [insertChar] tu quan ly no (da co san logic dung: chu
+        // cai thi noi them, khong phai thi xoa - xem [insertChar]). Cac noi
+        // GOI insertText() KHAC (dau cau, ky hieu...) TU xoa [emojiTrackWord]
+        // rieng ngay sau khi goi ham nay, dam bao van dung ranh gioi tu.
 
         if (pendingSuggestion != null) {
             clearAutocorrectSuggestion()
@@ -3144,6 +3175,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                                     // theo (neu co) bat dau tren 1 dong moi, khong dinh lien vao
                                     // cuoi doan van ban vua dan.
                                     insertText(text + "\n")
+                                    emojiTrackWord.clear(); checkEmojiSuggestion("")
                                 }
                             }
                         }
