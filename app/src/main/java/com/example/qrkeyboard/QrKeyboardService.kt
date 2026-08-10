@@ -1631,23 +1631,16 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
     }
 
-    /** THEM: nguoi dung bam vao emoji dang duoc goi y - XOA DUNG so ky tu
-     *  cua tu GOC da go ra no roi CHEN emoji vao dung vi tri do (thay the
-     *  hoan toan, KHONG phai chen them giu nguyen chu - dung yeu cau ro rang
-     *  cua nguoi dung "khong xoa chu thi sai"), kem 1 dau cach phia sau. */
+    /** THEM (theo yeu cau nguoi dung, ro rang: "go hihi hien icon, bam vao
+     *  thanh 'hihi 😄'"): nguoi dung bam vao emoji dang duoc goi y - GIU
+     *  NGUYEN chu vua go, CHi CHEN THEM emoji vao NGAY SAU (kem 1 dau cach
+     *  o truoc de tach voi chu, KHONG xoa bat ky ky tu nao ca). */
     private fun acceptEmojiSuggestion() {
-        val original = pendingEmojiOriginalWord ?: return
         val emoji = pendingEmojiSuggestion ?: return
         val ic = currentInputConnection
         if (ic != null) {
             selfInitiatedChange = true
-            ic.beginBatchEdit()
-            try {
-                ic.deleteSurroundingText(original.length, 0)
-                ic.commitText("$emoji ", 1)
-            } finally {
-                ic.endBatchEdit()
-            }
+            ic.commitText(" $emoji ", 1)
         }
         currentWord.clear(); emojiTrackWord.clear()
         currentWordCased.clear()
@@ -1671,7 +1664,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             setStroke(dp(1), glowColor)
         }
         val suggestionBtn = Button(this).apply {
-            text = "$emoji  \u0110\u1ec3 g\u00f5 emoji n\u00e0y?"
+            text = "$emoji  Th\u00eam emoji n\u00e0y?"
             isAllCaps = false
             setTextColor(Color.parseColor("#D4BBFF"))
             textSize = 15f
