@@ -897,20 +897,82 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  dang gan o do) de tranh crash "already has a parent" khi gan lai vao
      *  container MOI ngay sau day trong [buildKeyboardContainer]. */
     override fun onCreateInputView(): View {
-        val currentKeyHeight = keyHeightDp
-        if (currentKeyHeight != lastBuiltKeyHeightDp) {
-            cachedNumbersView = null
-            cachedSymbolsView = null
-            cachedNumpadView = null
-            lastBuiltKeyHeightDp = currentKeyHeight
-        } else {
-            detachFromParentIfAny(cachedNumbersView)
-            detachFromParentIfAny(cachedSymbolsView)
-            detachFromParentIfAny(cachedNumpadView)
+        // SUA (theo yeu cau nguoi dung, sua loi "tu tat ban phim, khong bat
+        // lai duoc - chi con 1 hang den + icon chuyen ban phim"): BOC
+        // try/catch TOAN BO than ham nay. Day la buoc DAU TIEN he thong goi
+        // moi lan can hien ban phim - TRUOC DAY neu buildKeyboardContainer()
+        // (xay ca 4 trang, hieu ung RGB, popup dau, goi y emoji...) nem loi
+        // BAT KY o BUOC KHOI TAO nay, toan bo Service se crash NGAY LUC vua
+        // mo len - giao dien "1 hang den + icon chuyen ban phim" nguoi dung
+        // mo ta chinh la man hinh du phong cua he thong Android khi mot IME
+        // loi luc khoi tao. SUA: neu loi, tra ve 1 ban phim TOI GIAN
+        // (buildFallbackKeyboardView() - chi QWERTY co ban, KHONG co hieu
+        // ung/tinh nang phu nao co the loi) thay vi de crash hoan toan - it
+        // nhat nguoi dung VAN GO DUOC binh thuong, khong bi "khoa" hoan
+        // toan khoi ban phim.
+        return try {
+            val currentKeyHeight = keyHeightDp
+            if (currentKeyHeight != lastBuiltKeyHeightDp) {
+                cachedNumbersView = null
+                cachedSymbolsView = null
+                cachedNumpadView = null
+                lastBuiltKeyHeightDp = currentKeyHeight
+            } else {
+                detachFromParentIfAny(cachedNumbersView)
+                detachFromParentIfAny(cachedSymbolsView)
+                detachFromParentIfAny(cachedNumpadView)
+            }
+            keyboardRootContainer = null
+            lettersPageView = null
+            buildKeyboardContainer()
+        } catch (e: Exception) {
+            android.util.Log.e("QrKeyboardService", "Loi khi tao ban phim: ${e.message}", e)
+            try {
+                buildFallbackKeyboardView()
+            } catch (e2: Exception) {
+                // Neu ca ban phim toi gian cung loi (cuc ky hiem gap) -
+                // danh chiu, tra ve 1 View rong de it nhat KHONG crash het
+                // Service (nguoi dung se thay ban phim trong, nhung Service
+                // van song, co the thu lai sau).
+                View(this)
+            }
         }
-        keyboardRootContainer = null
-        lettersPageView = null
-        return buildKeyboardContainer()
+    }
+
+    /** THEM: ban phim TOI GIAN, du phong khi [buildKeyboardContainer] gap
+     *  loi - chi co 2 hang chu QWERTY co ban + hang Cach/Xoa/Enter, KHONG co
+     *  Shift, hieu ung RGB, popup dau, goi y emoji, QR... (loai bo het cac
+     *  tinh nang PHUC TAP moi them, chi giu lai phan LOI don gian nhat, it
+     *  kha nang loi nhat) - de nguoi dung VAN GO DUOC chu co ban trong luc
+     *  cho sua loi that su. */
+    private fun buildFallbackKeyboardView(): View {
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.parseColor("#1A0F2E"))
+            setPadding(dp(4), dp(6), dp(4), dp(6))
+        }
+        fun simpleKey(label: String, weight: Float, action: () -> Unit): Button = Button(this).apply {
+            text = label
+            isAllCaps = false
+            setTextColor(Color.WHITE)
+            setBackgroundColor(Color.parseColor("#0A0510"))
+            layoutParams = LinearLayout.LayoutParams(0, dp(44), weight).apply {
+                setMargins(dp(1), dp(1), dp(1), dp(1))
+            }
+            setOnClickListener { action() }
+        }
+        val rows = listOf("qwertyuiop", "asdfghjkl", "zxcvbnm")
+        rows.forEach { r ->
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            r.forEach { c -> row.addView(simpleKey(c.toString(), 1f) { currentInputConnection?.commitText(c.toString(), 1) }) }
+            root.addView(row)
+        }
+        val bottom = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        bottom.addView(simpleKey("\u232b", 1.5f) { currentInputConnection?.deleteSurroundingText(1, 0) })
+        bottom.addView(simpleKey("\u2423", 4f) { currentInputConnection?.commitText(" ", 1) })
+        bottom.addView(simpleKey("\u21b5", 1.5f) { currentInputConnection?.commitText("\n", 1) })
+        root.addView(bottom)
+        return root
     }
 
     /** Go [view] ra khoi ViewGroup cha hien tai cua no (neu co) - dung truoc
@@ -1238,15 +1300,35 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  NGUYEN trang thai "chua build", se duoc build dung luc qua
      *  [switchMode] khi nguoi dung THAT SU can toi. */
     private fun redrawKeyboard() {
-        val container = keyboardRootContainer
-        if (container != null && mode == KeyboardMode.LETTERS) {
-            lettersPageView?.let { container.removeView(it) }
-            val newLetters = buildLettersPage()
-            lettersPageView = newLetters
-            container.addView(newLetters, 0)
-            applyModeVisibility(container, newLetters, cachedNumbersView, cachedSymbolsView, cachedNumpadView)
-        } else {
-            setInputView(buildKeyboardContainer())
+        // SUA (theo yeu cau nguoi dung, sua loi "tu tat ban phim"): BOC
+        // try/catch - ham nay chay CUC KY THUONG XUYEN (moi lan bat Shift,
+        // goi y emoji xuat hien/bien mat, doi ngon ngu, tu dong viet hoa...)
+        // - TRUOC DAY khong duoc bao ve, chi 1 loi nho o BAT KY tinh nang
+        // nao lien quan (hieu ung RGB, goi y emoji, popup dau...) cung se
+        // crash ca tien trinh ban phim NGAY GIUA LUC dang go.
+        try {
+            val container = keyboardRootContainer
+            if (container != null && mode == KeyboardMode.LETTERS) {
+                lettersPageView?.let { container.removeView(it) }
+                val newLetters = buildLettersPage()
+                lettersPageView = newLetters
+                container.addView(newLetters, 0)
+                applyModeVisibility(container, newLetters, cachedNumbersView, cachedSymbolsView, cachedNumpadView)
+            } else {
+                setInputView(buildKeyboardContainer())
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("QrKeyboardService", "Loi khi ve lai ban phim: ${e.message}", e)
+            try {
+                cachedNumbersView = null
+                cachedSymbolsView = null
+                cachedNumpadView = null
+                lettersPageView = null
+                keyboardRootContainer = null
+                setInputView(buildKeyboardContainer())
+            } catch (e2: Exception) {
+                // Danh chiu - da co log de xem lai sau.
+            }
         }
     }
 
@@ -2422,11 +2504,31 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // truoc con tro se KHONG CON la "." nua, dieu kien nay tu dong
         // KHONG kich hoat - dung y muon "sau dau cham don thi van la chu
         // thuong, phai co dau cach theo sau moi tu dong viet hoa".
-        if (ch == ' ' && !capitalizeNextLetter) {
+        if (ch == ' ') {
             val charBefore = currentInputConnection?.getTextBeforeCursor(1, 0)
-            if (charBefore == ".") {
+            if (charBefore == "." && !capitalizeNextLetter) {
+                // Dau cach ngay sau dau cham - kich hoat viet hoa cho chu tiep theo.
                 capitalizeNextLetter = true
                 showCapitalPreview = true
+                capitalizeAppliedAtPrefixLen = null
+                insertText(" ")
+                emojiTrackWord.clear()
+                checkEmojiSuggestion("")
+                redrawKeyboard()
+                return
+            }
+            // SUA LOI "bam cach van con in hoa": khi go phim Cach ma DANG co
+            // co viet hoa (vi du bam Shift roi bam Cach thay vi bam chu cai),
+            // phai TAT co viet hoa luon - chu tiep theo sau dau cach se KHONG
+            // bi viet hoa nua (nguoi dung chi muon go khoang trong, khong muon
+            // viet hoa chu tiep). Ngoai tru: neu co viet hoa duoc dat do "dau
+            // dau dong/o nhap trong" (capitalizeAppliedAtPrefixLen == null VAN
+            // CON chua duoc ap dung) thi KHONG tat - day la viet hoa dau cau
+            // tu dong, dau cach la khoang trong truoc chuc bi (vd mo o nhap
+            // trong bang 1 khoang trang o dau), van muon viet hoa cho chu tiep.
+            if (capitalizeNextLetter && capitalizeAppliedAtPrefixLen != null) {
+                capitalizeNextLetter = false
+                showCapitalPreview = false
                 capitalizeAppliedAtPrefixLen = null
                 insertText(" ")
                 emojiTrackWord.clear()
@@ -2506,11 +2608,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             VietnameseTelex.processKey(oldWordLower, lower, oldWordCased, keyIsUpper)
         }
         currentWord = StringBuilder(newWordLower)
-        // THEM (theo yeu cau nguoi dung, tinh nang goi y emoji): dong bo tu
-        // dang go (co dau, dung y nghia) sang bo theo doi RIENG cho goi y
-        // emoji, kiem tra ngay sau moi lan Telex cap nhat xong.
         emojiTrackWord = StringBuilder(newWordLower)
-        checkEmojiSuggestion(newWordLower)
 
         var commonPrefixLen = 0
         val minLen = minOf(oldWordLower.length, newWordLower.length)
@@ -2525,7 +2623,20 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val wasCapitalizingWordStart = capitalizeNextLetter && touchesCapitalizeTarget
         if (wasCapitalizingWordStart) {
             capitalizeAppliedAtPrefixLen = commonPrefixLen
+            // SUA LOI "luon hien in hoa": tat showCapitalPreview TRUOC khi goi
+            // checkEmojiSuggestion (co the goi redrawKeyboard() ben trong neu
+            // emoji trung khop) - tranh redraw bàn phim voi showCapitalPreview
+            // = true lam phim luon hien chu HOA.
+            showCapitalPreview = false
         }
+        val justConsumedSingleShift = capitalizeNextLetter && !touchesCapitalizeTarget
+        if (justConsumedSingleShift) {
+            capitalizeNextLetter = false
+            capitalizeAppliedAtPrefixLen = null
+        }
+        // Tat showCapitalPreview XONG ROI moi check emoji
+        checkEmojiSuggestion(newWordLower)
+
         val newSuffixDisplay = when {
             wasCapitalizingWordStart -> {
                 val restLower = newSuffixLower.drop(1)
@@ -2534,14 +2645,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             }
             isShiftOn -> newSuffixLower.uppercase()
             else -> newSuffixLower
-        }
-        val justConsumedSingleShift = capitalizeNextLetter && !touchesCapitalizeTarget
-        if (justConsumedSingleShift) {
-            capitalizeNextLetter = false
-            capitalizeAppliedAtPrefixLen = null
-        }
-        if (wasCapitalizingWordStart) {
-            showCapitalPreview = false
         }
 
         selfInitiatedChange = true
