@@ -195,6 +195,20 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
          *  thay vi mot cai CHAM (tap) chen dau cach binh thuong. */
         private const val SPACE_SWIPE_THRESHOLD_DP = 24
 
+        /** SUA (theo yeu cau nguoi dung "tang do nhay cham phim, bam nhe
+         *  cung an"): Android mac dinh HUY cu bam (click) neu ngon tay xe
+         *  dich qua mot nguong rat NHO (~8dp, touchSlop cua he thong) giua
+         *  luc dat xuong va nha ra - cac phim chu/⌫ TRUOC DAY tra ve false o
+         *  ACTION_DOWN/MOVE, de mac cho Android tu xu ly, nen nhung cu cham
+         *  NHE (ngon tay it giu chat, de rung/xe nhe hon binh thuong) rat de
+         *  bi coi la "keo/vuot" thay vi "cham" va bi HUY cu bam, nguoi dung
+         *  phai an that chac/that dung tam moi "an". SUA: [buildKey] tu quan
+         *  ly toan bo cu cham (return true tu ACTION_DOWN), voi nguong xe
+         *  dich RONG HON han (20dp thay vi ~8dp mac dinh), roi tu goi
+         *  [View.performClick] khi nha tay trong pham vi nguong nay - giup
+         *  nhung cu cham nhe/hoi xe van duoc tinh la mot lan bam hop le. */
+        private const val KEY_TAP_MOVE_TOLERANCE_DP = 20
+
         /** Phim xoa (⌫): thoi gian nham giu truoc khi bat dau tu dong xoa
          *  LIEN TUC (ms), va khoang cach (ms) giua cac lan xoa lien tiep sau
          *  do. Nham giu qua [DELETE_REPEAT_INITIAL_DELAY_MS] se kich hoat
@@ -237,6 +251,22 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
     /** Handler dung rieng cho vong lap xoa lien tuc khi giu phim ⌫. */
     private val deleteRepeatHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    /** SUA LOI "giu xoa het sach roi buong tay van tu dong xoa tiep, go chu
+     *  khong vao duoc": [deleteChar] co the tu goi [redrawKeyboard] ngay
+     *  GIUA luc dang giu phim ⌫ (vi du khi o nhap vua tro thanh RONG, xem
+     *  co [shouldRearmCapitalize] trong [deleteChar]) - luc do
+     *  [redrawKeyboard] THAO/XAY LAI toan bo cac phim, khien chinh nut ⌫
+     *  dang duoc giu bi GO KHOI cay view NGAY TRONG LUC ngon tay van con
+     *  cham man hinh. Nut ⌫ CU (da bi go) se KHONG BAO GIO nhan duoc
+     *  ACTION_UP/ACTION_CANCEL nua (ngon tay tha ra roi thi su kien do roi
+     *  vao nut MOI thay the no, chu khong phai nut cu), nen runnable lap lai
+     *  xoa (da hen gio qua [deleteRepeatHandler]) KHONG bao gio bi huy -
+     *  no cu chay mai moi 50ms, xoa moi ky tu nguoi dung vua go them. Bien
+     *  nay luu THAM CHIEU runnable lap lai dang hoat dong (neu co) o cap
+     *  Service, de [redrawKeyboard] co the CHU DONG huy no truoc khi thao
+     *  view, bat ke view nao dang giu phim. */
+    private var activeDeleteRepeatRunnable: Runnable? = null
 
     /** Handler + lenh "hoan" dung rieng cho co che TRE truoc khi dong khung
      *  quet QR sau [onFinishInputView] (xem [FINISH_INPUT_HIDE_DEBOUNCE_MS]).
@@ -614,12 +644,13 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  muot de mat nguoi thay "chay" lien tuc nhung khong ve lai qua nhieu
      *  lan/giay (do pin, tranh giat khi go phim nhanh cung luc). */
     private val RGB_CHASE_FRAME_MS = 66L
-    // SUA (theo yeu cau nguoi dung): tang toc do doi mau len 30% (4.2 -> 5.46
-    // do/khung hinh = 4.2 * 1.3) - GIU NGUYEN tan suat khung hinh
-    // (RGB_CHASE_FRAME_MS khong doi) de KHONG ton them pin, chi tang do
-    // LECH mau moi khung hinh -> mau "chay" nhanh hon ma van muot, khong
-    // ve lai nhieu lan/giay hon truoc.
-    private val RGB_CHASE_DEG_PER_FRAME = 5.46f
+    // SUA (theo yeu cau nguoi dung): tang toc do doi mau THEM 15% nua so voi
+    // muc truoc do (5.46 -> 6.279 do/khung hinh = 5.46 * 1.15; muc 5.46 nay
+    // ban than da la ket qua tang 30% so voi goc 4.2). GIU NGUYEN tan suat
+    // khung hinh (RGB_CHASE_FRAME_MS khong doi) de KHONG ton them pin, chi
+    // tang do LECH mau moi khung hinh -> mau "chay" nhanh hon ma van muot,
+    // khong ve lai nhieu lan/giay hon truoc.
+    private val RGB_CHASE_DEG_PER_FRAME = 6.279f
 
     /** Bat dau vong lap hoat hinh (goi khi ban phim hien len, CHi that su
      *  chay neu [rgbChaseEnabled]). An toan khi goi nhieu lan lien tiep (tu
@@ -1307,6 +1338,16 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // nao lien quan (hieu ung RGB, goi y emoji, popup dau...) cung se
         // crash ca tien trinh ban phim NGAY GIUA LUC dang go.
         try {
+            // SUA LOI "giu xoa het sach roi buong tay van tu dong xoa tiep":
+            // ham nay co the duoc goi CHINH TU BEN TRONG vong lap xoa lien
+            // tuc (deleteChar -> redrawKeyboard khi o nhap vua trong ra), se
+            // THAO nut ⌫ dang duoc giu khoi cay view. Huy TRUOC bat ky
+            // runnable lap lai xoa nao dang cho san trong [deleteRepeatHandler]
+            // (va bao no dung tu hoi sinh qua [activeDeleteRepeatRunnable] =
+            // null) de vong lap xoa KHONG con co hoi chay tiep vo han sau khi
+            // nut cu bi go, du nguoi dung co buong tay hay khong.
+            activeDeleteRepeatRunnable?.let { deleteRepeatHandler.removeCallbacks(it) }
+            activeDeleteRepeatRunnable = null
             val container = keyboardRootContainer
             if (container != null && mode == KeyboardMode.LETTERS) {
                 lettersPageView?.let { container.removeView(it) }
@@ -2238,6 +2279,23 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
         var repeatRunnable: Runnable? = null
         var repeatTriggered = false
+        // THEM (tang do nhay cham phim): vi tri dat tay xuong ban dau + co
+        // "da xe dich qua nguong" chua, dung de tu quan ly viec cham co tinh
+        // la mot cu bam hop le hay khong (xem [KEY_TAP_MOVE_TOLERANCE_DP]).
+        var downX = 0f
+        var downY = 0f
+        var movedTooFar = false
+        val tapMoveTolerancePx = dp(KEY_TAP_MOVE_TOLERANCE_DP).toFloat()
+        fun cancelPendingTimers() {
+            hideKeyPreview()
+            repeatRunnable?.let {
+                deleteRepeatHandler.removeCallbacks(it)
+                if (activeDeleteRepeatRunnable === it) activeDeleteRepeatRunnable = null
+            }
+            repeatRunnable = null
+            accentLongPressRunnable?.let { accentLongPressHandler.removeCallbacks(it) }
+            accentLongPressRunnable = null
+        }
         // THEM: danh sach bien the co dau cho phim NAY (chi tinh 1 LAN luc
         // xay phim, khong doi trong luc ban phim dang hien - neu nguoi dung
         // doi ngon ngu giua chung, phim se duoc XAY LAI hoan toan qua co che
@@ -2250,15 +2308,31 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                     playKeyClickTone()
                     if (label.length == 1) showKeyPreview(v, label)
                     repeatTriggered = false
+                    movedTooFar = false
+                    downX = event.rawX
+                    downY = event.rawY
+                    v.isPressed = true
                     if (onRepeat != null) {
                         val runnable = object : Runnable {
                             override fun run() {
                                 repeatTriggered = true
                                 onRepeat.invoke()
-                                deleteRepeatHandler.postDelayed(this, DELETE_REPEAT_INTERVAL_MS)
+                                // SUA LOI: chi tiep tuc hen gio lan xoa ke
+                                // tiep NEU runnable nay VAN con la runnable
+                                // "dang hoat dong" hien tai (xem
+                                // [activeDeleteRepeatRunnable]) - neu
+                                // [onRepeat.invoke()] ben tren (deleteChar)
+                                // da lam ban phim bi VE LAI giua chung
+                                // (redrawKeyboard huy no va dat null), thi
+                                // DUNG lai ngay, khong tu hoi sinh lai vong
+                                // lap xoa nua.
+                                if (activeDeleteRepeatRunnable === this) {
+                                    deleteRepeatHandler.postDelayed(this, DELETE_REPEAT_INTERVAL_MS)
+                                }
                             }
                         }
                         repeatRunnable = runnable
+                        activeDeleteRepeatRunnable = runnable
                         deleteRepeatHandler.postDelayed(runnable, DELETE_REPEAT_INITIAL_DELAY_MS)
                     }
                     // THEM: neu phim nay CO bien the dau (dung ngon ngu dang
@@ -2273,21 +2347,38 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                         accentLongPressRunnable = runnable
                         accentLongPressHandler.postDelayed(runnable, ACCENT_LONG_PRESS_MS)
                     }
-                    false
+                    // SUA (tang do nhay): tu quan ly toan bo cu cham tu day
+                    // (return true) thay vi de mac Android tu xu ly voi
+                    // nguong xe dich rat nho mac dinh - xem ghi chu tai
+                    // [KEY_TAP_MOVE_TOLERANCE_DP].
+                    true
                 }
                 MotionEvent.ACTION_MOVE -> {
                     if (accentPopupShowing) {
                         updateAccentPopupSelection(event.rawX)
                         return@setOnTouchListener true
                     }
-                    false
+                    if (!movedTooFar) {
+                        val dx = event.rawX - downX
+                        val dy = event.rawY - downY
+                        val distance = kotlin.math.sqrt(dx * dx + dy * dy)
+                        if (distance > tapMoveTolerancePx) {
+                            // Ngon tay DA xe dich vuot qua nguong RONG (xem
+                            // [KEY_TAP_MOVE_TOLERANCE_DP]) - luc nay moi thuc
+                            // su coi la mot cu keo/vuot ra khoi phim (khong
+                            // phai mot cu cham hoi rung tay), nen huy cac hen
+                            // gio xoa lap lai/popup dau dang cho, giong het
+                            // ACTION_CANCEL.
+                            movedTooFar = true
+                            v.isPressed = false
+                            cancelPendingTimers()
+                        }
+                    }
+                    true
                 }
                 MotionEvent.ACTION_UP -> {
-                    hideKeyPreview()
-                    repeatRunnable?.let { deleteRepeatHandler.removeCallbacks(it) }
-                    repeatRunnable = null
-                    accentLongPressRunnable?.let { accentLongPressHandler.removeCallbacks(it) }
-                    accentLongPressRunnable = null
+                    v.isPressed = false
+                    cancelPendingTimers()
                     if (accentPopupShowing) {
                         // Nguoi dung DA giu du lau de hien popup - nha tay ra
                         // la CHOT lua chon dang to sang (KHONG chen chu cai
@@ -2297,19 +2388,21 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                         commitAccentSelectionAndDismiss()
                         return@setOnTouchListener true
                     }
-                    if (repeatTriggered) {
+                    if (repeatTriggered || movedTooFar) {
                         return@setOnTouchListener true
                     }
-                    false
+                    // SUA (tang do nhay): tu goi performClick() thay vi dua
+                    // vao co che click mac dinh cua Android (da bi tat qua
+                    // viec return true o ACTION_DOWN/MOVE o tren) - day la
+                    // duong duy nhat kich hoat [onClick] ben duoi tu gio.
+                    v.performClick()
+                    true
                 }
                 MotionEvent.ACTION_CANCEL -> {
-                    hideKeyPreview()
-                    repeatRunnable?.let { deleteRepeatHandler.removeCallbacks(it) }
-                    repeatRunnable = null
-                    accentLongPressRunnable?.let { accentLongPressHandler.removeCallbacks(it) }
-                    accentLongPressRunnable = null
+                    v.isPressed = false
+                    cancelPendingTimers()
                     if (accentPopupShowing) dismissAccentPopup()
-                    false
+                    true
                 }
                 else -> false
             }
