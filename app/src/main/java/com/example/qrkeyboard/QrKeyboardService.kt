@@ -268,6 +268,22 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  view, bat ke view nao dang giu phim. */
     private var activeDeleteRepeatRunnable: Runnable? = null
 
+    /** SUA (theo yeu cau nguoi dung "banl phim tốc độ chạm bị khựng nhiều"):
+     *  moi lan cham 1 phim ky tu don, [showKeyPreview] mo/cap nhat mot
+     *  PopupWindow qua WindowManager - day la 1 lenh IPC that su (giao tiep
+     *  voi tien trinh he thong), ton vai mili-giay MOI LAN, chay DONG BO
+     *  tren UI thread. Khi go BINH THUONG (khong qua nhanh) thi khong dang
+     *  ke, nhung khi go NHANH LIEN TUC (nhieu phim/giay), CONG DON hang
+     *  chuc lenh IPC nhu vay MOI GIAY chinh la nguyen nhan pho bien gay
+     *  cam giac "khung/tre" luc go nhanh. SUA: BO QUA rieng buoc hien popup
+     *  xem-truoc (preview bubble) - von CHI la hieu ung tham my, KHONG anh
+     *  huong toi viec ky tu co duoc chen hay khong - neu khoang cach voi
+     *  lan cham phim TRUOC do duoi [FAST_TYPING_THRESHOLD_MS], coi la dang
+     *  go nhanh. Van chen chu/rung/am thanh binh thuong, chi tat rieng
+     *  popup xem-truoc trong luc go nhanh. */
+    private var lastKeyDownTimestamp = 0L
+    private val FAST_TYPING_THRESHOLD_MS = 180L
+
     /** Handler + lenh "hoan" dung rieng cho co che TRE truoc khi dong khung
      *  quet QR sau [onFinishInputView] (xem [FINISH_INPUT_HIDE_DEBOUNCE_MS]).
      *  [pendingFinishHide] la lenh dong dang cho - null nghia la khong co
@@ -2181,6 +2197,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val swipeThresholdPx = dp(SPACE_SWIPE_THRESHOLD_DP)
         var downX = 0f
         container.setOnTouchListener { v, event ->
+            // SUA (cung ly do bao ve nhu trong [buildKey]): phim Cach cung
+            // goi InputConnection/redrawKeyboard - bao ve tuong tu de 1 loi
+            // hiem gap o day khong lam sap ca ban phim.
+            try {
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     vibrateKeyPress()
@@ -2199,6 +2219,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 }
                 MotionEvent.ACTION_CANCEL -> true
                 else -> false
+            }
+            } catch (e: Exception) {
+                android.util.Log.e("QrKeyboardService", "Loi khi xu ly phim Cach: ${e.message}", e)
+                true
             }
         }
 
@@ -2302,11 +2326,32 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // dong bo co san [onWindowShown] nen van luon dung).
         val accentVariants = if (label.length == 1 && label[0].isLetter()) accentVariantsFor(label[0]) else emptyList()
         button.setOnTouchListener { v, event ->
+            // SUA (theo yeu cau nguoi dung "luu luu no an xuong chi con 1
+            // day den phia duoi cung"): BOC try/catch TOAN BO xu ly cham
+            // phim. Day la noi CHAY THUONG XUYEN NHAT trong toan bo ban
+            // phim (moi lan cham/nha/keo tren BAT KY phim nao) va goi vao
+            // rat nhieu ham khac (popup xem-truoc, popup chon dau, rung,
+            // am thanh, InputConnection de chen/xoa chu...) - TRUOC DAY 1
+            // loi bat ky (vi du InputConnection vua bi ung dung dang go
+            // NGAT ket noi dung luc ngon tay cham xuong, hoac WindowManager
+            // tu choi hien popup vi cua so IME dang trong qua trinh dong)
+            // se KHONG duoc bat, lam CRASH ca tien trinh ban phim NGAY GIUA
+            // luc go - day chinh la nguyen nhan giao dien "chi con 1 day
+            // den o duoi" (man hinh du phong cua he thong khi 1 IME crash)
+            // ma nguoi dung mo ta, xay ra "lau lau" vi chi trung dung luc co
+            // dieu kien loi hiem gap nay. SUA: bat loi, ghi log, COI NHU
+            // cu cham nay khong lam gi ca (tra ve true de van "tieu thu"
+            // duoc su kien, tranh cac hanh vi bat ngo khac) thay vi de sap
+            // ca ban phim.
+            try {
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     vibrateKeyPress()
                     playKeyClickTone()
-                    if (label.length == 1) showKeyPreview(v, label)
+                    val now = android.os.SystemClock.uptimeMillis()
+                    val isFastTyping = (now - lastKeyDownTimestamp) < FAST_TYPING_THRESHOLD_MS
+                    lastKeyDownTimestamp = now
+                    if (label.length == 1 && !isFastTyping) showKeyPreview(v, label)
                     repeatTriggered = false
                     movedTooFar = false
                     downX = event.rawX
@@ -2406,8 +2451,32 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 }
                 else -> false
             }
+            } catch (e: Exception) {
+                // Xem giai thich day du o dau setOnTouchListener: BAT loi de
+                // KHONG lam sap ca tien trinh ban phim giua luc go. Don dep
+                // het cac hen gio dang cho (tranh vong lap xoa/popup ket
+                // dinh mai neu loi xay ra GIUA chung mot cu cham) roi coi
+                // nhu cu cham nay khong lam gi ca.
+                android.util.Log.e("QrKeyboardService", "Loi khi xu ly cham phim '$label': ${e.message}", e)
+                try {
+                    v.isPressed = false
+                    cancelPendingTimers()
+                } catch (e2: Exception) { /* danh chiu */ }
+                true
+            }
         }
-        button.setOnClickListener { onClick() }
+        button.setOnClickListener {
+            // SUA (cung ly do o setOnTouchListener o tren): [onClick] goi
+            // thang vao logic chen/xoa ky tu qua InputConnection cua ung
+            // dung dang go - ket noi nay co the vua bi ung dung NGAT dung
+            // luc ngon tay nha ra (vd nguoi dung vua chuyen app/o nhap that
+            // nhanh), gay loi neu KHONG duoc bat.
+            try {
+                onClick()
+            } catch (e: Exception) {
+                android.util.Log.e("QrKeyboardService", "Loi khi xu ly bam phim '$label': ${e.message}", e)
+            }
+        }
         return button
     }
 
