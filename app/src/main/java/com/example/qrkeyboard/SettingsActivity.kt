@@ -389,6 +389,12 @@ class SettingsActivity : AppCompatActivity() {
                     KeyboardThemePrefs.setAccentColor(this@SettingsActivity, color)
                     renderColorSwatches()
                     themeToggleBtn.background = themeToggleBackground(color)
+                    // SUA (dong bo mau ngay lap tuc): muc "Ngon ngu" phia
+                    // TREN cung dung [accentNow] de to mau cac dong ngon ngu
+                    // DANG duoc tick - truoc day doi mau vien o day KHONG lam
+                    // muc do ve lai, nen phai DOI qua lan mo Cai dat SAU moi
+                    // thay dung mau moi, du mau THAT SU da luu dung ngay.
+                    renderLanguageRows()
                 }
             }
             colorSwatchContainer.addView(swatch)

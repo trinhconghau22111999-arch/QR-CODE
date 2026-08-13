@@ -3381,7 +3381,17 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         qrCaptureInProgress = true
         if (!silentAutoCapture) qrCaptureButton?.isEnabled = false
 
-        val executor = qrCameraExecutor ?: Executors.newSingleThreadExecutor()
+        // SUA (ro ri tai nguyen, hiem gap): TRUOC DAY neu [qrCameraExecutor]
+        // dang la null (truong hop hiem: chup anh dung luc executor vua bi
+        // don dep o buoc khac), ham nay tao MOT ExecutorService MOI hoan
+        // toan lam phuong an du phong - nhung bien cuc bo do KHONG BAO GIO
+        // duoc gan lai vao [qrCameraExecutor], nen [stopQrCamera] (goi
+        // `qrCameraExecutor?.shutdown()`) se KHONG BAO GIO biet toi no de
+        // dong lai - moi lan roi vao truong hop nay se ro ri vinh vien 1
+        // luong (thread) chay ngam. SUA: GAN LAI vao [qrCameraExecutor] luon
+        // (khong chi dung tam) de duoc [stopQrCamera] don dep dung nhu binh
+        // thuong.
+        val executor = qrCameraExecutor ?: Executors.newSingleThreadExecutor().also { qrCameraExecutor = it }
         imageCapture.takePicture(
             executor,
             object : ImageCapture.OnImageCapturedCallback() {
@@ -3630,6 +3640,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         rgbChaseRegistryByPage.clear()
         accentLongPressRunnable?.let { accentLongPressHandler.removeCallbacks(it) }
         accentLongPressRunnable = null
+        // THEM (don dep triet de): huy not vong lap xoa lien tuc neu VAN con
+        // dang cho san (hiem gap - Service thuong khong bi huy giua luc dang
+        // giu phim ⌫, nhung phong ve van hon).
+        activeDeleteRepeatRunnable?.let { deleteRepeatHandler.removeCallbacks(it) }
+        activeDeleteRepeatRunnable = null
         dismissAccentPopup()
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
         previewPopup?.let { if (it.isShowing) it.dismiss() }
