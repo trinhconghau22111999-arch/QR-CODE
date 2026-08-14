@@ -232,23 +232,30 @@ class SettingsActivity : AppCompatActivity() {
 
     // ───────────────────────── 1. Mau sac ─────────────────────────
 
-    // ─────────────────── 0. Ngon ngu ban phim (toi da 2) ───────────────────
+    // ─────────────────── 0. Ngon ngu ban phim (1 hoac 2) ───────────────────
 
-    /** THEM (theo yeu cau nguoi dung): chon 2 trong so cac ngon ngu duoc ho
-     *  tro (xem [LanguagePrefs]) - vuot ngang tren phim cach cua ban phim se
-     *  chuyen doi qua lai GIUA 2 ngon ngu chon o day, giong het co che VI/EN
-     *  cu. MAC DINH van la Tieng Viet + Tieng Anh neu chua tung doi.
+    /** THEM (theo yeu cau nguoi dung): chon 1 hoac 2 trong so cac ngon ngu
+     *  duoc ho tro (xem [LanguagePrefs]) - neu chon 2, vuot ngang tren phim
+     *  cach cua ban phim se chuyen doi qua lai GIUA 2 ngon ngu do, giong het
+     *  co che VI/EN cu; neu CHi chon 1 (theo yeu cau nguoi dung "phải cho
+     *  phép chỉ chọn 1 ngôn ngữ"), ban phim se CHi dung DUY NHAT ngon ngu do,
+     *  khong con vuot phim cach de doi nua. MAC DINH van la Tieng Viet +
+     *  Tieng Anh neu chua tung doi.
      *
      *  Cach chon (kieu dau check, theo dung yeu cau nguoi dung): moi ngon
-     *  ngu la 1 dong co the TICK/BO TICK. Muon doi 1 ngon ngu: BO TICH no
-     *  truoc (luc nay chi con 1 ngon ngu duoc tick), roi TICK ngon ngu moi
-     *  muon dung - luc do du 2 tick tro lai se TU DONG LUU. Muon doi CA 2:
-     *  bo tich CA HAI truoc, roi tick 2 ngon ngu moi. KHONG the tick qua 2
-     *  ngon ngu cung luc (se bao can bo tick bot truoc). */
+     *  ngu la 1 dong co the TICK/BO TICK. Tick du 2 -> TU DONG LUU ngay. Tick
+     *  DUNG 1 -> hien nut "Xac nhan chi dung 1 ngon ngu nay" de luu ngay o
+     *  che do 1 ngon ngu (khong bat buoc phai chon them ngon ngu thu 2 nua).
+     *  Muon doi 1 ngon ngu: BO TICH no truoc, roi TICK ngon ngu moi muon
+     *  dung. KHONG the tick qua 2 ngon ngu cung luc (se bao can bo tick bot
+     *  truoc). */
     private fun buildLanguageSection(): View {
-        pendingSelectedLanguages = LinkedHashSet(
-            LanguagePrefs.getSelectedLanguages(this).toList()
-        )
+        // SUA (lang2 gio co the null - dung 1 ngon ngu duy nhat): loc bo
+        // phan tu null truoc khi dua vao LinkedHashSet<String> (khong con
+        // dung Pair.toList() truc tiep nua vi no se tao List<String?> khi 1
+        // trong 2 phan tu la nullable, khong khop kieu LinkedHashSet<String>).
+        val (initialLang1, initialLang2) = LanguagePrefs.getSelectedLanguages(this)
+        pendingSelectedLanguages = LinkedHashSet(listOfNotNull(initialLang1, initialLang2))
 
         val wrap = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -257,10 +264,13 @@ class SettingsActivity : AppCompatActivity() {
         }
         wrap.addView(sectionTitle("Ng\u00f4n ng\u1eef b\u00e0n ph\u00edm"))
         wrap.addView(sectionSubtitle(
-            "M\u1eb7c \u0111\u1ecbnh Ti\u1ebfng Vi\u1ec7t + Ti\u1ebfng Anh nh\u01b0 c\u0169. \u0110\u00e1nh d\u1ea5u \u0111\u00fang 2 ng\u00f4n ng\u1eef " +
-            "- vu\u1ed1t ngang tr\u00ean ph\u00edm c\u00e1ch \u0111\u1ec3 chuy\u1ec3n \u0111\u1ed5i qua l\u1ea1i gi\u1eefa 2 ng\u00f4n ng\u1eef n\u00e0y. " +
-            "Mu\u1ed1n \u0111\u1ed5i 1 ng\u00f4n ng\u1eef: b\u1ecf d\u1ea5u check ng\u00f4n ng\u1eef \u0111\u00f3 tr\u01b0\u1edbc r\u1ed3i ch\u1ecdn ng\u00f4n ng\u1eef m\u1edbi. " +
-            "Ch\u1ec9 ri\u00eang Ti\u1ebfng Vi\u1ec7t c\u00f3 b\u1ed9 g\u00f5 d\u1ea5u Telex, c\u00e1c ng\u00f4n ng\u1eef kh\u00e1c g\u00f5 nh\u01b0 b\u00ecnh th\u01b0\u1eddng."
+            "M\u1eb7c \u0111\u1ecbnh Ti\u1ebfng Vi\u1ec7t + Ti\u1ebfng Anh nh\u01b0 c\u0169. C\u00f3 th\u1ec3 ch\u1ec9 ch\u1ecdn " +
+            "1 ng\u00f4n ng\u1eef duy nh\u1ea5t (kh\u00f4ng c\u1ea7n v\u01b0\u1ee3t \u0111\u1ed5i), ho\u1eb7c \u0111\u00e1nh d\u1ea5u " +
+            "2 ng\u00f4n ng\u1eef \u0111\u1ec3 v\u01b0\u1ee3t ngang tr\u00ean ph\u00edm c\u00e1ch chuy\u1ec3n \u0111\u1ed5i qua " +
+            "l\u1ea1i gi\u1eefa 2 ng\u00f4n ng\u1eef \u0111\u00f3. Mu\u1ed1n \u0111\u1ed5i ng\u00f4n ng\u1eef: b\u1ecf d\u1ea5u " +
+            "check ng\u00f4n ng\u1eef c\u0169 tr\u01b0\u1edbc r\u1ed3i ch\u1ecdn ng\u00f4n ng\u1eef m\u1edbi. Ch\u1ec9 ri\u00eang " +
+            "Ti\u1ebfng Vi\u1ec7t c\u00f3 b\u1ed9 g\u00f5 d\u1ea5u Telex, c\u00e1c ng\u00f4n ng\u1eef kh\u00e1c g\u00f5 nh\u01b0 " +
+            "b\u00ecnh th\u01b0\u1eddng."
         ))
         wrap.addView(spacer(10))
 
@@ -285,9 +295,15 @@ class SettingsActivity : AppCompatActivity() {
                 val (a, b) = pendingSelectedLanguages.toList()
                 "\u0110ang d\u00f9ng: ${LanguagePrefs.displayName(a)}  \u2194  ${LanguagePrefs.displayName(b)}"
             }
-            1 -> "\u0110\u00e3 ch\u1ecdn ${LanguagePrefs.displayName(pendingSelectedLanguages.first())} " +
-                "- ch\u1ecdn th\u00eam 1 ng\u00f4n ng\u1eef n\u1eefa\u2026"
-            else -> "H\u00e3y ch\u1ecdn \u0111\u00fang 2 ng\u00f4n ng\u1eef"
+            // SUA (theo yeu cau nguoi dung "phải cho phép chỉ chọn 1 ngôn
+            // ngữ"): TRUOC DAY chi tick 1 ngon ngu bi coi la "chua xong",
+            // luon bat buoc phai tick THEM ngon ngu thu 2 moi luu duoc. GIO
+            // cho phep DUNG LAI o 1 ngon ngu - hien dong chu XAC NHAN co the
+            // bam de luu ngay (khong bat buoc chon them ngon ngu thu 2).
+            1 -> "Ch\u1ec9 d\u00f9ng ${LanguagePrefs.displayName(pendingSelectedLanguages.first())} " +
+                "(kh\u00f4ng vu\u1ed1t \u0111\u1ed5i ng\u00f4n ng\u1eef) - ho\u1eb7c ch\u1ecdn th\u00eam 1 ng\u00f4n " +
+                "ng\u1eef n\u1eefa \u0111\u1ec3 vu\u1ed1t ph\u00edm c\u00e1ch \u0111\u1ed5i qua l\u1ea1i"
+            else -> "H\u00e3y ch\u1ecdn \u00edt nh\u1ea5t 1 ng\u00f4n ng\u1eef"
         }
 
         languageListContainer.removeAllViews()
@@ -312,6 +328,39 @@ class SettingsActivity : AppCompatActivity() {
             }
             languageListContainer.addView(row)
         }
+
+        // THEM: nut "Chi dung 1 ngon ngu nay" - CHi hien khi dung 1 ngon ngu
+        // dang duoc tick (size==1), cho phep LUU NGAY o che do 1 ngon ngu ma
+        // khong can tick them ngon ngu thu 2.
+        if (pendingSelectedLanguages.size == 1) {
+            val confirmBtn = TextView(this).apply {
+                text = "\u2713  X\u00e1c nh\u1eadn ch\u1ec9 d\u00f9ng 1 ng\u00f4n ng\u1eef n\u00e0y"
+                setTextColor(Color.WHITE)
+                textSize = 15f
+                gravity = Gravity.CENTER
+                setPadding(dp(12), dp(12), dp(12), dp(12))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(8).toFloat()
+                    setColor(accentNow)
+                }
+                isClickable = true
+                isFocusable = true
+                layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply { topMargin = dp(4) }
+                setOnClickListener {
+                    val only = pendingSelectedLanguages.first()
+                    LanguagePrefs.setSelectedLanguages(this@SettingsActivity, only, null)
+                    Toast.makeText(
+                        this@SettingsActivity,
+                        "\u0110\u00e3 l\u01b0u: ch\u1ec9 d\u00f9ng ${LanguagePrefs.displayName(only)}",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    renderLanguageRows()
+                }
+            }
+            languageListContainer.addView(confirmBtn)
+        }
     }
 
     private fun toggleLanguage(code: String) {
@@ -332,7 +381,9 @@ class SettingsActivity : AppCompatActivity() {
         }
         // Du dung 2 tick - TU DONG LUU ngay (khong can nut "Luu" rieng).
         // Neu dang < 2 tick, KHONG ghi gi ca - 2 ngon ngu CU van con nguyen
-        // trong LanguagePrefs cho toi khi nguoi dung tick du 2 ngon ngu MOI.
+        // trong LanguagePrefs cho toi khi nguoi dung tick du 2 ngon ngu MOI
+        // (hoac bam nut "Xac nhan chi dung 1 ngon ngu" o che do 1 ngon ngu -
+        // xem [renderLanguageRows]).
         if (pendingSelectedLanguages.size == 2) {
             val (a, b) = pendingSelectedLanguages.toList()
             LanguagePrefs.setSelectedLanguages(this, a, b)

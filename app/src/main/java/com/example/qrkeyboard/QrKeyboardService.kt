@@ -316,7 +316,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  DINH van la ("vi","en") nhu truoc gio neu nguoi dung chua tung doi
      *  trong man Cai dat. */
     private var lang1 = LanguagePrefs.DEFAULT_LANG_1
-    private var lang2 = LanguagePrefs.DEFAULT_LANG_2
+    // THEM (theo yeu cau nguoi dung "phải cho phép chỉ chọn 1 ngôn ngữ"):
+    // null = nguoi dung CHi dung 1 ngon ngu duy nhat ([lang1]) - khong co
+    // ngon ngu thu 2 de vuot phim cach doi qua lai.
+    private var lang2: String? = LanguagePrefs.DEFAULT_LANG_2
 
     /** True = dang dung [lang1], false = dang dung [lang2]. GIU NGUYEN gia
      *  tri mac dinh CU (false) de KHONG doi hanh vi nguoi dung dang quen -
@@ -324,7 +327,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  che do go thuong/Anh, tuong duong voi active = lang2 ("en") o day. */
     private var activeIsLang1 = false
 
-    private val activeLangCode: String get() = if (activeIsLang1) lang1 else lang2
+    // SUA: neu [lang2] la null (che do 1 ngon ngu), LUON dung [lang1] bat ke
+    // [activeIsLang1] dang la gi (khong the "active" vao 1 ngon ngu khong
+    // ton tai).
+    private val activeLangCode: String get() = if (activeIsLang1 || lang2 == null) lang1 else lang2!!
 
     /** Bat/tat go Tieng Viet kieu Telex - CHi true khi ngon ngu DANG DUOC
      *  CHON THAT SU la "vi" (Tieng Viet), bat ke no la ngon ngu 1 hay 2. */
@@ -2267,26 +2273,37 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         fun edgeColor(active: Boolean) =
             if (active) Color.parseColor("#8AB4F8") else Color.parseColor("#80868B")
 
+        val lang2Now = lang2
         val vLabel = TextView(this).apply {
             text = LanguagePrefs.shortLabel(lang1).take(1)
             textSize = 12f
-            setTextColor(edgeColor(activeIsLang1))
+            // SUA (che do 1 ngon ngu): neu chi dung 1 ngon ngu (lang2==null),
+            // nhan ben trai LUON to sang (dai dien cho ngon ngu DUY NHAT dang
+            // dung), khong phu thuoc [activeIsLang1] nua.
+            setTextColor(edgeColor(activeIsLang1 || lang2Now == null))
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.CENTER_VERTICAL or Gravity.START
             ).apply { setMargins(dp(10), 0, 0, 0) }
         }
         val eLabel = TextView(this).apply {
-            text = LanguagePrefs.shortLabel(lang2).take(1)
+            text = LanguagePrefs.shortLabel(lang2Now ?: "").take(1)
             textSize = 12f
             setTextColor(edgeColor(!activeIsLang1))
+            // SUA (che do 1 ngon ngu): AN HAN nhan ben phai neu khong co ngon
+            // ngu thu 2 - khong con gi de hien, tranh gay hieu lam "co the
+            // vuot doi ngon ngu" khi thuc ra khong the.
+            visibility = if (lang2Now == null) View.INVISIBLE else View.VISIBLE
             layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT,
                 Gravity.CENTER_VERTICAL or Gravity.END
             ).apply { setMargins(0, 0, dp(10), 0) }
         }
         val centerLabel = TextView(this).apply {
-            text = "\u2423 " + LanguagePrefs.shortLabel(activeLangCode)
+            // SUA (che do 1 ngon ngu): khong can hien ten ngon ngu o giua nua
+            // (chi co 1 lua chon duy nhat, khong co gi de phan biet/doi) -
+            // chi hien bieu tuong dau cach don gian cho gon.
+            text = if (lang2Now == null) "\u2423" else "\u2423 " + LanguagePrefs.shortLabel(activeLangCode)
             textSize = 13f
             setTextColor(primaryTextColor())
             gravity = Gravity.CENTER
@@ -2335,6 +2352,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     }
 
     private fun setLanguageMode(useLang1: Boolean) {
+        // SUA (che do 1 ngon ngu): khong co gi de doi qua neu [lang2] la
+        // null - vuot phim cach se KHONG lam gi ca thay vi doi nham ve
+        // chinh [lang1] (truong hop useLang1=false nhung lang2 null).
+        if (lang2 == null) return
         if (activeIsLang1 == useLang1) return
         activeIsLang1 = useLang1
         currentWord.clear(); emojiTrackWord.clear()

@@ -116,18 +116,26 @@ object LanguagePrefs {
         ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
     /** Tra ve (ma ngon ngu 1, ma ngon ngu 2) dang duoc chon - mac dinh
-     *  ("vi","en") neu chua tung doi. */
-    fun getSelectedLanguages(ctx: Context): Pair<String, String> {
+     *  ("vi","en") neu chua tung doi. THEM (theo yeu cau nguoi dung "phải cho
+     *  phép chỉ chọn 1 ngôn ngữ"): ngon ngu 2 gio co the la null - nghia la
+     *  nguoi dung CHi dung 1 ngon ngu DUY NHAT, khong can vuot phim cach de
+     *  doi qua lai nua (tinh nang vuot doi ngon ngu se TU DONG an/vo hieu hoa
+     *  o [QrKeyboardService] khi lang2 == null). Luu trong SharedPreferences
+     *  bang chuoi RONG ("") lam "gia tri dai dien cho null" (SharedPreferences
+     *  khong luu duoc null truc tiep cho kieu String). */
+    fun getSelectedLanguages(ctx: Context): Pair<String, String?> {
         val p = prefs(ctx)
         val l1 = p.getString(KEY_LANG_1, DEFAULT_LANG_1) ?: DEFAULT_LANG_1
-        val l2 = p.getString(KEY_LANG_2, DEFAULT_LANG_2) ?: DEFAULT_LANG_2
+        val l2Raw = p.getString(KEY_LANG_2, DEFAULT_LANG_2) ?: DEFAULT_LANG_2
+        val l2 = if (l2Raw.isBlank()) null else l2Raw
         return l1 to l2
     }
 
-    fun setSelectedLanguages(ctx: Context, lang1: String, lang2: String) {
+    /** [lang2] = null nghia la nguoi dung chi chon 1 ngon ngu DUY NHAT. */
+    fun setSelectedLanguages(ctx: Context, lang1: String, lang2: String?) {
         prefs(ctx).edit()
             .putString(KEY_LANG_1, lang1)
-            .putString(KEY_LANG_2, lang2)
+            .putString(KEY_LANG_2, lang2 ?: "")
             .apply()
     }
 }
