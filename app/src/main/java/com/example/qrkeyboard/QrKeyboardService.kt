@@ -423,7 +423,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  MOI moi lan mot goi y MOI xuat hien - xem [checkEmojiSuggestion]).*/
     private var emojiSuggestionHideRunnable: Runnable? = null
     private val emojiSuggestionHideHandler = Handler(Looper.getMainLooper())
-    private val EMOJI_SUGGESTION_AUTO_HIDE_MS = 3000L
+    private val EMOJI_SUGGESTION_AUTO_HIDE_MS = 2000L
 
     /** Huy hen gio tu-an goi y emoji dang cho (neu co) - goi truoc BAT KY
      *  thoi diem nao goi y emoji bi thay doi/xoa boi ly do KHAC (chon, bam
