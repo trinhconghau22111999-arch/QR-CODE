@@ -1329,14 +1329,55 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             }
             when (newMode) {
                 KeyboardMode.LETTERS -> { /* da co san */ }
-                KeyboardMode.NUMBERS -> if (cachedNumbersView == null) {
-                    cachedNumbersView = buildNumbersPage().also { container.addView(it) }
+                // SUA LOI THAT (theo yeu cau nguoi dung, tim ra qua doc ky
+                // code, KHONG doan mo): TRUOC DAY chi kiem tra
+                // "cachedXxxView == null" de quyet dinh co can xay/gan lai
+                // trang vao [container] hay khong. NHUNG [onCreateInputView]
+                // co mot buoc TOI UU: moi lan ban phim duoc tao lai (xay ra
+                // THUONG XUYEN - doi o nhap, doi app...) trong khi dang o
+                // trang LETTERS, no THAO (detach) cachedNumbersView/
+                // cachedSymbolsView/cachedNumpadView khoi container CU de
+                // tranh loi "view da co cha", nhung KHONG dat chung ve null
+                // (giu lai de khoi xay lai tu dau, dung y do toi uu) - va
+                // [buildKeyboardContainer] LUC DO chi gan DUY NHAT trang
+                // dang trung [mode] (LETTERS) vao container MOI, bo qua cac
+                // trang con lai. Hau qua: cachedNumbersView/... VAN "song"
+                // va KHAC null, nhung MO COI (khong con la con cua BAT KY
+                // container nao dang hien). Lan sau bam "?123", dieu kien
+                // "== null" SAI (no co null dau) nen KHONG duoc gan lai vao
+                // container MOI - chi set visibility=VISIBLE cho 1 View
+                // khong thuoc cay giao dien nao ca, nen KHONG HIEN GI CA,
+                // trong khi trang Chu cai da bi an truoc do - dung y het
+                // trieu chung "an trang 1, khong bat duoc trang 2". SUA:
+                // kiem tra CA truong hop View đã có san nhung dang MO COI
+                // (parent != container hien tai) - neu vay, GAN LAI vao
+                // container hien tai truoc, khong chi kiem tra null suong.
+                KeyboardMode.NUMBERS -> {
+                    val cached = cachedNumbersView
+                    if (cached == null) {
+                        cachedNumbersView = buildNumbersPage().also { container.addView(it) }
+                    } else if (cached.parent !== container) {
+                        detachFromParentIfAny(cached)
+                        container.addView(cached)
+                    }
                 }
-                KeyboardMode.SYMBOLS -> if (cachedSymbolsView == null) {
-                    cachedSymbolsView = buildSymbolsPage().also { container.addView(it) }
+                KeyboardMode.SYMBOLS -> {
+                    val cached = cachedSymbolsView
+                    if (cached == null) {
+                        cachedSymbolsView = buildSymbolsPage().also { container.addView(it) }
+                    } else if (cached.parent !== container) {
+                        detachFromParentIfAny(cached)
+                        container.addView(cached)
+                    }
                 }
-                KeyboardMode.NUMPAD -> if (cachedNumpadView == null) {
-                    cachedNumpadView = buildNumpadPage().also { container.addView(it) }
+                KeyboardMode.NUMPAD -> {
+                    val cached = cachedNumpadView
+                    if (cached == null) {
+                        cachedNumpadView = buildNumpadPage().also { container.addView(it) }
+                    } else if (cached.parent !== container) {
+                        detachFromParentIfAny(cached)
+                        container.addView(cached)
+                    }
                 }
             }
             applyModeVisibility(container, letters, cachedNumbersView, cachedSymbolsView, cachedNumpadView)
