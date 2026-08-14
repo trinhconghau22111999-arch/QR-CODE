@@ -1044,7 +1044,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val bottom = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         bottom.addView(simpleKey("\u232b", 1.5f) { currentInputConnection?.deleteSurroundingText(1, 0) })
         bottom.addView(simpleKey("\u2423", 4f) { currentInputConnection?.commitText(" ", 1) })
-        bottom.addView(simpleKey("\u21b5", 1.5f) { currentInputConnection?.commitText("\n", 1) })
+        bottom.addView(simpleKey("\u23ce", 1.5f) { currentInputConnection?.commitText("\n", 1) })
         root.addView(bottom)
         return root
     }
@@ -1274,7 +1274,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val nk2 = buildKey("\u232b", weight = 1f, fillRowHeight = true, onRepeat = { deleteChar() }) { deleteChar() }
         bottomRow.addView(nk2)
         registerChaseKey(KeyboardMode.NUMPAD, nk2, 0.5f, 1f)
-        val nk3 = buildKey("\u21b5", weight = 1f, highlight = true, fillRowHeight = true) { sendEnter() }
+        val nk3 = buildKey("\u23ce", weight = 1f, highlight = true, fillRowHeight = true) { sendEnter() }
         bottomRow.addView(nk3)
         registerChaseKey(KeyboardMode.NUMPAD, nk3, 0.83f, 1f)
         root.addView(bottomRow)
@@ -1978,7 +1978,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
         row.addView(k3)
         registerChaseKey(KeyboardMode.LETTERS, k3, 0.789f, 1f)
-        val k4 = buildKey("\u21b5", weight = 1.4f, highlight = true, fillRowHeight = true) { sendEnter() }
+        val k4 = buildKey("\u23ce", weight = 1.4f, highlight = true, fillRowHeight = true) { sendEnter() }
         row.addView(k4)
         registerChaseKey(KeyboardMode.LETTERS, k4, 0.922f, 1f)
 
@@ -2056,7 +2056,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val nb3 = buildKey("123", weight = 1f, fillRowHeight = true) { switchMode(KeyboardMode.NUMPAD) }
         row.addView(nb3)
         registerChaseKey(KeyboardMode.NUMBERS, nb3, 0.789f, 1f)
-        val nb4 = buildKey("\u21b5", weight = 1.4f, highlight = true, fillRowHeight = true) { sendEnter() }
+        val nb4 = buildKey("\u23ce", weight = 1.4f, highlight = true, fillRowHeight = true) { sendEnter() }
         row.addView(nb4)
         registerChaseKey(KeyboardMode.NUMBERS, nb4, 0.922f, 1f)
 
@@ -2124,7 +2124,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
         row.addView(sb3)
         registerChaseKey(KeyboardMode.SYMBOLS, sb3, 0.789f, 1f)
-        val sb4 = buildKey("\u21b5", weight = 1.4f, highlight = true, fillRowHeight = true) { sendEnter() }
+        val sb4 = buildKey("\u23ce", weight = 1.4f, highlight = true, fillRowHeight = true) { sendEnter() }
         row.addView(sb4)
         registerChaseKey(KeyboardMode.SYMBOLS, sb4, 0.922f, 1f)
 
@@ -2399,13 +2399,32 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             isAllCaps = false
             setTextColor(primaryTextColor())
             textSize = when {
-                label == "\u21b5" || label == "\u2b06" -> 28f
+                // SUA (theo yeu cau nguoi dung "hình mũi tên Enter nhỏ và
+                // nằm sát cạnh dưới của nút"): ky tu Enter TRUOC DAY la
+                // "\u21b5" (mui ten co moc, U+21B5) - font mac dinh Android
+                // (Roboto/Noto) VE ky tu nay LECH XUONG DUOI trong khung chu
+                // (glyph "nam thap", nhieu khoang trong PHIA TREN no trong
+                // em-box) - du gravity=CENTER can giua dung khung VAN BAN
+                // (text baseline box), khung do lai KHONG khop voi phan
+                // "muc" thuc su cua glyph, nen mat thuong thay ky tu bi day
+                // sat xuong day nut va nho hon cam giac. GIO DAY doi sang
+                // "\u23ce" (bieu tuong Enter/Return chuan, U+23CE) - glyph
+                // nay duoc ve DAY VA CAN GIUA hon han trong khung chu cua
+                // hau het font he thong, khac phuc dung van de nguoi dung
+                // mo ta.
+                label == "\u23ce" || label == "\u2b06" -> 28f
                 label.length > 3 -> 11f
                 label.length > 1 -> 13f
                 else -> 16f
             }
             isSingleLine = true
-            includeFontPadding = true
+            // SUA (cung ly do tren): TAT rieng includeFontPadding cho ky tu
+            // Enter - thuoc tinh nay mac dinh CHEN THEM khoang trong o TREN/
+            // DUOI dong chu (danh cho dau/moc cua cac ky tu co dau nhu "ẫ",
+            // "ệ"...), nhung voi 1 ky hieu DUY NHAT nhu "⏎" thi khoang chen
+            // nay chi lam glyph bi ĐẨY LỆCH thêm khỏi tâm hình học that su
+            // cua nut - tat no giup "⏎" nam DUNG GIUA nut hon.
+            includeFontPadding = label != "\u23ce"
             setPadding(dp(1), 0, dp(1), 0)
             minWidth = 0
             minimumWidth = 0
