@@ -1614,7 +1614,31 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             orientation = LinearLayout.HORIZONTAL
         }
         val emojiKeySizePx = dp(keyHeightDp - 8)
+        // SUA LOI NGHIEM TRONG (nghi ngo chinh la nguyen nhan "bam ?123
+        // khong bat trang 2"): TRUOC DAY tao DUY NHAT 1 Drawable
+        // ([sharedEmojiBg]) roi GAN CHUNG cho CA ~200 nut emoji ben duoi -
+        // Android TUYET DOI KHONG cho phep 1 doi tuong Drawable duoc dung
+        // lam background cho NHIEU View cung luc: moi lan mot Button goi
+        // setBackground(), no se "chiem" callback cua chinh Drawable do
+        // (drawable.setCallback(view)) VA moi lan do bo (layout) cung GHI
+        // DE truc tiep len [bounds] noi tai CUA CHINH drawable do (vi la
+        // CUNG 1 doi tuong trong bo nho, khong phai 200 ban sao rieng) -
+        // ket qua la 200 nut CUNG TRO VE 1 trang thai bounds/callback DUY
+        // NHAT, chi nut duoc bo (layout) SAU CUNG la "thang", gay hong hinh
+        // hien thi NANG (cac nut khac meo/sai kich thuoc) va tren mot so
+        // dong may/phien ban Android co the nem IllegalStateException ngay
+        // giua qua trinh dung hinh 200 nut nay - dung luc trang So dang
+        // duoc XAY LAN DAU (khi bam "?123"), khien switchMode() nem loi,
+        // BI BAT (catch) va TU DONG lui ve trang Chu cai trong im lang -
+        // nguoi dung thay y het nhu "bam ?123 khong co gi xay ra".
+        // SUA: dung [Drawable.constantState.newDrawable] de LAY MOT BAN
+        // SAO RIENG, DOC LAP cho MOI nut - vAn tai su dung chung du lieu
+        // "khong doi" (mau, do day vien...) ben trong (re, nhanh, khong
+        // ton bo nho nhu build lai tu dau tu GradientDrawable), nhung MOI
+        // nut co [bounds]/[callback] cua RIENG minh, dung chuan cach
+        // Android quy dinh khi can dung 1 Drawable cho nhieu View.
         val sharedEmojiBg = buildGlowKeyBackground(cornerDp = 4)
+        val emojiBgConstantState = sharedEmojiBg.constantState
         emojiList.forEach { emoji ->
             val btn = Button(this).apply {
                 text = emoji
@@ -1628,7 +1652,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 minHeight = 0
                 minimumHeight = 0
                 gravity = Gravity.CENTER
-                background = sharedEmojiBg
+                background = emojiBgConstantState?.newDrawable(resources) ?: buildGlowKeyBackground(cornerDp = 4)
                 stateListAnimator = null
                 elevation = 0f
                 outlineProvider = null
