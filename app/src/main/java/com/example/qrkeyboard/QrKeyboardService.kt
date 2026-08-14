@@ -408,6 +408,27 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     private var pendingEmojiSuggestion: String? = null
     private var pendingEmojiOriginalWord: String? = null
 
+    /** THEM (theo yeu cau nguoi dung "nút đề xuất emoji chỉ hiện tối đa 3s,
+     *  không chọn là nó ẩn đi"): hen gio TU DONG AN goi y emoji sau
+     *  [EMOJI_SUGGESTION_AUTO_HIDE_MS] neu nguoi dung KHONG bam chon (hoac
+     *  bam "✕") trong khoang thoi gian do - tranh goi y "dinh" mai tren ban
+     *  phim, chiem mat hang tren cung neu nguoi dung khong de y toi no. Chi
+     *  MOT hen gio hoat dong tai 1 thoi diem (huy cai CU truoc khi dat cai
+     *  MOI moi lan mot goi y MOI xuat hien - xem [checkEmojiSuggestion]).*/
+    private var emojiSuggestionHideRunnable: Runnable? = null
+    private val emojiSuggestionHideHandler = Handler(Looper.getMainLooper())
+    private val EMOJI_SUGGESTION_AUTO_HIDE_MS = 3000L
+
+    /** Huy hen gio tu-an goi y emoji dang cho (neu co) - goi truoc BAT KY
+     *  thoi diem nao goi y emoji bi thay doi/xoa boi ly do KHAC (chon, bam
+     *  ✕, tu bien mat vi go tiep chu khac...), tranh hen gio CU vo tinh chay
+     *  va an nham mot goi y MOI xuat hien SAU do (trung hop hiem nhung van
+     *  co the xay ra neu khong huy). */
+    private fun cancelEmojiSuggestionAutoHide() {
+        emojiSuggestionHideRunnable?.let { emojiSuggestionHideHandler.removeCallbacks(it) }
+        emojiSuggestionHideRunnable = null
+    }
+
     /** Danh dau lan thay doi selection/con tro SAP TOI trong o nhap lieu la
      *  do CHINH ban phim nay gay ra (qua commitText/deleteSurroundingText). */
     private var selfInitiatedChange = false
@@ -1770,6 +1791,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // dep goi y emoji cu di.
         pendingEmojiSuggestion = null
         pendingEmojiOriginalWord = null
+        cancelEmojiSuggestionAutoHide()
     }
 
     /** THEM (theo yeu cau nguoi dung, tinh nang goi y emoji): kiem tra [word]
@@ -1785,11 +1807,26 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 pendingEmojiOriginalWord = word
                 pendingSuggestion = null
                 pendingSuggestionOriginalWord = null
+                // THEM (tu dong an sau 3s): moi lan MOT goi y MOI xuat hien
+                // (khac voi goi y dang hien, hoac lan dau xuat hien), huy hen
+                // gio CU (neu co) va dat hen gio MOI dem lai tu dau - dung y
+                // "hien toi da 3s" tinh tu luc goi y NAY xuat hien, khong
+                // phai tinh don don theo lan go phim.
+                cancelEmojiSuggestionAutoHide()
+                val runnable = Runnable {
+                    pendingEmojiSuggestion = null
+                    pendingEmojiOriginalWord = null
+                    emojiSuggestionHideRunnable = null
+                    redrawKeyboard()
+                }
+                emojiSuggestionHideRunnable = runnable
+                emojiSuggestionHideHandler.postDelayed(runnable, EMOJI_SUGGESTION_AUTO_HIDE_MS)
                 redrawKeyboard()
             }
         } else if (pendingEmojiSuggestion != null) {
             pendingEmojiSuggestion = null
             pendingEmojiOriginalWord = null
+            cancelEmojiSuggestionAutoHide()
             redrawKeyboard()
         }
     }
@@ -1800,6 +1837,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  o truoc de tach voi chu, KHONG xoa bat ky ky tu nao ca). */
     private fun acceptEmojiSuggestion() {
         val emoji = pendingEmojiSuggestion ?: return
+        cancelEmojiSuggestionAutoHide()
         val ic = currentInputConnection
         if (ic != null) {
             selfInitiatedChange = true
@@ -1851,6 +1889,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         row.addView(buildKey("\u2715", weight = 1.2f) {
             pendingEmojiSuggestion = null
             pendingEmojiOriginalWord = null
+            cancelEmojiSuggestionAutoHide()
             redrawKeyboard()
         })
         return row
@@ -3604,6 +3643,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // man hinh hoac timer chay ngam vo ich.
         accentLongPressRunnable?.let { accentLongPressHandler.removeCallbacks(it) }
         accentLongPressRunnable = null
+        // THEM: huy luon hen gio tu-an goi y emoji (xem [cancelEmojiSuggestionAutoHide])
+        // - ban phim sap an, khong can hen gio nay chay ngam vo ich (se tu
+        // kiem tra lai tu dau qua [checkEmojiSuggestion] khi go tiep sau khi
+        // mo lai).
+        cancelEmojiSuggestionAutoHide()
         dismissAccentPopup()
         // THEM: dung NGAY vong lap hoat hinh RGB (khong can cho debounce -
         // View ban phim da AN ngay lap tuc roi, ve lai mau lien tuc luc
@@ -3669,6 +3713,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // giu phim ⌫, nhung phong ve van hon).
         activeDeleteRepeatRunnable?.let { deleteRepeatHandler.removeCallbacks(it) }
         activeDeleteRepeatRunnable = null
+        cancelEmojiSuggestionAutoHide()
         dismissAccentPopup()
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
         previewPopup?.let { if (it.isShowing) it.dismiss() }
