@@ -2933,6 +2933,23 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             // emoji trung khop) - tranh redraw bàn phim voi showCapitalPreview
             // = true lam phim luon hien chu HOA.
             showCapitalPreview = false
+            // SUA LOI (theo yeu cau nguoi dung "bàn phím tự hiện in hoa hết,
+            // gõ ra chữ thường"): BAN SUA TRUOC chi tat [showCapitalPreview]
+            // (co dieu khien HIEN THI) ma QUEN tat luon [capitalizeNextLetter]
+            // (co dieu khien HANH VI GO THUC TE, dung o [keyIsUpper] phia
+            // tren VA o insertChar() cho ngon ngu khac Tieng Viet) - VI PHAM
+            // quy tac "2 co nay LUON di doi voi nhau" ma MOI cho khac trong
+            // file deu tuan thu (xem cac dong dat true/false CUNG LUC o gan
+            // day). Hau qua: sau khi chu cai DAU duoc viet hoa dung, co
+            // [capitalizeNextLetter] con "treo" true THEM 1 nhip go nua ma
+            // KHONG co du lieu hien thi tuong ung (vi showCapitalPreview da
+            // tat) - trang thai noi bo va hien thi bi LECH nhau đúng 1
+            // keystroke, co the bieu hien thanh "hien thi da tat in hoa
+            // nhung logic gõ ben trong van con dang coi la che do in hoa"
+            // tuy thuoc ngu canh redraw. SUA: tat CA HAI cung luc, dung y
+            // "da tieu thu xong luot viet hoa dau cau nay, KHONG con gi de
+            // ap dung cho ky tu tiep theo nua" ca ve hien thi LAN hanh vi.
+            capitalizeNextLetter = false
         }
         val justConsumedSingleShift = capitalizeNextLetter && !touchesCapitalizeTarget
         if (justConsumedSingleShift) {
