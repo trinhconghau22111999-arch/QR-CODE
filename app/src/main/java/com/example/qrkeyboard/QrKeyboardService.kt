@@ -2418,13 +2418,12 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 else -> 16f
             }
             isSingleLine = true
-            // SUA (cung ly do tren): TAT rieng includeFontPadding cho ky tu
-            // Enter - thuoc tinh nay mac dinh CHEN THEM khoang trong o TREN/
-            // DUOI dong chu (danh cho dau/moc cua cac ky tu co dau nhu "ẫ",
-            // "ệ"...), nhung voi 1 ky hieu DUY NHAT nhu "⏎" thi khoang chen
-            // nay chi lam glyph bi ĐẨY LỆCH thêm khỏi tâm hình học that su
-            // cua nut - tat no giup "⏎" nam DUNG GIUA nut hon.
-            includeFontPadding = label != "\u23ce"
+            // SUA (theo yeu cau nguoi dung "làm nút này tương tự" - ap dung
+            // cho phim Shift "⬆", U+2B06 - cung nguyen nhan y het phim Enter
+            // o tren): TAT includeFontPadding cho CA 2 ky hieu mui ten don
+            // le nay ("⏎" va "⬆") - deu bi khoang đệm font (danh cho
+            // dau/moc cua chu co dau) day lech xuong duoi tam nut.
+            includeFontPadding = label != "\u23ce" && label != "\u2b06"
             setPadding(dp(1), 0, dp(1), 0)
             minWidth = 0
             minimumWidth = 0
