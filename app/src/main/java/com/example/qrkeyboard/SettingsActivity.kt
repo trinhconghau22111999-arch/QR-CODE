@@ -110,6 +110,13 @@ class SettingsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // THEM (theo yeu cau nguoi dung: "them code neu bi vang thi lan sau
+        // mo len se hien trang loi"): kiem tra + hien NGAY hop thoai loi
+        // crash gan nhat (neu co, tu [CrashReporter]/[QrKeyboardApp]) -
+        // TRUOC CA buoc kiem tra/chuyen huong ban phim ben duoi, de dam bao
+        // luon hien duoc du nguoi dung mo app trong tinh huong nao.
+        showLastCrashIfAny()
+
         // THEM (theo yeu cau nguoi dung): CHi kiem tra + chuyen huong sang
         // trang chon ban phim he thong khi mo TU ICON APP tren man hinh
         // chinh (KHONG co [EXTRA_SKIP_KEYBOARD_CHECK]) - khi mo TU NUT "Cai
@@ -776,5 +783,37 @@ class SettingsActivity : AppCompatActivity() {
         } else {
             Toast.makeText(this, "\u0110\u00e3 l\u01b0u v\u00e0o Downloads/$fileName", Toast.LENGTH_LONG).show()
         }
+    }
+
+    /** THEM: doc [CrashReporter.readLastCrash] - neu lan chay TRUOC app (ke
+     *  ca ban phim, vi chung chay chung 1 tien trinh) bi vang do 1 loi
+     *  UNCAUGHT nao do, hien NGAY hop thoai chua toan bo stack trace loi do.
+     *  Kem 2 nut: "Sao ch\u00e9p" (dua stack trace vao clipboard, de nguoi
+     *  dung dan gui lai qua Zalo/Messenger... khong can may tinh/logcat) va
+     *  "\u0110\u00e3 hi\u1ec3u" (dong hop thoai + xoa han log, tranh hop
+     *  thoai nay cu hien lai mai voi CUNG 1 loi cu moi lan mo app sau nay
+     *  neu khong co crash moi nao xay ra them). setCancelable(false) - bat
+     *  bam ra ngoai/Back de tat, dam bao nguoi dung phai chu dong bam 1
+     *  trong 2 nut, khong vo tinh bo lo thong tin loi. */
+    private fun showLastCrashIfAny() {
+        val crash = CrashReporter.readLastCrash(this) ?: return
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("\u1ee8ng d\u1ee5ng v\u1eeba g\u1eb7p l\u1ed7i (crash) l\u1ea7n tr\u01b0\u1edbc")
+            .setMessage(crash)
+            .setCancelable(false)
+            .setPositiveButton("\u0110\u00e3 hi\u1ec3u") { dialog, _ ->
+                CrashReporter.clearLastCrash(this)
+                dialog.dismiss()
+            }
+            .setNeutralButton("Sao ch\u00e9p") { _, _ ->
+                try {
+                    val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Crash log", crash))
+                    Toast.makeText(this, "\u0110\u00e3 sao ch\u00e9p log l\u1ed7i", Toast.LENGTH_SHORT).show()
+                } catch (e: Exception) {
+                    // Bo qua - hiem gap, khong anh huong chuc nang chinh.
+                }
+            }
+            .show()
     }
 }
