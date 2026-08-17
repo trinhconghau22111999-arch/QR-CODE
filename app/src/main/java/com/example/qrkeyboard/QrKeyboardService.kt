@@ -725,22 +725,36 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  huong da chon, lap lai vo han (giong het kieu "Colorwave" tren cac
      *  ban phim co gaming that). */
     private fun applyRgbChaseFrame() {
-        if (rgbChaseRegistryByPage.isEmpty()) return
+        // TOI UU (sua loi "go bi cham"): TRUOC DAY vong lap nay chay qua
+        // TAT CA 4 trang (rgbChaseRegistryByPage.values) MOI KHUNG HINH
+        // (66ms/lan), ke ca 3 trang dang AN (KHONG hien tren man hinh luc
+        // do) - vd nguoi dung dang o trang Chu cai go binh thuong, nhung
+        // van phai tinh HSV->RGB + goi setStroke() cho TOAN BO phim cua ca
+        // trang So/Ky hieu/Numpad dang an, hoan toan lang phi vi nguoi
+        // dung KHONG he nhin thay ket qua. Voi ~40 phim/trang x 3 trang an
+        // = ~120 lan goi thua MOI 66ms tren CHINH main thread - dung thread
+        // dang xu ly cham/vuot ngon tay khi go phim, la nguyen nhan truc
+        // tiep gay giat/cham khi go luc hieu ung RGB dang bat. SUA: CHi
+        // dong bo mau cho DUNG trang dang hien thi ([mode]) - cac trang an
+        // se duoc dong bo lai pha hien tai ngay khi chuyen sang (xem
+        // [switchMode]/[redrawKeyboard] dang goi [registerChaseKey] moi lan
+        // xay trang), nen nguoi dung se KHONG thay bat ky gian doan hoat
+        // hinh nao ca.
+        val entries = rgbChaseRegistryByPage[mode] ?: return
+        if (entries.isEmpty()) return
         val hsv = floatArrayOf(0f, 0.85f, 1f)
-        for (entries in rgbChaseRegistryByPage.values) {
-            for (entry in entries) {
-                val posFactor = when (rgbChaseDirection) {
-                    RgbEffectPrefs.DIRECTION_TOP_TO_BOTTOM -> entry.py
-                    RgbEffectPrefs.DIRECTION_DIAGONAL -> (entry.px + entry.py) / 2f
-                    else -> entry.px // DIRECTION_LEFT_TO_RIGHT (mac dinh)
-                }
-                hsv[0] = (rgbChasePhaseDeg + posFactor * 360f) % 360f
-                val color = Color.HSVToColor(hsv)
-                try {
-                    entry.drawable.setStroke(dp(1), color)
-                } catch (e: Exception) {
-                    // Bo qua 1 phim loi (hiem gap) - khong lam hong ca khung hinh.
-                }
+        for (entry in entries) {
+            val posFactor = when (rgbChaseDirection) {
+                RgbEffectPrefs.DIRECTION_TOP_TO_BOTTOM -> entry.py
+                RgbEffectPrefs.DIRECTION_DIAGONAL -> (entry.px + entry.py) / 2f
+                else -> entry.px // DIRECTION_LEFT_TO_RIGHT (mac dinh)
+            }
+            hsv[0] = (rgbChasePhaseDeg + posFactor * 360f) % 360f
+            val color = Color.HSVToColor(hsv)
+            try {
+                entry.drawable.setStroke(dp(1), color)
+            } catch (e: Exception) {
+                // Bo qua 1 phim loi (hiem gap) - khong lam hong ca khung hinh.
             }
         }
     }
