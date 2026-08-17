@@ -703,8 +703,26 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         if (!rgbChaseEnabled) return
         val runnable = object : Runnable {
             override fun run() {
-                rgbChasePhaseDeg = (rgbChasePhaseDeg + RGB_CHASE_DEG_PER_FRAME) % 360f
-                applyRgbChaseFrame()
+                // SUA (loi "vang app khi chuyen trang Chu cai <-> So"): vong
+                // lap nay TRUOC DAY KHONG duoc bao ve bang try/catch - la
+                // ngoai le DUY NHAT trong toan bo file so voi MOI callback
+                // khac (cham phim, redrawKeyboard, switchMode... deu duoc
+                // bao ve rat ky, dung ly do neu 1 loi nho xay ra giua luc no
+                // dang chay se lam CRASH ca tien trinh ban phim). Vi vong
+                // lap nay chay LIEN TUC moi 66ms (rat thuong xuyen, y het
+                // cham phim), BAT KY loi thoang qua nao (vd doc/ghi
+                // [rgbChaseRegistryByPage] dung luc [switchMode] dang xay
+                // lai trang, hoac 1 View/Drawable da bi thay the) deu se
+                // lam VANG CA APP ngay lap tuc, ma KHONG co co hoi tu phuc
+                // hoi nhu cac noi khac. SUA: bat loi, ghi log, COI NHU
+                // khung hinh nay bi bo qua (khung hinh SAU se tu dong ve
+                // lai dung) thay vi de sap ca tien trinh.
+                try {
+                    rgbChasePhaseDeg = (rgbChasePhaseDeg + RGB_CHASE_DEG_PER_FRAME) % 360f
+                    applyRgbChaseFrame()
+                } catch (e: Exception) {
+                    android.util.Log.e("QrKeyboardService", "Loi khi ve khung hinh RGB chase: ${e.message}", e)
+                }
                 rgbChaseHandler.postDelayed(this, RGB_CHASE_FRAME_MS)
             }
         }
@@ -740,7 +758,16 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // [switchMode]/[redrawKeyboard] dang goi [registerChaseKey] moi lan
         // xay trang), nen nguoi dung se KHONG thay bat ky gian doan hoat
         // hinh nao ca.
-        val entries = rgbChaseRegistryByPage[mode] ?: return
+        // THEM: chup lai (snapshot, .toList()) danh sach phim cua trang
+        // hien tai TRUOC khi lap - [entries] goc la MutableList CO THE bi
+        // [clearChaseRegistryForPage]/[registerChaseKey] doc/ghi lai (vd
+        // ngay sau khi [switchMode] vua doi [mode] nhung truoc khi trang
+        // moi kip xay xong) - lap truc tiep tren list goc dang bi sua doi
+        // se nem ConcurrentModificationException (truoc day KHONG duoc bat,
+        // xem try/catch moi them o [startRgbChaseLoopIfNeeded]). Snapshot
+        // re (chi copy tham chieu, khong copy sau) va loai bo hoan toan rui
+        // ro nay.
+        val entries = rgbChaseRegistryByPage[mode]?.toList() ?: return
         if (entries.isEmpty()) return
         val hsv = floatArrayOf(0f, 0.85f, 1f)
         for (entry in entries) {
