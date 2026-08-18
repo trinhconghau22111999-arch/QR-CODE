@@ -695,12 +695,30 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     // khong ve lai nhieu lan/giay hon truoc.
     private val RGB_CHASE_DEG_PER_FRAME = 6.279f
 
+    /** SUA (chong lag/nong may khi dung ban phim lien tuc lau - xem giai
+     *  thich chi tiet o [applyRgbChaseFrame]): neu qua khoang thoi gian nay
+     *  (mili-giay) ma KHONG co lan cham phim nao, TAM DUNG vong lap ve lai
+     *  hieu ung RGB (van con "song" - se chay lai NGAY LAP TUC ngay khung
+     *  hinh dau tien sau lan cham phim tiep theo, khong co do tre nao ca).
+     *  8 giay du ngan de khong ai nhan ra hieu ung bi "dung hinh" trong luc
+     *  gian doan binh thuong giua cac lan go (nguoi dung luc do dang doc/
+     *  nghi, khong nhin ban phim), nhung du dai de KHONG lam gian doan
+     *  hieu ung ngay giua luc dang go binh thuong. */
+    private val RGB_CHASE_IDLE_PAUSE_MS = 8000L
+
     /** Bat dau vong lap hoat hinh (goi khi ban phim hien len, CHi that su
      *  chay neu [rgbChaseEnabled]). An toan khi goi nhieu lan lien tiep (tu
      *  huy vong cu truoc khi tao vong moi). */
     private fun startRgbChaseLoopIfNeeded() {
         stopRgbChaseLoop()
         if (!rgbChaseEnabled) return
+        // SUA: "moi" lai moc thoi gian nhan phim GAN NHAT ngay luc ban phim
+        // vua duoc mo len (truoc khi nguoi dung kip go phim nao ca) - neu
+        // khong, [lastKeyDownTimestamp] van con la 0L (hoac tu lan mo ban
+        // phim TRUOC do rat lau) khien [applyRgbChaseFrame] tuong nham la
+        // "dang idle qua lau" va DUNG HINH hieu ung NGAY TU LUC MOI MO ban
+        // phim len, du nguoi dung chua kip lam gi ca.
+        lastKeyDownTimestamp = android.os.SystemClock.uptimeMillis()
         val runnable = object : Runnable {
             override fun run() {
                 // SUA (loi "vang app khi chuyen trang Chu cai <-> So"): vong
@@ -767,6 +785,35 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // xem try/catch moi them o [startRgbChaseLoopIfNeeded]). Snapshot
         // re (chi copy tham chieu, khong copy sau) va loai bo hoan toan rui
         // ro nay.
+        // SUA (nguoi dung phan anh: "gõ bình thường thì ngon, lâu lâu lag
+        // cực kì, càng dùng càng chậm dần, phải thoát app gõ mới hết"):
+        // NGUYEN NHAN - vong lap nay CHi dung khi ban phim AN HAN
+        // ([onFinishInputView]) - nhung theo co che InputMethodService cua
+        // Android, khi nguoi dung go NHIEU O NHAP trong CUNG 1 app ma ban
+        // phim KHONG dong lai lan nao (rat pho bien luc chat/nhan tin),
+        // [onFinishInputView] KHONG duoc goi - nghia la vong lap nay co the
+        // chay LIEN TUC KHONG NGHI suot ca phien su dung (30 phut - vai
+        // tieng), lien tuc chiem CPU main thread moi 66ms du nguoi dung
+        // dang go hay chi dang doc/nghi (khong dung ban phim gi ca). CPU
+        // "khong duoc nghi" keo dai nhu vay tren nhieu dien thoai (dac biet
+        // may tam trung/gia re) se khien may NONG DAN len, buoc he dieu
+        // hanh tu dong HA XUNG NHIP CPU de giam nhiet (thermal throttling)
+        // - lam CHAM DAN toan bo may (khong rieng ban phim), CANG DUNG LAU
+        // CANG CHAM - dung y nguoi dung mo ta. Thoat han app dang go moi
+        // thuc su kich hoat [onFinishInputView] -> dung vong lap -> CPU
+        // duoc nghi, may nguoi lai. SUA: TU DONG bo qua (khong tinh mau/ve
+        // lai) khung hinh nao ma da qua [RGB_CHASE_IDLE_PAUSE_MS] ke tu lan
+        // cham phim GAN NHAT ([lastKeyDownTimestamp] - da co san, dung
+        // chung voi co che phat hien go nhanh) - hieu ung se "dung hinh" 1
+        // cach tu nhien khi khong ai dung ban phim (nguoi dung khong nhin
+        // thay gi khac la vi luc do khong ai nhin ban phim ca), va CHAY LAI
+        // NGAY LAP TUC (khong co do tre "khoi dong lai") ngay khung hinh
+        // TIEP THEO sau khi cham phim tro lai - giam manh tong thoi gian
+        // CPU phai lam viec lien tuc trong 1 phien su dung dai, ma khong
+        // anh huong gi den trai nghiem go phim thuc te.
+        val idleMs = android.os.SystemClock.uptimeMillis() - lastKeyDownTimestamp
+        if (idleMs > RGB_CHASE_IDLE_PAUSE_MS) return
+
         val entries = rgbChaseRegistryByPage[mode]?.toList() ?: return
         if (entries.isEmpty()) return
         val hsv = floatArrayOf(0f, 0.85f, 1f)
