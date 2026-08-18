@@ -3,6 +3,13 @@
 
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- THEM (theo yeu cau nguoi dung: "mic phải dùng mic riêng" - tu nghe/
+         nhan dien NGAY trong chinh app, khong con uy quyen hoan toan cho app
+         tro ly ao/Google qua Intent popup rieng nhu truoc - vi chat luong
+         phu thuoc vao app do, khong on dinh). Can quyen nay de tu dung
+         android.speech.SpeechRecognizer truc tiep (xem MicPermissionActivity.kt
+         + phan xu ly Mic trong QrKeyboardService.kt). -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- CHI can cho Android 9 (API 28) tro xuong, dung de luu anh "Chup anh
          nhanh" vao thu vien qua MediaStore - tu Android 10 (API 29) tro di,
          Scoped Storage cho phep ghi vao MediaStore.Images ma KHONG can xin
@@ -57,6 +64,16 @@
             android:theme="@style/Theme.Transparent"
             android:excludeFromRecents="true"
             android:taskAffinity="com.example.qrkeyboard.qrpermission" />
+
+        <!-- THEM (theo yeu cau nguoi dung: "mic phải dùng mic riêng"): cung
+             mau voi QrCameraPermissionActivity o tren, CHi de xin quyen
+             RECORD_AUDIO - xem MicPermissionActivity.kt. -->
+        <activity
+            android:name=".MicPermissionActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Transparent"
+            android:excludeFromRecents="true"
+            android:taskAffinity="com.example.qrkeyboard.micpermission" />
 
         <!-- THEM (theo yeu cau nguoi dung, tinh nang nhap lieu bang giong
              noi): Activity toi gian, CHI dung de mo man hinh nhan dien giong

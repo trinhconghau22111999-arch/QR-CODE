@@ -12,6 +12,7 @@ import android.inputmethodservice.InputMethodService
 import android.media.AudioManager
 import android.media.ToneGenerator
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.VibrationEffect
@@ -188,6 +189,20 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 // Bo qua - Service co the da bi huy truoc khi callback chay.
             }
             onVoiceInputResult = null
+        }
+
+        /** THEM (theo yeu cau nguoi dung "mic phải dùng mic riêng"): callback
+         *  tinh, duoc [MicPermissionActivity] goi ngay sau khi nguoi dung tra
+         *  loi hop thoai xin quyen RECORD_AUDIO. Cung mau [onCameraPermissionResult]. */
+        private var onMicPermissionResult: ((granted: Boolean) -> Unit)? = null
+
+        fun notifyMicPermissionResult(granted: Boolean) {
+            try {
+                onMicPermissionResult?.invoke(granted)
+            } catch (e: Exception) {
+                // Bo qua - Service co the da bi huy truoc khi callback chay.
+            }
+            onMicPermissionResult = null
         }
 
         /** Khoang cach toi thieu (dp) ngon tay phai di chuyen theo chieu
@@ -670,6 +685,23 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
     private var autocorrectEnabled: Boolean = false
     private var emojiSuggestionEnabled: Boolean = true
+
+    // ───────────────── THEM: Mic rieng (SpeechRecognizer) - theo yeu cau ─────────────────
+    // nguoi dung "mic phải dùng mic riêng, giờ đang dùng cái của gg không tốt".
+    // TRUOC DAY uy quyen HOAN TOAN cho app tro ly ao mac dinh cua may (thuong
+    // la Google) qua VoiceInputActivity + Intent ACTION_RECOGNIZE_SPEECH - mo
+    // 1 man hinh popup RIENG cua app do, chat luong/do on dinh phu thuoc HOAN
+    // TOAN vao app do (co the la app tro ly OEM kem chat luong tren mot so
+    // may, khong phai Google that). GIO DAY: tu dung [SpeechRecognizer] TRUC
+    // TIEP trong CHINH Service nay - van goi toi dich vu nhan dien giong noi
+    // MAC DINH cua he thong (Settings > Ngon ngu & nhap > Nhan dien giong
+    // noi), nhung KHONG con phu thuoc vao app TRO LY AO mac dinh nua (2 cai
+    // nay la 2 lua chon KHAC NHAU trong Android) - va KHONG con mo popup
+    // rieng cua app khac, tat ca dien ra ngay ben trong app nay.
+
+    private var speechRecognizer: android.speech.SpeechRecognizer? = null
+    private var isListeningForVoice: Boolean = false
+    private var micButtonRef: Button? = null
 
     private data class ChaseEntry(val drawable: GradientDrawable, val px: Float, val py: Float)
 
@@ -2364,6 +2396,12 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 startVoiceInput()
             }
         }
+        // THEM: giu tham chieu nut Mic de co the tu cap nhat icon/mau ngay
+        // luc dang nghe (dang "listening") ma KHONG can ve lai (redraw) ca
+        // trang - trang Ky hieu (noi chua nut nay) duoc CACHE, hiem khi ve
+        // lai, nen cap nhat truc tiep field nay la cach nhanh + on dinh
+        // nhat (xem [updateMicButtonUi]).
+        micButtonRef = micBtn
         registerChaseKey(KeyboardMode.SYMBOLS, btn, 0.1f, 1f)
         registerChaseKey(KeyboardMode.SYMBOLS, micBtn, 0.9f, 1f)
         return LinearLayout(this).apply {
@@ -2379,13 +2417,175 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
     }
 
-    /** THEM (theo yeu cau nguoi dung): mo man hinh nhan dien giong noi cua he
-     *  thong qua [VoiceInputActivity] (xem giai thich chi tiet trong file do
-     *  - Service khong the tu mo man hinh nay, can 1 Activity trung gian
-     *  giong het luong xin quyen Camera). Uu tien ngon ngu THEO DUNG ngon
-     *  ngu dang active tren ban phim luc bam nut (xem [LanguagePrefs]), de
-     *  nhan dien dung thu tieng nguoi dung dinh noi. */
+    /** THEM (theo yeu cau nguoi dung "mic phải dùng mic riêng"): bam nut Mic.
+     *  Neu dang KHONG nghe -> kiem tra quyen RECORD_AUDIO, xin neu chua co,
+     *  roi bat dau nghe truc tiep bang [android.speech.SpeechRecognizer] cua
+     *  CHINH app (khong con mo popup cua app khac). Neu DANG nghe (bam lai
+     *  nut lan 2) -> dung nghe SOM (nguoi dung muon ket thuc ngay, khong
+     *  doi du 2s im lang). */
     private fun startVoiceInput() {
+        if (isListeningForVoice) {
+            stopListeningForVoice(cancel = false)
+            return
+        }
+        val hasPermission = ContextCompat.checkSelfPermission(
+            this, android.Manifest.permission.RECORD_AUDIO
+        ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!hasPermission) {
+            onMicPermissionResult = { granted ->
+                if (granted) beginListeningForVoice() else {
+                    Toast.makeText(this, "Ch\u01b0a c\u1EA5p quy\u1ec1n Mic", Toast.LENGTH_SHORT).show()
+                }
+            }
+            try {
+                startActivity(Intent(this, MicPermissionActivity::class.java).apply {
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+            } catch (e: Exception) {
+                onMicPermissionResult = null
+                Toast.makeText(this, "Kh\u00f4ng xin \u0111\u01b0\u1EE3c quy\u1ec1n Mic", Toast.LENGTH_SHORT).show()
+            }
+            return
+        }
+        beginListeningForVoice()
+    }
+
+    /** Bat dau nghe THAT SU (da chac chan co quyen RECORD_AUDIO). Neu may
+     *  KHONG co san dich vu nhan dien giong noi nao ca (hiem, vd ROM tuy
+     *  bien da go het/khong cai Google), dung LAI phuong an cu (mo popup he
+     *  thong qua [VoiceInputActivity]) thay vi de nguoi dung khong dung
+     *  duoc gi ca - "mic riêng" la MAC DINH/uu tien, khong phai TUYET DOI
+     *  duy nhat, van can 1 duong lui an toan. */
+    private fun beginListeningForVoice() {
+        if (!android.speech.SpeechRecognizer.isRecognitionAvailable(this)) {
+            startVoiceInputViaSystemPopup()
+            return
+        }
+        try {
+            val recognizer = speechRecognizer
+                ?: android.speech.SpeechRecognizer.createSpeechRecognizer(this).also { speechRecognizer = it }
+            recognizer.setRecognitionListener(voiceRecognitionListener)
+            val locale = VoiceInputActivity.localeForLangCode(activeLangCode)
+            val recognizeIntent = Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+                putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, locale)
+                putExtra(android.speech.RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
+                // Cung 2 gia tri nhu ban VoiceInputActivity cu (da tung sua
+                // loi "nghe duoc nhung khong viet ra") - im lang 2s la coi
+                // nhu noi xong, tu dong dung nghe va tra ket qua.
+                putExtra(android.speech.RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
+                putExtra(android.speech.RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
+                putExtra(android.speech.RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 500L)
+                putExtra(android.speech.RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+            }
+            isListeningForVoice = true
+            updateMicButtonUi()
+            recognizer.startListening(recognizeIntent)
+        } catch (e: Exception) {
+            android.util.Log.e("QrKeyboardService", "Loi khi bat dau nghe giong noi: ${e.message}", e)
+            isListeningForVoice = false
+            updateMicButtonUi()
+            Toast.makeText(this, "Kh\u00f4ng m\u1edf \u0111\u01b0\u1EE3c Mic", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /** Dung nghe. [cancel] = true nghia la HUY hoan toan (khong lay ket qua
+     *  du dang - vd loi/nguoi dung tat ban phim giua chung); false nghia la
+     *  nguoi dung CHU DONG bam dung SOM, muon lay ket qua nhung gi da nghe
+     *  duoc TOI THOI DIEM do (SpeechRecognizer.stopListening() se tu goi
+     *  onResults voi ket qua tot nhat co duoc). */
+    private fun stopListeningForVoice(cancel: Boolean) {
+        try {
+            if (cancel) speechRecognizer?.cancel() else speechRecognizer?.stopListening()
+        } catch (e: Exception) {
+            // Bo qua - hiem gap (vd recognizer da o trang thai loi san).
+        }
+        isListeningForVoice = false
+        updateMicButtonUi()
+    }
+
+    /** Cap nhat rieng icon/mau nut Mic theo trang thai dang nghe hay khong -
+     *  KHONG can ve lai (redraw) ca ban phim, chi doi truc tiep tren [micButtonRef]
+     *  (an toan vi la 1 View da duoc gan vao cay - Android tu ve lai phan
+     *  thay doi o lan draw pass tiep theo). */
+    private fun updateMicButtonUi() {
+        val btn = micButtonRef ?: return
+        try {
+            if (isListeningForVoice) {
+                btn.text = "\u23f9"
+                btn.contentDescription = "D\u1eebng nghe (\u0111ang ghi \u00e2m)"
+                btn.background = buildGlowKeyBackground(cornerDp = 10, borderColor = Color.parseColor("#FF4B4B"), borderWidthDp = 2)
+            } else {
+                btn.text = "\ud83c\udfa4"
+                btn.contentDescription = "Nh\u1eadp li\u1ec7u b\u1eb1ng gi\u1ecdng n\u00f3i"
+                btn.background = buildGlowKeyBackground(cornerDp = 10, borderColor = glowColor, borderWidthDp = 2)
+            }
+        } catch (e: Exception) {
+            // Bo qua - hiem gap (vd View da bi thao khoi cay dung luc nay).
+        }
+    }
+
+    /** Lang nghe ket qua tu [android.speech.SpeechRecognizer] - tao 1 LAN
+     *  DUY NHAT, dung lai cho moi lan nghe (khong tao moi lien tuc). */
+    /** THEM: goi tu [onFinishInputView] - dung nghe (kieu HUY, khong lay ket
+     *  qua du dang) neu dang mo Mic luc ban phim bi an di. Khac voi
+     *  [stopListeningForVoice(cancel=false)] (nguoi dung CHU DONG bam dung -
+     *  van muon lay ket qua), o day ban phim dang bi an NGOAI Y MUON nguoi
+     *  dung dang noi (vd bi che khuat, chuyen app) - huy la hop ly hon la
+     *  co lay 1 ket qua co the sai/thieu ngu canh. */
+    private fun stopVoiceInputForHide() {
+        if (!isListeningForVoice) return
+        stopListeningForVoice(cancel = true)
+    }
+
+    private val voiceRecognitionListener = object : android.speech.RecognitionListener {
+        override fun onReadyForSpeech(params: Bundle?) {}
+        override fun onBeginningOfSpeech() {}
+        override fun onRmsChanged(rmsdB: Float) {}
+        override fun onBufferReceived(buffer: ByteArray?) {}
+        override fun onEndOfSpeech() {}
+        override fun onPartialResults(partialResults: Bundle?) {}
+        override fun onEvent(eventType: Int, params: Bundle?) {}
+
+        override fun onError(error: Int) {
+            isListeningForVoice = false
+            updateMicButtonUi()
+            // SUA: bo qua rieng ERROR_NO_MATCH (khong nhan dien duoc gi -
+            // thuong do nguoi dung im lang/noi qua nho) va ERROR_SPEECH_TIMEOUT
+            // - KHONG hien Toast cho 2 loi nay, vi day la tinh huong BINH
+            // THUONG (nguoi dung bam Mic roi doi ma khong noi gi, hoac tu
+            // huy) chu khong phai LOI THAT SU, hien Toast se gay phien.
+            val code = error
+            if (code == android.speech.SpeechRecognizer.ERROR_NO_MATCH ||
+                code == android.speech.SpeechRecognizer.ERROR_SPEECH_TIMEOUT
+            ) {
+                return
+            }
+            val message = when (code) {
+                android.speech.SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "Ch\u01b0a c\u1EA5p quy\u1ec1n Mic"
+                android.speech.SpeechRecognizer.ERROR_NETWORK,
+                android.speech.SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "L\u1ed7i m\u1EA1ng, ki\u1ec3m tra k\u1EBFt n\u1ed1i"
+                android.speech.SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "Mic \u0111ang b\u1eadn, th\u1eED l\u1EA1i sau"
+                else -> "Kh\u00f4ng nh\u1eadn di\u1ec7n \u0111\u01b0\u1EE3c gi\u1ecdng n\u00f3i"
+            }
+            Toast.makeText(this@QrKeyboardService, message, Toast.LENGTH_SHORT).show()
+        }
+
+        override fun onResults(results: Bundle?) {
+            isListeningForVoice = false
+            updateMicButtonUi()
+            val text = results
+                ?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)
+                ?.firstOrNull()
+                ?.takeIf { it.isNotBlank() }
+            if (text != null) insertRecognizedVoiceText(text)
+        }
+    }
+
+    /** Duong lui: mo popup nhan dien giong noi CUA HE THONG (Google/tro ly
+     *  ao mac dinh) qua [VoiceInputActivity] - CHi dung khi may KHONG co san
+     *  bat ky dich vu SpeechRecognizer noi bo nao (xem [beginListeningForVoice]). */
+    private fun startVoiceInputViaSystemPopup() {
         onVoiceInputResult = { text ->
             if (!text.isNullOrBlank()) insertRecognizedVoiceText(text)
         }
@@ -3946,6 +4146,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // mo lai).
         cancelEmojiSuggestionAutoHide()
         dismissAccentPopup()
+        // THEM (theo yeu cau nguoi dung "mic phải dùng mic riêng"): dung
+        // nghe/giai phong SpeechRecognizer neu dang mo - ban phim sap an,
+        // KHONG de mic tiep tuc ghi am ngam khi nguoi dung khong con nhin
+        // thay ban phim nua (rui ro rieng tu + ton pin vo ich).
+        stopVoiceInputForHide()
         // THEM: dung NGAY vong lap hoat hinh RGB (khong can cho debounce -
         // View ban phim da AN ngay lap tuc roi, ve lai mau lien tuc luc
         // khong ai nhin thay la lang phi pin thuan tuy). Se tu khoi dong lai
@@ -4002,6 +4207,16 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         hideQrOverlay()
         qrToneGenerator.release()
         stopRgbChaseLoop()
+        // THEM (theo yeu cau nguoi dung "mic phải dùng mic riêng"): giai
+        // phong han SpeechRecognizer (goi .destroy(), khong chi .cancel()) -
+        // Service sap bi huy hoan toan, giu lai se ro ri tai nguyen he thong
+        // (native resource cua SpeechRecognizer KHONG tu duoc GC don).
+        try {
+            speechRecognizer?.destroy()
+        } catch (e: Exception) {
+            // Bo qua - hiem gap.
+        }
+        speechRecognizer = null
         rgbChaseRegistryByPage.clear()
         accentLongPressRunnable?.let { accentLongPressHandler.removeCallbacks(it) }
         accentLongPressRunnable = null
