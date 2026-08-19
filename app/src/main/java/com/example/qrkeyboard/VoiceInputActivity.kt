@@ -73,11 +73,11 @@ class VoiceInputActivity : AppCompatActivity() {
             // "noi xong" va TRA KET QUA VE cho app - neu nguoi dung khong tu
             // bam dung, ket qua khong bao gio duoc tra ve, giong het trieu
             // chung "nghe duoc nhung khong viet ra". 2 extra nay BAO Google
-            // bo nhan dien: im lang lien tuc 2000ms (2 giay) la COI NHU DA
-            // NOI XONG, TU DONG dung nghe va tra ket qua ve NGAY - dung yeu
-            // cau "sau 2s ngung noi la phai viet van ban ra" cua nguoi dung.
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
-            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
+            // bo nhan dien: im lang lien tuc 1200ms (1,2 giay - SUA theo yeu
+            // cau nguoi dung "dừng 1,2s thôi; 2s lâu quá", giam tu 2000ms) la
+            // COI NHU DA NOI XONG, TU DONG dung nghe va tra ket qua ve NGAY.
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1200L)
+            putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1200L)
             putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 500L)
         }
 

@@ -1204,6 +1204,32 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  GIU LAI cac View da cache, chi go chung ra khoi container CU (neu
      *  dang gan o do) de tranh crash "already has a parent" khi gan lai vao
      *  container MOI ngay sau day trong [buildKeyboardContainer]. */
+    /** THEM (theo yeu cau nguoi dung: "bật nó là không được phép ẩn bàn
+     *  phím nha" - luc dang bat Mic (dang nghe), KHONG duoc phep an ban
+     *  phim di): chan phim/nut Back (KEYCODE_BACK - cach pho bien nhat de
+     *  an ban phim tren Android, ca nut cung lan cu chi vuot ve) NGAY KHI
+     *  dang nghe - "nuot" su kien nay (tra ve true, KHONG goi super) thay
+     *  vi de he thong xu ly binh thuong (se an ban phim). Ban phim se AN
+     *  DUOC LAI BINH THUONG ngay khi mic dung nghe (isListeningForVoice ve
+     *  false). LUU Y: day CHi chan duoc nut/phim Back - Android KHONG cho
+     *  IME chan cac hanh dong khac nhu chuyen sang app khac hoan toan hay
+     *  tat man hinh (nam ngoai kha nang can thiep cua 1 ban phim). */
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean {
+        if (keyCode == android.view.KeyEvent.KEYCODE_BACK && isListeningForVoice) {
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
+
+    /** Chan luon canh "up" cua phim Back tuong ung (phong ho, dam bao khong
+     *  co nhip nao lot qua du ly do gi) - cung dieu kien nhu [onKeyDown]. */
+    override fun onKeyUp(keyCode: Int, event: android.view.KeyEvent?): Boolean {
+        if (keyCode == android.view.KeyEvent.KEYCODE_BACK && isListeningForVoice) {
+            return true
+        }
+        return super.onKeyUp(keyCode, event)
+    }
+
     override fun onCreateInputView(): View {
         // SUA (theo yeu cau nguoi dung, sua loi "tu tat ban phim, khong bat
         // lai duoc - chi con 1 hang den + icon chuyen ban phim"): BOC
@@ -2585,11 +2611,12 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE_MODEL, android.speech.RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                 putExtra(android.speech.RecognizerIntent.EXTRA_LANGUAGE, locale)
                 putExtra(android.speech.RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
-                // Cung 2 gia tri nhu ban VoiceInputActivity cu (da tung sua
-                // loi "nghe duoc nhung khong viet ra") - im lang 2s la coi
-                // nhu noi xong, tu dong dung nghe va tra ket qua.
-                putExtra(android.speech.RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
-                putExtra(android.speech.RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 2000L)
+                // SUA (theo yeu cau nguoi dung "dừng 1,2s thôi; 2s lâu
+                // quá"): giam thoi gian im lang toi da truoc khi TU DONG coi
+                // la noi xong tu 2000ms xuong 1200ms - dung nghe (va tra ket
+                // qua) nhanh hon dang ke sau khi nguoi dung ngung noi.
+                putExtra(android.speech.RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1200L)
+                putExtra(android.speech.RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1200L)
                 putExtra(android.speech.RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 500L)
                 putExtra(android.speech.RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
             }
