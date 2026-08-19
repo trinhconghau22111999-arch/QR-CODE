@@ -62,8 +62,8 @@ object RgbEffectPrefs {
     }
 
     fun directionDisplayName(direction: String): String = when (direction) {
-        DIRECTION_LEFT_TO_RIGHT -> "Tr\u00e1i \u2192 Ph\u1ea3i"
-        DIRECTION_TOP_TO_BOTTOM -> "Tr\u00ean \u2192 D\u01b0\u1edbi"
+        DIRECTION_LEFT_TO_RIGHT -> "Tr\u00e1i -> Ph\u1ea3i"
+        DIRECTION_TOP_TO_BOTTOM -> "Tr\u00ean -> D\u01b0\u1edbi"
         DIRECTION_DIAGONAL -> "Ch\u00e9o g\u00f3c"
         else -> direction
     }

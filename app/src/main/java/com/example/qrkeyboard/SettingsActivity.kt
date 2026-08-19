@@ -302,7 +302,7 @@ class SettingsActivity : AppCompatActivity() {
         languageStatusText.text = when (pendingSelectedLanguages.size) {
             2 -> {
                 val (a, b) = pendingSelectedLanguages.toList()
-                "\u0110ang d\u00f9ng: ${LanguagePrefs.displayName(a)}  \u2194  ${LanguagePrefs.displayName(b)}"
+                "\u0110ang d\u00f9ng: ${LanguagePrefs.displayName(a)}  <->  ${LanguagePrefs.displayName(b)}"
             }
             // SUA (theo yeu cau nguoi dung "phải cho phép chỉ chọn 1 ngôn
             // ngữ"): TRUOC DAY chi tick 1 ngon ngu bi coi la "chua xong",
