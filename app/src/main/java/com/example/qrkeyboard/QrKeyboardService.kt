@@ -678,6 +678,9 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
     private var rgbChaseEnabled: Boolean = false
     private var rgbChaseDirection: String = RgbEffectPrefs.DEFAULT_DIRECTION
+    // THEM (theo yeu cau nguoi dung: "có chạy led nhiều màu nhưng lại không
+    // có chạy 1 màu"): xem giai thich chi tiet trong RgbEffectPrefs.kt.
+    private var rgbChaseColorMode: String = RgbEffectPrefs.DEFAULT_COLOR_MODE
 
     // ───────────────── THEM: 2 cong tac goi y (loai tru lan nhau) ─────────────────
     // (theo yeu cau nguoi dung - xem giai thich chi tiet o SuggestionPrefs.kt).
@@ -855,6 +858,46 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
         val entries = rgbChaseRegistryByPage[mode]?.toList() ?: return
         if (entries.isEmpty()) return
+        // THEM (theo yeu cau nguoi dung: "có chạy led nhiều màu nhưng lại
+        // không có chạy 1 màu... Màu là màu viền đang dùng đó"): 2 CHE DO
+        // mau cho hieu ung chay - [RgbEffectPrefs.COLOR_MODE_RAINBOW] (MAC
+        // DINH/hanh vi CU giu nguyen o nhanh else ben duoi - vien phim doi
+        // qua toan bo dai mau cau vong theo vi tri+thoi gian) va
+        // [RgbEffectPrefs.COLOR_MODE_SINGLE] (MOI - vien phim VAN "chay"
+        // (nhap nhay do sang theo huong da chon, tao cam giac song di
+        // chuyen), nhung KHONG doi TONG MAU (Hue) - CHi dung DUNG 1 mau DUY
+        // NHAT: chinh la [glowColor] (mau vien nguoi dung dang chon trong
+        // Cai dat giao dien)).
+        if (rgbChaseColorMode == RgbEffectPrefs.COLOR_MODE_SINGLE) {
+            val baseHsv = FloatArray(3)
+            Color.colorToHSV(glowColor, baseHsv)
+            // Neu mau nen dang chon co do bao hoa (saturation) qua thap (vd
+            // gan trang/xam), ep len toi thieu de "song chay" van con nhin
+            // ra duoc ro rang, khong bi "chim" thanh mot mau xam nhat deu.
+            val saturation = baseHsv[1].coerceAtLeast(0.45f)
+            for (entry in entries) {
+                val posFactor = when (rgbChaseDirection) {
+                    RgbEffectPrefs.DIRECTION_TOP_TO_BOTTOM -> entry.py
+                    RgbEffectPrefs.DIRECTION_DIAGONAL -> (entry.px + entry.py) / 2f
+                    else -> entry.px // DIRECTION_LEFT_TO_RIGHT (mac dinh)
+                }
+                // Song hinh sin theo vi tri + pha thoi gian hien tai -> tao
+                // cam giac 1 "vet sang" dang di chuyen doc theo [rgbChaseDirection],
+                // dao dong do sang (Value) tu 55% (mo) len 100% (sang ro) -
+                // GIONG HET cam giac "chay" cua che do nhieu mau, chi khac
+                // la KHONG doi Hue (mau goc).
+                val phaseRad = Math.toRadians((rgbChasePhaseDeg + posFactor * 360f).toDouble())
+                val wave = ((Math.sin(phaseRad).toFloat() + 1f) / 2f)
+                val value = 0.55f + wave * 0.45f
+                val color = Color.HSVToColor(floatArrayOf(baseHsv[0], saturation, value))
+                try {
+                    entry.drawable.setStroke(dp(1), color)
+                } catch (e: Exception) {
+                    // Bo qua 1 phim loi (hiem gap) - khong lam hong ca khung hinh.
+                }
+            }
+            return
+        }
         val hsv = floatArrayOf(0f, 0.85f, 1f)
         for (entry in entries) {
             val posFactor = when (rgbChaseDirection) {
@@ -3523,6 +3566,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         lang2 = l2
         rgbChaseEnabled = RgbEffectPrefs.isEnabled(this)
         rgbChaseDirection = RgbEffectPrefs.getDirection(this)
+        rgbChaseColorMode = RgbEffectPrefs.getColorMode(this)
         autocorrectEnabled = SuggestionPrefs.isAutocorrectEnabled(this)
         emojiSuggestionEnabled = SuggestionPrefs.isEmojiSuggestionEnabled(this)
         if (autocorrectEnabled) VietnameseAutocorrect.preload(this)
@@ -3543,6 +3587,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val (newLang1, newLang2) = LanguagePrefs.getSelectedLanguages(this)
         val newRgbEnabled = RgbEffectPrefs.isEnabled(this)
         val newRgbDirection = RgbEffectPrefs.getDirection(this)
+        val newRgbColorMode = RgbEffectPrefs.getColorMode(this)
         // THEM: dong bo 2 cong tac goi y (xem SuggestionPrefs.kt) - KHONG can
         // gop vao [needsFullRebuild] ben duoi (khac voi mau/nen/RGB, 2 cong
         // tac nay KHONG anh huong toi CACH VE cac phim, chi anh huong toi
@@ -3592,6 +3637,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             // binh thuong.
             rgbChaseEnabled = newRgbEnabled
             rgbChaseDirection = newRgbDirection
+            rgbChaseColorMode = newRgbColorMode
 
             // SUA LOI nguoi dung phan anh ("doi mau gio no chi ap dung cho
             // man 1", "doi nen phai ap dung ca ben trong phim luon"):
@@ -3619,10 +3665,12 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             lettersPageView = null
             keyboardRootContainer = null
             setInputView(buildKeyboardContainer())
-        } else if (rgbChaseDirection != newRgbDirection) {
-            // Doi HUONG chay nhung van BAT (khong can dang ky lai phim, chi
-            // can nho huong moi - khung hinh KE TIEP se tu ap dung dung).
+        } else if (rgbChaseDirection != newRgbDirection || rgbChaseColorMode != newRgbColorMode) {
+            // Doi HUONG chay va/hoac CHE DO MAU (nhieu mau/1 mau) nhung van
+            // BAT (khong can dang ky lai phim, chi can nho gia tri moi -
+            // khung hinh KE TIEP se tu ap dung dung).
             rgbChaseDirection = newRgbDirection
+            rgbChaseColorMode = newRgbColorMode
         }
         // THEM: dam bao vong lap hoat hinh dang CHAY DUNG trang thai bat/tat
         // moi nhat - goi lai moi lan ban phim hien len (an toan, tu huy vong

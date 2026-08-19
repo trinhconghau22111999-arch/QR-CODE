@@ -481,6 +481,7 @@ class SettingsActivity : AppCompatActivity() {
     // ─────────────────── 1b. Hieu ung den RGB chay ───────────────────
 
     private lateinit var rgbToggleBtn: Button
+    private lateinit var rgbColorModeRow: LinearLayout
     private lateinit var rgbDirectionRow: LinearLayout
 
     /** THEM (theo yeu cau nguoi dung): hieu ung "den RGB chay" tren vien
@@ -495,13 +496,17 @@ class SettingsActivity : AppCompatActivity() {
         }
         wrap.addView(sectionTitle("Hi\u1ec7u \u1ee9ng \u0111\u00e8n RGB ch\u1ea1y"))
         wrap.addView(sectionSubtitle(
-            "M\u00e0u vi\u1ec1n ph\u00edm t\u1ef1 \u0111\u1ed9ng \u201cch\u1ea1y\u201d li\u00ean t\u1ee5c qua d\u1ea3i m\u00e0u c\u1ea7u v\u1ed3ng " +
+            "M\u00e0u vi\u1ec1n ph\u00edm t\u1ef1 \u0111\u1ed9ng \u201cch\u1ea1y\u201d li\u00ean t\u1ee5c " +
             "(gi\u1ed1ng b\u00e0n ph\u00edm c\u01a1 gaming th\u1eadt). M\u1eb7c \u0111\u1ecbnh t\u1eaft (t\u1ed1n pin h\u01a1n m\u00e0u t\u0129nh b\u00ecnh th\u01b0\u1eddng)."
         ))
         wrap.addView(spacer(10))
 
         rgbToggleBtn = neonButton("", accentNow) { toggleRgbEffect() }
         wrap.addView(rgbToggleBtn)
+        wrap.addView(spacer(10))
+
+        rgbColorModeRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        wrap.addView(rgbColorModeRow)
         wrap.addView(spacer(10))
 
         rgbDirectionRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
@@ -516,6 +521,11 @@ class SettingsActivity : AppCompatActivity() {
         refreshRgbEffectUi()
     }
 
+    private fun setRgbColorMode(mode: String) {
+        RgbEffectPrefs.setColorMode(this, mode)
+        refreshRgbEffectUi()
+    }
+
     private fun setRgbDirection(direction: String) {
         RgbEffectPrefs.setDirection(this, direction)
         refreshRgbEffectUi()
@@ -526,8 +536,41 @@ class SettingsActivity : AppCompatActivity() {
         rgbToggleBtn.text = if (enabled) "\u2705  \u0110ang B\u1eacT hi\u1ec7u \u1ee9ng RGB ch\u1ea1y" else "\u26aa  \u0110ang T\u1eaeT hi\u1ec7u \u1ee9ng RGB ch\u1ea1y"
         rgbToggleBtn.setTextColor(textPrimary)
 
+        rgbColorModeRow.removeAllViews()
         rgbDirectionRow.removeAllViews()
         if (!enabled) return
+
+        // THEM (theo yeu cau nguoi dung: "có chạy led nhiều màu nhưng lại
+        // không có chạy 1 màu... Màu là màu viền đang dùng đó"): 2 lua chon
+        // "Nhi\u1ec1u m\u00e0u" (RAINBOW, mac dinh) va "1 m\u00e0u" (SINGLE - dung
+        // dung mau vien dang chon o phan giao dien ben tren).
+        val currentColorMode = RgbEffectPrefs.getColorMode(this)
+        val colorModes = listOf(
+            RgbEffectPrefs.COLOR_MODE_RAINBOW to "Nhi\u1ec1u m\u00e0u",
+            RgbEffectPrefs.COLOR_MODE_SINGLE to "1 m\u00e0u (m\u00e0u vi\u1ec1n)"
+        )
+        colorModes.forEachIndexed { i, (modeValue, label) ->
+            val selected = modeValue == currentColorMode
+            val btn = TextView(this).apply {
+                text = label
+                textSize = 13f
+                gravity = Gravity.CENTER
+                setTextColor(if (selected) accentNow else textSecondary)
+                setPadding(dp(8), dp(10), dp(8), dp(10))
+                background = GradientDrawable().apply {
+                    cornerRadius = dp(8).toFloat()
+                    setColor(if (selected) Color.parseColor("#221533") else Color.TRANSPARENT)
+                    if (selected) setStroke(dp(1), accentNow)
+                }
+                isClickable = true
+                isFocusable = true
+                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    if (i > 0) marginStart = dp(6)
+                }
+                setOnClickListener { setRgbColorMode(modeValue) }
+            }
+            rgbColorModeRow.addView(btn)
+        }
 
         val currentDir = RgbEffectPrefs.getDirection(this)
         val directions = listOf(
