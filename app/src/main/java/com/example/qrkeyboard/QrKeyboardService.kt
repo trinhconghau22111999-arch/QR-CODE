@@ -4,9 +4,7 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
-import android.graphics.Paint
 import android.graphics.PixelFormat
-import android.graphics.RectF
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.LayerDrawable
@@ -709,71 +707,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     private var micButtonRef: Button? = null
 
     private data class ChaseEntry(val drawable: GradientDrawable, val px: Float, val py: Float)
-
-    /** THEM (theo yeu cau nguoi dung: "sửa icon mic" - "thiết kế đơn giản
-     *  đen trắng thôi"): thay emoji Mic mau me (🎤) - lech han phong cach
-     *  vien neon don sac cua toan bo ban phim - bang 1 icon TU VE, CHi 1
-     *  MAU DUY NHAT (dung mau chu hien tai, DEN hoac TRANG tuy theme), don
-     *  gian giong cac app/keyboard chuyen nghiep khac (Gboard, SwiftKey).
-     *  Ve theo 2 kieu: mic (dang KHONG nghe) hoac o vuong bo tron (dang
-     *  DUNG - dang nghe, bam de dung som) - giong het quy uoc icon Play/Stop
-     *  chuan. Tu quyet dinh kich thuoc (intrinsic size) dua theo [sizePx]
-     *  duoc truyen vao, luon VE O GIUA khung Drawable, KHONG phu thuoc gi
-     *  vao font he thong (khac voi emoji/ky tu Unicode - vi vay se KHONG
-     *  bao gio bi loi hien thi la/khac font tren tung may nhu da gap voi ky
-     *  tu mui ten truoc do). */
-    private class MicIconDrawable(
-        private val color: Int,
-        private val listening: Boolean,
-        private val sizePx: Int
-    ) : Drawable() {
-        private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            this.color = this@MicIconDrawable.color
-            style = Paint.Style.STROKE
-        }
-
-        override fun draw(canvas: android.graphics.Canvas) {
-            val b = bounds
-            val cx = b.exactCenterX()
-            val cy = b.exactCenterY()
-            val s = minOf(b.width(), b.height()).toFloat()
-            if (listening) {
-                // Dang NGHE: 1 o vuong bo tron TO MAU DAC (icon Stop chuan).
-                paint.style = Paint.Style.FILL
-                val half = s * 0.30f
-                val rect = RectF(cx - half, cy - half, cx + half, cy + half)
-                canvas.drawRoundRect(rect, s * 0.08f, s * 0.08f, paint)
-                return
-            }
-            // Dang KHONG nghe: ve 1 icon Mic toi gian - CHi net VIEN (khong
-            // to mau dac), giong het phong cach vien neon cua ca ban phim.
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = s * 0.09f
-            paint.strokeCap = Paint.Cap.ROUND
-            // 1. Than mic: 1 hinh con nhong (vien tron 2 dau) o phia TREN.
-            val capsuleW = s * 0.32f
-            val capsuleTop = cy - s * 0.42f
-            val capsuleBottom = cy + s * 0.06f
-            val capsuleRect = RectF(cx - capsuleW / 2f, capsuleTop, cx + capsuleW / 2f, capsuleBottom)
-            canvas.drawRoundRect(capsuleRect, capsuleW / 2f, capsuleW / 2f, paint)
-            // 2. Cung "de" (pickup) om phia duoi than mic - 1 nua vong tron.
-            val standRadius = s * 0.30f
-            val standRect = RectF(cx - standRadius, cy - s * 0.10f, cx + standRadius, cy + standRadius)
-            canvas.drawArc(standRect, 0f, 180f, false, paint)
-            // 3. Chan de (than doc) + day ngang duoi cung.
-            val stemBottom = cy + standRadius + s * 0.14f
-            canvas.drawLine(cx, cy + standRadius, cx, stemBottom, paint)
-            val baseHalf = s * 0.16f
-            canvas.drawLine(cx - baseHalf, stemBottom, cx + baseHalf, stemBottom, paint)
-        }
-
-        override fun setAlpha(alpha: Int) { paint.alpha = alpha }
-        override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) { paint.colorFilter = colorFilter }
-        @Deprecated("Deprecated in Java", ReplaceWith("PixelFormat.TRANSLUCENT"))
-        override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
-        override fun getIntrinsicWidth(): Int = sizePx
-        override fun getIntrinsicHeight(): Int = sizePx
-    }
 
     /** THEM: danh sach phim dang ky hoat hinh, TACH RIENG theo TUNG TRANG
      *  (Letters/Numbers/Symbols/Numpad) - vi cac trang duoc CACHE rieng va
@@ -2487,12 +2420,8 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // PHAI CUNG cua hang (dung 1 View "dem" co trong so (weight) = 1f de
         // day no ra sat le phai, xem [addView] ben duoi).
         val micBtn = Button(this).apply {
-            text = ""
-            val iconSize = dp(20)
-            val micIcon = MicIconDrawable(if (isDarkTheme) Color.WHITE else Color.BLACK, listening = false, sizePx = iconSize)
-            micIcon.setBounds(0, 0, iconSize, iconSize)
-            setCompoundDrawables(null, micIcon, null, null)
-            gravity = Gravity.CENTER
+            text = "\ud83c\udfa4"
+            textSize = 18f
             setTextColor(if (isDarkTheme) Color.WHITE else Color.BLACK)
             stateListAnimator = null
             elevation = 0f
@@ -2625,23 +2554,12 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     private fun updateMicButtonUi() {
         val btn = micButtonRef ?: return
         try {
-            val iconSize = dp(20)
             if (isListeningForVoice) {
-                // SUA (theo yeu cau nguoi dung "sửa icon mic" - "thiết kế
-                // đơn giản đen trắng thôi"): thay ky tu "\u23f9" (emoji/ky tu
-                // Unicode - co the render khac nhau tuy font may, giong loi
-                // mui ten "\u2192"/"\u2194" da gap truoc do) bang icon TU VE
-                // qua [MicIconDrawable] - luon 1 mau, luon giong het nhau
-                // tren MOI thiet bi.
-                val stopIcon = MicIconDrawable(Color.WHITE, listening = true, sizePx = iconSize)
-                stopIcon.setBounds(0, 0, iconSize, iconSize)
-                btn.setCompoundDrawables(null, stopIcon, null, null)
+                btn.text = "\u23f9"
                 btn.contentDescription = "D\u1eebng nghe (\u0111ang ghi \u00e2m)"
                 btn.background = buildGlowKeyBackground(cornerDp = 10, borderColor = Color.parseColor("#FF4B4B"), borderWidthDp = 2)
             } else {
-                val micIcon = MicIconDrawable(if (isDarkTheme) Color.WHITE else Color.BLACK, listening = false, sizePx = iconSize)
-                micIcon.setBounds(0, 0, iconSize, iconSize)
-                btn.setCompoundDrawables(null, micIcon, null, null)
+                btn.text = "\ud83c\udfa4"
                 btn.contentDescription = "Nh\u1eadp li\u1ec7u b\u1eb1ng gi\u1ecdng n\u00f3i"
                 btn.background = buildGlowKeyBackground(cornerDp = 10, borderColor = glowColor, borderWidthDp = 2)
             }
