@@ -70,10 +70,4 @@ dependencies {
 
     // ML Kit Barcode Scanning (quet QR offline, khong can mang)
     implementation 'com.google.mlkit:barcode-scanning:17.3.0'
-    // THEM: nhan dien van ban trong anh (OCR) - dung cho tinh nang "chup
-    // van ban" moi (thay the tinh nang "chup anh" cu, xem QrKeyboardService.kt).
-    // Dung ban Latin-only (nhe hon nhieu so voi ban "text-recognition"
-    // day du ho tro Trung/Nhat/Han - Tieng Viet dung bang chu Latin nen ban
-    // nay du dung, khong can tai them cac model ngon ngu nang khac).
-    implementation 'com.google.mlkit:text-recognition:16.0.1'
 }

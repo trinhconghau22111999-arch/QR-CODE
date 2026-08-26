@@ -38,8 +38,6 @@ import android.widget.Toast
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
-import androidx.camera.core.ImageCapture
-import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -52,8 +50,6 @@ import com.google.mlkit.vision.barcode.BarcodeScanner
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
@@ -239,12 +235,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
          *  nay). Xem [buildKeyboardView] (buildLettersPage), phan xu ly nut
          *  Shift trong trang chu cai. */
         private const val SHIFT_DOUBLE_TAP_MAX_INTERVAL_MS = 350L
-
-        /** Khoang thoi gian (ms) toi da giua 2 lan cham nut "Chup anh" (giua
-         *  Flash va Huy trong khung quet QR) de tinh la mot cu DUP-TAP - dung
-         *  de BAT/TAT che do "TU DONG CHUP ANH THEO MA QUET" (xem
-         *  [qrAutoCapturePerScan]). */
-        private const val CAPTURE_DOUBLE_TAP_MAX_INTERVAL_MS = 350L
 
         /** So dp them vao vien DUOI CUNG cua toan bo ban phim de NHICH CA
          *  BAN PHIM LEN cao hon mot chut so voi day man hinh/thanh dieu
@@ -507,13 +497,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     private var qrFlashOn = false
     private var qrFlashButton: Button? = null
 
-    private var qrImageCapture: ImageCapture? = null
-    private var qrCaptureButton: Button? = null
-    private var qrCaptureInProgress = false
-    private var qrAutoCapturePerScan = false
-    private var lastCaptureTapTime = 0L
-    private val captureButtonTapHandler = android.os.Handler(android.os.Looper.getMainLooper())
-    private var pendingCaptureTap: Runnable? = null
     private var qrOverlayRootLayout: FrameLayout? = null
     private var qrOverlaySessionKey: String? = null
 
@@ -3886,12 +3869,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         qrPreviewView = null
         qrFlashButton = null
         qrFlashOn = false
-        qrImageCapture = null
-        qrCaptureInProgress = false
-        qrCaptureButton = null
-        pendingCaptureTap?.let { captureButtonTapHandler.removeCallbacks(it) }
-        pendingCaptureTap = null
-        lastCaptureTapTime = 0L
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
     }
 
@@ -3923,7 +3900,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             ).apply { setMargins(0, 0, dp(12), dp(12)) }
             setOnClickListener {
                 reopenQrScannerOnNextStart = false
-                qrAutoCapturePerScan = false
                 hideQrOverlay()
             }
         }
@@ -3946,62 +3922,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         qrFlashButton = flashBtn
         root.addView(flashBtn)
 
-        val captureBtn = Button(this).apply {
-            text = ""
-            isAllCaps = false
-            minWidth = 0
-            minHeight = 0
-            minimumWidth = 0
-            minimumHeight = 0
-            stateListAnimator = null
-            background = buildQrCaptureButtonBackground(active = qrAutoCapturePerScan)
-            layoutParams = FrameLayout.LayoutParams(
-                dp(52), dp(52),
-                Gravity.CENTER_VERTICAL or Gravity.END
-            ).apply { setMargins(0, 0, dp(16), 0) }
-            setOnClickListener {
-                val now = android.os.SystemClock.uptimeMillis()
-                val isDoubleTap = now - lastCaptureTapTime <= CAPTURE_DOUBLE_TAP_MAX_INTERVAL_MS
-                lastCaptureTapTime = if (isDoubleTap) 0L else now
-                if (isDoubleTap) {
-                    pendingCaptureTap?.let { captureButtonTapHandler.removeCallbacks(it) }
-                    pendingCaptureTap = null
-                    qrAutoCapturePerScan = !qrAutoCapturePerScan
-                    qrCaptureButton?.background = buildQrCaptureButtonBackground(active = qrAutoCapturePerScan)
-                    Toast.makeText(
-                        this@QrKeyboardService,
-                        if (qrAutoCapturePerScan)
-                            "\u0110\u00e3 b\u1eadt: t\u1ef1 \u0111\u1ed9ng ch\u1EE5p v\u0103n b\u1EA3n m\u1ed7i l\u1ea7n qu\u00e9t \u0111\u01b0\u1ee3c m\u00e3"
-                        else
-                            "\u0110\u00e3 t\u1eaft ch\u1EE5p v\u0103n b\u1EA3n t\u1ef1 \u0111\u1ed9ng theo m\u00e3 qu\u00e9t",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                } else {
-                    pendingCaptureTap?.let { captureButtonTapHandler.removeCallbacks(it) }
-                    val tapRunnable = Runnable {
-                        pendingCaptureTap = null
-                        captureQrPhoto()
-                    }
-                    pendingCaptureTap = tapRunnable
-                    captureButtonTapHandler.postDelayed(tapRunnable, CAPTURE_DOUBLE_TAP_MAX_INTERVAL_MS)
-                }
-            }
-        }
-        qrCaptureButton = captureBtn
-        root.addView(captureBtn)
-
         return root
-    }
-
-    private fun buildQrCaptureButtonBackground(active: Boolean): GradientDrawable = GradientDrawable().apply {
-        shape = GradientDrawable.OVAL
-        if (active) {
-            setColor(Color.parseColor("#CCFF3B30"))
-            setStroke(dp(5), Color.WHITE)
-        } else {
-            setColor(Color.TRANSPARENT)
-            setStroke(dp(5), Color.WHITE)
-        }
     }
 
     private fun buildQrFlashButtonBackground(active: Boolean): GradientDrawable = GradientDrawable().apply {
@@ -4051,16 +3972,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                     processQrFrame(imageProxy, scanner)
                 }
 
-                val imageCaptureUseCase = ImageCapture.Builder()
-                    .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                    .build()
-
                 cameraProvider.unbindAll()
                 qrCamera = cameraProvider.bindToLifecycle(
                     this, CameraSelector.DEFAULT_BACK_CAMERA,
-                    previewUseCase, imageAnalysis, imageCaptureUseCase
+                    previewUseCase, imageAnalysis
                 )
-                qrImageCapture = imageCaptureUseCase
             } catch (e: Exception) {
                 Toast.makeText(this, "Kh\u00f4ng m\u1edf \u0111\u01b0\u1ee3c camera: ${e.message}", Toast.LENGTH_SHORT).show()
                 hideQrOverlay()
@@ -4077,137 +3993,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         qrCameraExecutor?.shutdown()
         qrCameraExecutor = null
         qrCamera = null
-        qrImageCapture = null
-    }
-
-    /** Bo nhan dien van ban (OCR) dung chung cho moi lan chup - tao 1 lan
-     *  duy nhat (lazy), tai su dung cho ca phien quet. */
-    private val qrTextRecognizer by lazy {
-        TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS)
-    }
-
-    /** SUA HOAN TOAN (theo yeu cau nguoi dung): "thay đổi chức năng chụp
-     *  ảnh (lưu ảnh lại trong máy và dán lên vị trí con trỏ) bằng chức năng
-     *  chụp 'hình' văn bản, rồi tự copy văn bản bên trong hình (nếu có) để
-     *  dán vào vị trí con trỏ. Chụp liên tục thì dán liên tục, sau mỗi lần
-     *  chụp thì tự xuống dòng." TRUOC DAY: chup xong LUU ANH vao thu vien
-     *  (MediaStore) roi co gang DAN ANH do vao khung chat qua
-     *  InputConnection.commitContent (chi vai app ho tro), that bai thi chi
-     *  bao "da luu vao thiet bi". GIO DAY: chup anh TRONG BO NHO (khong luu
-     *  file nao ca - dung bien the takePicture() tra ve ImageProxy truc
-     *  tiep thay vi OutputFileOptions), chay qua ML Kit Text Recognition de
-     *  nhan dien chu trong anh, roi DAN THANG VAN BAN do vao vi tri con tro
-     *  (insertText) - KHONG con lien quan gi toi luu/dan ANH nua. Chup lien
-     *  tuc (bam nhieu lan, hoac bat "tu dong chup theo ma quet") se DAN LIEN
-     *  TIEP moi lan mot doan van ban moi, tu xuong dong sau moi lan. */
-    private fun captureQrPhoto(silentAutoCapture: Boolean = false) {
-        val imageCapture = qrImageCapture
-        if (imageCapture == null) {
-            if (!silentAutoCapture) {
-                Toast.makeText(this, "Camera ch\u01b0a s\u1eb5n s\u00e0ng, th\u1eed l\u1ea1i sau", Toast.LENGTH_SHORT).show()
-            }
-            return
-        }
-        if (qrCaptureInProgress) return
-
-        qrCaptureInProgress = true
-        if (!silentAutoCapture) qrCaptureButton?.isEnabled = false
-
-        // SUA (ro ri tai nguyen, hiem gap): TRUOC DAY neu [qrCameraExecutor]
-        // dang la null (truong hop hiem: chup anh dung luc executor vua bi
-        // don dep o buoc khac), ham nay tao MOT ExecutorService MOI hoan
-        // toan lam phuong an du phong - nhung bien cuc bo do KHONG BAO GIO
-        // duoc gan lai vao [qrCameraExecutor], nen [stopQrCamera] (goi
-        // `qrCameraExecutor?.shutdown()`) se KHONG BAO GIO biet toi no de
-        // dong lai - moi lan roi vao truong hop nay se ro ri vinh vien 1
-        // luong (thread) chay ngam. SUA: GAN LAI vao [qrCameraExecutor] luon
-        // (khong chi dung tam) de duoc [stopQrCamera] don dep dung nhu binh
-        // thuong.
-        val executor = qrCameraExecutor ?: Executors.newSingleThreadExecutor().also { qrCameraExecutor = it }
-        imageCapture.takePicture(
-            executor,
-            object : ImageCapture.OnImageCapturedCallback() {
-                override fun onCaptureSuccess(image: androidx.camera.core.ImageProxy) {
-                    // SUA (rat quan trong): doc [rotationDegrees] TRUOC khi
-                    // dong [image] - TRUOC DAY doc SAU khi image.close() da
-                    // chay (o finally ben duoi), truy cap ImageProxy DA DONG
-                    // co the nem loi tuy thiet bi/phien ban CameraX (them 1
-                    // nguyen nhan co the gay crash ban phim khi chup anh OCR).
-                    val rotation = image.imageInfo.rotationDegrees
-                    val bitmap = try {
-                        val buffer = image.planes[0].buffer
-                        val bytes = ByteArray(buffer.remaining())
-                        buffer.get(bytes)
-                        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                    } catch (e: Exception) {
-                        null
-                    } finally {
-                        image.close()
-                    }
-                    val mainHandler = Handler(Looper.getMainLooper())
-                    if (bitmap == null) {
-                        mainHandler.post {
-                            qrCaptureInProgress = false
-                            if (!silentAutoCapture) qrCaptureButton?.isEnabled = true
-                            Toast.makeText(this@QrKeyboardService, "Ch\u1EE5p \u1ea3nh th\u1EA5t b\u1EA1i, th\u1eed l\u1ea1i", Toast.LENGTH_SHORT).show()
-                        }
-                        return
-                    }
-                    val inputImage = InputImage.fromBitmap(bitmap, rotation)
-                    qrTextRecognizer.process(inputImage)
-                        .addOnSuccessListener { result ->
-                            mainHandler.post {
-                                qrCaptureInProgress = false
-                                if (!silentAutoCapture) qrCaptureButton?.isEnabled = true
-                                vibrateKeyPress()
-                                qrToneGenerator.startTone(ToneGenerator.TONE_PROP_BEEP2, 120)
-                                val text = result.text.trim()
-                                if (text.isEmpty()) {
-                                    Toast.makeText(
-                                        this@QrKeyboardService,
-                                        "Kh\u00f4ng nh\u1eadn di\u1ec7n \u0111\u01b0\u1ee3c ch\u1eef n\u00e0o trong \u1EA3nh v\u1EEBa ch\u1EE5p",
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                } else {
-                                    // "Chụp liên tục thì dán liên tục, sau mỗi lần chụp thì tự
-                                    // xuống dòng" - noi tiep van ban vao vi tri con tro hien tai
-                                    // (khong xoa noi dung cu), roi xuong dong de lan chup tiep
-                                    // theo (neu co) bat dau tren 1 dong moi, khong dinh lien vao
-                                    // cuoi doan van ban vua dan.
-                                    insertText(text + "\n")
-                                    // SUA (an toan): KHONG dung [finishWordTracking] o day -
-                                    // ham do se kiem tra autocorrect cho [emojiTrackWord] (co
-                                    // the la 1 tu DO DANG (rac) tu TRUOC luc mo camera, KHONG
-                                    // lien quan gi den van ban OCR vua dan) - neu nguoi dung
-                                    // lo bam "Sua" luc do, [acceptAutocorrectSuggestion] se xoa
-                                    // NHAM 1 phan van ban OCR vua dan (vi no gia dinh sai vi tri
-                                    // con tro). Chi can xoa dau vet tu cu + goi y emoji nhu cu,
-                                    // KHONG kiem tra autocorrect trong truong hop dac biet nay.
-                                    clearAutocorrectSuggestion()
-                                    emojiTrackWord.clear()
-                                    checkEmojiSuggestion("")
-                                }
-                            }
-                        }
-                        .addOnFailureListener { e ->
-                            mainHandler.post {
-                                qrCaptureInProgress = false
-                                if (!silentAutoCapture) qrCaptureButton?.isEnabled = true
-                                Toast.makeText(this@QrKeyboardService, "Nh\u1eadn di\u1ec7n ch\u1eef th\u1EA5t b\u1EA1i: ${e.message}", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                }
-
-                override fun onError(exception: ImageCaptureException) {
-                    val mainHandler = Handler(Looper.getMainLooper())
-                    mainHandler.post {
-                        qrCaptureInProgress = false
-                        if (!silentAutoCapture) qrCaptureButton?.isEnabled = true
-                        Toast.makeText(this@QrKeyboardService, "Ch\u1ee5p \u1ea3nh th\u1ea5t b\u1ea1i: ${exception.message}", Toast.LENGTH_SHORT).show()
-                    }
-                }
-            }
-        )
     }
 
     private fun processQrFrame(imageProxy: ImageProxy, scanner: BarcodeScanner) {
@@ -4297,10 +4082,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             clearAutocorrectSuggestion()
             if (hadPendingSuggestion) redrawKeyboard()
             Toast.makeText(this, "\u0110\u00e3 qu\u00e9t: $text", Toast.LENGTH_SHORT).show()
-
-            if (qrAutoCapturePerScan) {
-                captureQrPhoto(silentAutoCapture = true)
-            }
         }
 
         mainHandler.postDelayed({
