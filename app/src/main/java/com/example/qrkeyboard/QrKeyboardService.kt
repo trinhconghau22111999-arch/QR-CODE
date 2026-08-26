@@ -1719,8 +1719,24 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             activeDeleteRepeatRunnable = null
             val container = keyboardRootContainer
             if (container != null && mode == KeyboardMode.LETTERS) {
-                lettersPageView?.let { container.removeView(it) }
+                // SUA LOI (nguoi dung phan anh: "lau lau tat ban phim roi bat
+                // lai, hoac chi an het phim con dung 1 day den phia duoi
+                // cung"): TRUOC DAY xoa view CU khoi container ([removeView])
+                // RUOI MOI goi [buildLettersPage] de dung view MOI - neu ham
+                // nay (chay RAT thuong xuyen: bat Shift, goi y xuat hien/bien
+                // mat, doi ngon ngu...) nem loi o BAT KY dau ben trong, view
+                // CU da bi xoa nhung view MOI chua kip them vao, de lai
+                // container HOAN TOAN TRONG (chi con nen mau [keyboardBackgroundColor],
+                // KHONG con phim nao) - dung khop trieu chung nguoi dung mo
+                // ta. SUA: dung view MOI TRUOC, CHi xoa view CU + gan view
+                // moi vao SAU KHI da dung thanh cong - neu [buildLettersPage]
+                // nem loi, container VAN CON NGUYEN view cu (dang hoat dong
+                // binh thuong), khong bao gio bi trong; loi van roi xuong
+                // khoi catch ben ngoai de log + thu khoi phuc them 1 lan nua
+                // nhu cu, nhung nguoi dung se KHONG con thay man hinh trong
+                // giua chung nua.
                 val newLetters = buildLettersPage()
+                lettersPageView?.let { container.removeView(it) }
                 lettersPageView = newLetters
                 container.addView(newLetters, 0)
                 applyModeVisibility(container, newLetters, cachedNumbersView, cachedSymbolsView, cachedNumpadView)
