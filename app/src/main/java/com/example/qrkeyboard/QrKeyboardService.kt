@@ -1406,11 +1406,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                     pendingEmojiOriginalWord = null
                     cancelEmojiSuggestionAutoHide()
                 }
-                if (pendingEmojiSuggestion != null) {
-                    root.addView(buildEmojiSuggestionRow())
-                } else if (pendingSuggestion != null) {
-                    root.addView(buildAutocorrectSuggestionRow())
-                }
+                // FIX lệch phím (theo phản ánh người dùng): LUÔN thêm hàng gợi ý vào layout với
+                // chiều cao CỐ ĐỊNH, kể cả khi không có gợi ý nào (rỗng) - buildSuggestionSlot()
+                // tự quyết định nội dung bên trong (emoji / autocorrect / rỗng). Xem giải thích
+                // đầy đủ ngay tại định nghĩa hàm buildSuggestionSlot() bên dưới.
+                root.addView(buildSuggestionSlot())
                 root.addView(buildCharRow(numberRows[0], rowPhase = 0f))
                 letterRows.forEachIndexed { index, row ->
                     // SUA LOI (theo yeu cau nguoi dung): hang chu THU 2 tu
@@ -2054,15 +2054,36 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
     /** Thanh goi y sua loi Tieng Viet: mot nut lon hien "Sua thanh: ..."
      *  va mot nut nho "\u2715" de bo qua goi y nay. */
-    private fun buildAutocorrectSuggestionRow(): LinearLayout {
+    /** Hàng gợi ý (autocorrect HOẶC emoji, tuỳ cái nào đang chờ) - LUÔN được add vào root với
+     *  CHIỀU CAO CỐ ĐỊNH dp(keyHeightDp - 4), kể cả khi KHÔNG có gợi ý nào (rỗng, không có nút
+     *  con, nhưng vẫn chiếm đúng bằng ấy khoảng trống).
+     *
+     *  FIX LỖI (theo phản ánh người dùng): "gõ liên tục, khi nó đề xuất thì hàng chữ trên cùng
+     *  xảy ra hiện tượng lệch phím, bấm phím này ăn phím kia" - nguyên nhân là TRƯỚC ĐÂY hàng
+     *  gợi ý chỉ được root.addView() vào layout LÚC có gợi ý xuất hiện (và bị gỡ hẳn khỏi layout
+     *  lúc không có) - mỗi lần gợi ý bật/tắt, layout tự co giãn lại theo, đẩy TOÀN BỘ các hàng
+     *  phím bên dưới (kể cả hàng "qwertyuiop" trên cùng) dịch lên/xuống ĐÚNG NGAY THỜI ĐIỂM
+     *  người dùng đang gõ liên tục - ngón tay đặt theo vị trí phím CŨ nên bấm trúng phím khác.
+     *  Giờ hàng này LUÔN có mặt, LUÔN cùng 1 chiều cao dù rỗng hay có nội dung -> các hàng phím
+     *  phía dưới không bao giờ bị dịch chuyển nữa. */
+    private fun buildSuggestionSlot(): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(keyHeightDp - 4)
             )
         }
-        val suggestion = pendingSuggestion
-        if (suggestion == null) return row
+        when {
+            pendingEmojiSuggestion != null -> populateEmojiSuggestionRow(row)
+            pendingSuggestion != null -> populateAutocorrectSuggestionRow(row)
+            // Không có gợi ý nào: giữ row RỖNG (không thêm nút con gì cả) - chiều cao cố định
+            // ở layoutParams phía trên đã đảm bảo vẫn chiếm đúng khoảng trống, không co lại.
+        }
+        return row
+    }
+
+    private fun populateAutocorrectSuggestionRow(row: LinearLayout) {
+        val suggestion = pendingSuggestion ?: return
 
         val bg = GradientDrawable().apply {
             cornerRadius = dp(4).toFloat()
@@ -2095,7 +2116,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             clearAutocorrectSuggestion()
             redrawKeyboard()
         })
-        return row
     }
 
     private fun acceptAutocorrectSuggestion() {
@@ -2241,15 +2261,8 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         redrawKeyboard()
     }
 
-    private fun buildEmojiSuggestionRow(): LinearLayout {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-        }
-        val emoji = pendingEmojiSuggestion
-        if (emoji == null) return row
+    private fun populateEmojiSuggestionRow(row: LinearLayout) {
+        val emoji = pendingEmojiSuggestion ?: return
 
         val bg = GradientDrawable().apply {
             cornerRadius = dp(4).toFloat()
@@ -2284,7 +2297,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             cancelEmojiSuggestionAutoHide()
             redrawKeyboard()
         })
-        return row
     }
 
     /** Hang duoi cung trang chu cai: "," / phim cach / "." / Enter, cung
