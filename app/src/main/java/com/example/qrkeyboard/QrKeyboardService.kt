@@ -289,7 +289,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  go nhanh. Van chen chu/rung/am thanh binh thuong, chi tat rieng
      *  popup xem-truoc trong luc go nhanh. */
     private var lastKeyDownTimestamp = 0L
-    private val FAST_TYPING_THRESHOLD_MS = 180L
+    private val FAST_TYPING_THRESHOLD_MS = 280L  // Tăng từ 180 lên 280ms: preview ít IPC hơn khi gõ vừa
 
     /** Handler + lenh "hoan" dung rieng cho co che TRE truoc khi dong khung
      *  quet QR sau [onFinishInputView] (xem [FINISH_INPUT_HIDE_DEBOUNCE_MS]).
@@ -431,6 +431,12 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     private var emojiSuggestionHideRunnable: Runnable? = null
     private val emojiSuggestionHideHandler = Handler(Looper.getMainLooper())
     private val EMOJI_SUGGESTION_AUTO_HIDE_MS = 2000L
+
+    /** Cache tham chiếu đến hàng gợi ý (LinearLayout trên cùng trang Chữ cái) - dùng để
+     *  cập nhật nội dung gợi ý TRỰC TIẾP (addView/removeView con bên trong) thay vì gọi
+     *  redrawKeyboard() rebuild toàn bộ trang phím mỗi khi gợi ý thay đổi. Được gán trong
+     *  buildSuggestionSlot() và đặt null khi trang bị tháo (onDestroy/redrawKeyboard). */
+    private var cachedSuggestionRow: android.widget.LinearLayout? = null
 
     /** Huy hen gio tu-an goi y emoji dang cho (neu co) - goi truoc BAT KY
      *  thoi diem nao goi y emoji bi thay doi/xoa boi ly do KHAC (chon, bam
@@ -1729,12 +1735,8 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  NGUYEN trang thai "chua build", se duoc build dung luc qua
      *  [switchMode] khi nguoi dung THAT SU can toi. */
     private fun redrawKeyboard() {
-        // SUA (theo yeu cau nguoi dung, sua loi "tu tat ban phim"): BOC
-        // try/catch - ham nay chay CUC KY THUONG XUYEN (moi lan bat Shift,
-        // goi y emoji xuat hien/bien mat, doi ngon ngu, tu dong viet hoa...)
-        // - TRUOC DAY khong duoc bao ve, chi 1 loi nho o BAT KY tinh nang
-        // nao lien quan (hieu ung RGB, goi y emoji, popup dau...) cung se
-        // crash ca tien trinh ban phim NGAY GIUA LUC dang go.
+        // Xóa cache suggestionRow (sắp bị tháo khỏi cây view)
+        cachedSuggestionRow = null
         try {
             // SUA LOI "giu xoa het sach roi buong tay van tu dong xoa tiep":
             // ham nay co the duoc goi CHINH TU BEN TRONG vong lap xoa lien
@@ -2102,13 +2104,29 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(keyHeightDp - 4)
             )
         }
+        cachedSuggestionRow = row
         when {
             pendingEmojiSuggestion != null -> populateEmojiSuggestionRow(row)
             pendingSuggestion != null -> populateAutocorrectSuggestionRow(row)
-            // Không có gợi ý nào: giữ row RỖNG (không thêm nút con gì cả) - chiều cao cố định
-            // ở layoutParams phía trên đã đảm bảo vẫn chiếm đúng khoảng trống, không co lại.
         }
         return row
+    }
+
+    /** Cập nhật hàng gợi ý TRỰC TIẾP (không redrawKeyboard) nếu row đang tồn tại trong cây view.
+     *  Chỉ clear + repopulate children của row đó - không rebuild trang QWERTY.
+     *  Gọi khi gợi ý thay đổi do gõ phím bình thường (checkEmojiSuggestion). */
+    private fun updateSuggestionRowInPlace() {
+        val row = cachedSuggestionRow ?: run {
+            // Row chưa tồn tại (chưa build trang Letters) → redraw bình thường
+            redrawKeyboard()
+            return
+        }
+        row.removeAllViews()
+        when {
+            pendingEmojiSuggestion != null -> populateEmojiSuggestionRow(row)
+            pendingSuggestion != null -> populateAutocorrectSuggestionRow(row)
+            // Rỗng: giữ row rỗng, chiều cao cố định đã đảm bảo layout không co
+        }
     }
 
     private fun populateAutocorrectSuggestionRow(row: LinearLayout) {
@@ -2258,17 +2276,17 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                     pendingEmojiSuggestion = null
                     pendingEmojiOriginalWord = null
                     emojiSuggestionHideRunnable = null
-                    redrawKeyboard()
+                    updateSuggestionRowInPlace()
                 }
                 emojiSuggestionHideRunnable = runnable
                 emojiSuggestionHideHandler.postDelayed(runnable, EMOJI_SUGGESTION_AUTO_HIDE_MS)
-                redrawKeyboard()
+                updateSuggestionRowInPlace()
             }
         } else if (pendingEmojiSuggestion != null) {
             pendingEmojiSuggestion = null
             pendingEmojiOriginalWord = null
             cancelEmojiSuggestionAutoHide()
-            redrawKeyboard()
+            updateSuggestionRowInPlace()
         }
     }
 
@@ -4741,3 +4759,4 @@ private object VietnameseTelex {
         return word.substring(0, target) + newChar + word.substring(target + 1)
     }
 }
+
