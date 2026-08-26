@@ -1504,21 +1504,18 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
     }
 
-    /** Trang BAN PHIM SO rieng (dang ban phim PIN/dien thoai: 3 hang so +
-     *  mot hang hanh dong duoi cung), duoc TU DONG chon khi mo mot o nhap
-     *  CHI NHAN SO (xem [isNumericOnlyField]). Dong bo HOAN TOAN cach dung
-     *  phim (glow key background qua [buildKey]/[buildCharRow]) VA cau truc
-     *  hang DUOI CUNG voi CA BA trang con lai - moi trang chi co DUY NHAT
-     *  mot hang hanh dong o day cung, dung chung mot chieu cao co dinh
-     *  dp(keyHeightDp + 2) + bottomMargin dp(6) + fillRowHeight = true cho
-     *  moi phim trong hang do. */
-    /** SUA (theo yeu cau nguoi dung): ban phim so rieng nay TRUOC DAY co 4
-     *  dong (1-2-3 / 4-5-6 / 7-8-9 / ABC+0+Xoa+Gui) - GIO DAY dung 3 dong
-     *  nhu yeu cau: "1,2,3,4,5 ; 6,7,8,9,0 ; dòng thứ 3 là 3 phím abc, nút
-     *  xóa, nút gửi". 3 nut o dong cuoi CAN DEU NHAU (weight=1f moi nut,
-     *  giong het cach chia cua 2 dong so tren) - vi dong nay chi co 3 nut
-     *  thay vi 5 nhu 2 dong tren, MOI NUT TU NHIEN se RONG/TO HON han phim
-     *  so (dung y "nó to hơn mấy phím số là chắc rồi"). */
+    /** SUA (theo yeu cau nguoi dung): ban phim so rieng (duoc TU DONG chon
+     *  khi mo mot o nhap CHI NHAN SO - xem [isNumericOnlyField]) - GIO DAY
+     *  dung 4 dong, dang "ban phim bam so dien thoai" co dinh:
+     *  - Dong 1: 1, 2, 3, Xoa (4 nut, weight=1 deu nhau).
+     *  - Dong 2: 4, 5, 6, roi 1 khoang trong RONG DUNG BANG 1 nut (khong co
+     *    phim gi ca, chi de GIU THANG COT voi nut "Xoa" o dong 1 phia tren).
+     *  - Dong 3: 7, 8, 9, cung 1 khoang trong bang 1 nut y het dong 2.
+     *  - Dong 4: ABC (chuyen ve chu cai), 0, roi phim Enter RONG GAP DOI (2
+     *    lan) so voi 2 phim con lai truoc no trong CUNG dong nay.
+     *  Tat ca 4 dong deu co TONG do rong quy doi bang 4 don vi (1+1+1+1),
+     *  nen cac phim/khoang trong o CUNG mot cot deu thang hang voi nhau qua
+     *  ca 4 dong (giong bo cuc ban phim bam so dien thoai that). */
     private fun buildNumpadPage(): View {
         clearChaseRegistryForPage(KeyboardMode.NUMPAD)
         val verticalPaddingDp = if (keyHeightDp < 48) 2 else 6
@@ -1527,25 +1524,74 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             setPadding(dp(4), dp(verticalPaddingDp), dp(4), dp(verticalPaddingDp + EXTRA_BOTTOM_LIFT_DP))
         }
 
-        root.addView(buildCharRow("12345", rowPhase = 0f))
-        root.addView(buildCharRow("67890", rowPhase = 0.5f))
+        fun spacer(weight: Float): View = View(this).apply {
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, weight)
+        }
 
-        val bottomRow = LinearLayout(this).apply {
+        // Dong 1: 1, 2, 3, Xoa
+        val row1 = LinearLayout(this).apply {
+            isBaselineAligned = false
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        }
+        listOf("1", "2", "3").forEachIndexed { idx, d ->
+            val key = buildKey(d) { insertChar(d[0]) }
+            row1.addView(key)
+            registerChaseKey(KeyboardMode.NUMPAD, key, idx / 3f, 0f)
+        }
+        val delKey = buildKey("\u232b", onRepeat = { deleteChar() }) { deleteChar() }
+        row1.addView(delKey)
+        registerChaseKey(KeyboardMode.NUMPAD, delKey, 1f, 0f)
+        root.addView(row1)
+
+        // Dong 2: 4, 5, 6, khoang trong bang 1 nut
+        val row2 = LinearLayout(this).apply {
+            isBaselineAligned = false
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        }
+        listOf("4", "5", "6").forEachIndexed { idx, d ->
+            val key = buildKey(d) { insertChar(d[0]) }
+            row2.addView(key)
+            registerChaseKey(KeyboardMode.NUMPAD, key, idx / 3f, 0.33f)
+        }
+        row2.addView(spacer(weight = 1f))
+        root.addView(row2)
+
+        // Dong 3: 7, 8, 9, khoang trong bang 1 nut
+        val row3 = LinearLayout(this).apply {
+            isBaselineAligned = false
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+        }
+        listOf("7", "8", "9").forEachIndexed { idx, d ->
+            val key = buildKey(d) { insertChar(d[0]) }
+            row3.addView(key)
+            registerChaseKey(KeyboardMode.NUMPAD, key, idx / 3f, 0.67f)
+        }
+        row3.addView(spacer(weight = 1f))
+        root.addView(row3)
+
+        // Dong 4: ABC, 0, Enter (rong gap doi 2 phim con lai)
+        val row4 = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(keyHeightDp + 2)
             ).apply { bottomMargin = dp(6) }
         }
         val nk1 = buildKey("ABC", weight = 1f, fillRowHeight = true) { switchMode(KeyboardMode.LETTERS) }
-        bottomRow.addView(nk1)
-        registerChaseKey(KeyboardMode.NUMPAD, nk1, 0.17f, 1f)
-        val nk2 = buildKey("\u232b", weight = 1f, fillRowHeight = true, onRepeat = { deleteChar() }) { deleteChar() }
-        bottomRow.addView(nk2)
-        registerChaseKey(KeyboardMode.NUMPAD, nk2, 0.5f, 1f)
-        val nk3 = buildKey("\u23ce", weight = 1f, highlight = true, fillRowHeight = true) { sendEnter() }
-        bottomRow.addView(nk3)
-        registerChaseKey(KeyboardMode.NUMPAD, nk3, 0.83f, 1f)
-        root.addView(bottomRow)
+        row4.addView(nk1)
+        registerChaseKey(KeyboardMode.NUMPAD, nk1, 0.125f, 1f)
+        val nk2 = buildKey("0", weight = 1f, fillRowHeight = true) { insertChar('0') }
+        row4.addView(nk2)
+        registerChaseKey(KeyboardMode.NUMPAD, nk2, 0.375f, 1f)
+        val nk3 = buildKey("\u23ce", weight = 2f, highlight = true, fillRowHeight = true) { sendEnter() }
+        row4.addView(nk3)
+        registerChaseKey(KeyboardMode.NUMPAD, nk3, 0.75f, 1f)
+        root.addView(row4)
 
         return root
     }
