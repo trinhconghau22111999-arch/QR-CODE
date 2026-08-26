@@ -3421,7 +3421,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val newWordLower = if (wordAlreadyHasLiteralFOrW) {
             oldWordLower + lower
         } else {
-            VietnameseTelex.processKey(oldWordLower, lower, oldWordCased, keyIsUpper)
+            VietnameseTelex.processKey(oldWordLower, lower, oldWordCased, keyIsUpper, capitalizeAppliedAtPrefixLen)
         }
         currentWord = StringBuilder(newWordLower)
         emojiTrackWord = StringBuilder(newWordLower)
@@ -4600,14 +4600,18 @@ private object VietnameseTelex {
      *  dai, tung vi tri khop voi [word]) - dung DUY NHAT de kiem tra "lech
      *  hoa/thuong" trong [applyDoubleModifier] (xem giai thich chi tiet o
      *  do). [keyIsUpper]: case THAT SU (hoa hay thuong) cua CHINH phim vua
-     *  go (truoc khi ha thanh [keyLower]). */
-    fun processKey(word: String, keyLower: Char, wordCased: String, keyIsUpper: Boolean): String {
+     *  go (truoc khi ha thanh [keyLower]). [autoCapPos]: VI TRI (thuong la
+     *  0) trong [word] ma ky tu o do dang HOA CHi VI tinh nang TU DONG VIET
+     *  HOA DAU CAU ([capitalizeAppliedAtPrefixLen] ben Service) - KHONG
+     *  PHAI do nguoi dung THAT SU bam Shift. null neu khong co vi tri nao
+     *  nhu vay. Xem giai thich day du o [applyDoubleModifier]. */
+    fun processKey(word: String, keyLower: Char, wordCased: String, keyIsUpper: Boolean, autoCapPos: Int? = null): String {
         // THEM (sua loi go "rever" -> "rểv"): tu da co >= 2 cum nguyen am
         // rieng biet (khong con la 1 am tiet tieng Viet hop le, vd dang go
         // lien 1 tu tieng Anh nhu "rever") -> TAT HAN bo dau/gop chu cho
         // PHAN CON LAI cua tu nay, chi go y nguyen tu day tro di.
         if (vowelGroupCount(word) >= 2) return word + keyLower
-        applyDoubleModifier(word, keyLower, wordCased, keyIsUpper)?.let { return it }
+        applyDoubleModifier(word, keyLower, wordCased, keyIsUpper, autoCapPos)?.let { return it }
         applyTone(word, keyLower)?.let { return it }
         return word + keyLower
     }
@@ -4620,8 +4624,17 @@ private object VietnameseTelex {
      *  quy uoc "go lech hoa/thuong de thoat bien doi Telex" da co san o mot
      *  so bo go Tieng Viet khac (Unikey...) - ap dung cho CA 4 cap
      *  "gap-doi": Aa<->Â, Ee<->Ê, Oo<->Ô, Dd<->Đ. Xem tham so [wordCased]/
-     *  [keyIsUpper] o [processKey]. */
-    private fun applyDoubleModifier(word: String, key: Char, wordCased: String, keyIsUpper: Boolean): String? {
+     *  [keyIsUpper] o [processKey].
+     *
+     *  SUA LOI (nguoi dung phan anh: chu cai DAU CAU tu dong viet hoa
+     *  khong gop duoc dau, vd "Aa" (A tu dong viet hoa dau cau + a thuong
+     *  go binh thuong) khong ra "Â"): quy uoc "lech hoa/thuong de thoat"
+     *  o tren CHi dung khi ca 2 ky tu la NGUOI DUNG THAT SU chu y go lech
+     *  (bam Shift that). Neu ky tu GOC (o [fromIdx]) dang hoa CHi VI tu
+     *  dong viet hoa dau cau ([autoCapPos] == fromIdx, khong phai nguoi
+     *  dung bam Shift) thi KHONG duoc tinh la "lech" - van phai gop binh
+     *  thuong thanh "Â"/"Ê"/"Đ" nhu the ca 2 ky tu cung thuong. */
+    private fun applyDoubleModifier(word: String, key: Char, wordCased: String, keyIsUpper: Boolean, autoCapPos: Int? = null): String? {
         if (word.isEmpty()) return null
 
         // THEM (sua loi go "rever"): CHI tim trong pham vi am tiet CUOI CUNG
@@ -4671,7 +4684,10 @@ private object VietnameseTelex {
                 // de ky tu MOI duoc CHEN NGUYEN VAN (qua nhanh applyTone/
                 // fallback "word + key" trong [processKey]), giu ca 2 ky tu
                 // rieng biet dung nhu nguoi dung go (vd "Aa" van la "Aa").
-                if (isUpperAt(fromIdx) != keyIsUpper) return null
+                // TRU KHI ky tu GOC dang hoa CHi vi tu dong viet hoa dau cau
+                // (fromIdx == autoCapPos) - luc do KHONG tinh la "lech", van
+                // gop binh thuong (xem giai thich day du o dau ham nay).
+                if (isUpperAt(fromIdx) != keyIsUpper && fromIdx != autoCapPos) return null
                 val toneIdx = charToGroupTone[word[fromIdx]]!!.second
                 val newChar = vowelGroups[toGroupIdx][toneIdx]
                 return word.substring(0, fromIdx) + newChar + word.substring(fromIdx + 1)
@@ -4718,7 +4734,9 @@ private object VietnameseTelex {
                     // SUA THEM: "Dd" (go 'D' hoa roi 'd' thuong) LECH
                     // hoa/thuong - BO QUA hop nhat thanh "Đ", giu nguyen 2 ky
                     // tu rieng biet (xem giai thich chi tiet o dau ham nay).
-                    dIdx >= 0 && isUpperAt(dIdx) == keyIsUpper ->
+                    // TRU KHI 'D' dang hoa CHi vi tu dong viet hoa dau cau
+                    // (dIdx == autoCapPos) - luc do van gop binh thuong.
+                    dIdx >= 0 && (isUpperAt(dIdx) == keyIsUpper || dIdx == autoCapPos) ->
                         word.substring(0, dIdx) + '\u0111' + word.substring(dIdx + 1)
                     else -> null
                 }
