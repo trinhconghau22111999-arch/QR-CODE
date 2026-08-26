@@ -1459,6 +1459,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                             }
                             redrawKeyboard()
                         }
+                        cachedShiftKey = shiftKey
                         rowView.addView(shiftKey, 0)
                         registerChaseKey(KeyboardMode.LETTERS, shiftKey, 0.03f, rowPhase)
                         val backspaceKey = buildKey("\u232b", weight = 1.5f, onRepeat = { deleteChar() }) { deleteChar() }
@@ -1735,8 +1736,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  NGUYEN trang thai "chua build", se duoc build dung luc qua
      *  [switchMode] khi nguoi dung THAT SU can toi. */
     private fun redrawKeyboard() {
-        // Xóa cache suggestionRow (sắp bị tháo khỏi cây view)
+        // Xóa cache (sắp rebuild toàn trang)
         cachedSuggestionRow = null
+        cachedShiftKey = null
+        cachedLetterKeys.clear()
         try {
             // SUA LOI "giu xoa het sach roi buong tay van tu dong xoa tiep":
             // ham nay co the duoc goi CHINH TU BEN TRONG vong lap xoa lien
@@ -1946,6 +1949,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         chars.forEachIndexed { idx, ch ->
             val label = if (applyShiftCase && (isShiftOn || showCapitalPreview)) ch.uppercaseChar().toString() else ch.toString()
             val key = buildKey(label) { insertChar(ch) }
+            if (applyShiftCase) cachedLetterKeys[ch] = key
             row.addView(key)
             registerChaseKey(chasePage, key, if (total > 1) idx.toFloat() / (total - 1) else 0.5f, rowPhase)
         }
@@ -2110,6 +2114,29 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             pendingSuggestion != null -> populateAutocorrectSuggestionRow(row)
         }
         return row
+    }
+
+    /** Cập nhật trạng thái Shift/capitalize TRỰC TIẾP trên các nút đã cache - không redrawKeyboard().
+     *  Chỉ đổi text label (hoa/thường) và màu highlight nút Shift. Gọi thay vì redrawKeyboard()
+     *  khi chỉ cần phản ánh thay đổi isShiftOn/showCapitalPreview/capitalizeNextLetter. */
+    private fun updateShiftStateInPlace() {
+        // Cập nhật nút Shift: highlight hay không
+        val shiftBtn = cachedShiftKey
+        if (shiftBtn == null) { redrawKeyboard(); return }
+        val shouldHighlight = isShiftOn || showCapitalPreview
+        val currentBg = shiftBtn.background
+        // Chỉ rebuild background nút Shift nếu trạng thái highlight thực sự thay đổi
+        val wasHighlight = shiftBtn.tag as? Boolean ?: false
+        if (wasHighlight != shouldHighlight) {
+            shiftBtn.background = buildGlowKeyBackground(borderWidthDp = if (shouldHighlight) 3 else 1)
+            shiftBtn.tag = shouldHighlight
+        }
+        // Cập nhật label các phím chữ cái (hoa/thường)
+        val toUpper = isShiftOn || showCapitalPreview
+        for ((ch, btn) in cachedLetterKeys) {
+            val newLabel = if (toUpper) ch.uppercaseChar().toString() else ch.toString()
+            if (btn.text.toString() != newLabel) btn.text = newLabel
+        }
     }
 
     /** Cập nhật hàng gợi ý TRỰC TIẾP (không redrawKeyboard) nếu row đang tồn tại trong cây view.
@@ -3446,7 +3473,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             emojiTrackWord.clear()
         }
         checkEmojiSuggestion(emojiTrackWord.toString())
-        if (shouldCapitalize) redrawKeyboard()
+        if (shouldCapitalize) updateShiftStateInPlace()
     }
 
     private fun insertVietnameseChar(ch: Char) {
@@ -3567,11 +3594,18 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         } else {
             ic.commitText(newSuffixDisplay, 1)
         }
-        if (hadPendingSuggestion || justConsumedSingleShift || wasCapitalizingWordStart) redrawKeyboard()
+        if (hadPendingSuggestion) {
+            // Gợi ý autocorrect vừa bị xóa → cần update hàng gợi ý
+            updateSuggestionRowInPlace()
+        }
+        if (justConsumedSingleShift || wasCapitalizingWordStart) {
+            // Chỉ cần cập nhật trạng thái Shift/label phím, không rebuild cả trang
+            updateShiftStateInPlace()
+        }
     }
 
     private fun resyncCurrentWordFromInputConnection(ic: android.view.inputmethod.InputConnection) {
-        val before = ic.getTextBeforeCursor(40, 0)?.toString() ?: return
+        val before = ic.getTextBeforeCursor(20, 0)?.toString() ?: return
         var i = before.length
         while (i > 0 && before[i - 1].isLetter()) i--
         val recoveredCased = before.substring(i)
@@ -3675,7 +3709,8 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             showCapitalPreview = true
             capitalizeAppliedAtPrefixLen = null
         }
-        if (hadPendingSuggestion || shouldRearmCapitalize) redrawKeyboard()
+        if (hadPendingSuggestion) updateSuggestionRowInPlace()
+        if (shouldRearmCapitalize) updateShiftStateInPlace()
     }
 
     private fun sendEnter() {
@@ -4759,4 +4794,5 @@ private object VietnameseTelex {
         return word.substring(0, target) + newChar + word.substring(target + 1)
     }
 }
+
 
