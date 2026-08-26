@@ -2124,7 +2124,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val shiftBtn = cachedShiftKey
         if (shiftBtn == null) { redrawKeyboard(); return }
         val shouldHighlight = isShiftOn || showCapitalPreview
-        val currentBg = shiftBtn.background
         // Chỉ rebuild background nút Shift nếu trạng thái highlight thực sự thay đổi
         val wasHighlight = shiftBtn.tag as? Boolean ?: false
         if (wasHighlight != shouldHighlight) {
