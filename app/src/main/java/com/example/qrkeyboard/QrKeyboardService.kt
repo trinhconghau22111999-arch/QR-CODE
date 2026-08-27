@@ -3607,6 +3607,14 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         } else {
             ic.commitText(newSuffixDisplay, 1)
         }
+        // Cập nhật currentWordCased ngay sau commit để resync lần sau không bị
+        // lag InputConnection đọc sai → isUpperAt() tính sai → Telex chặn gộp
+        // (vd "Aa" không ra "Â" vì tưởng user gõ lệch hoa/thường).
+        val newCasedPrefix = newWordLower.substring(0, commonPrefixLen)
+            .mapIndexed { i, c ->
+                currentWordCased.getOrNull(i)?.let { if (it.isUpperCase()) c.uppercaseChar() else c } ?: c
+            }.joinToString("")
+        currentWordCased = StringBuilder(newCasedPrefix + newSuffixDisplay)
         if (hadPendingSuggestion) updateSuggestionRowInPlace()
         if (justConsumedSingleShift || wasCapitalizingWordStart) redrawKeyboard()
     }
