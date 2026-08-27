@@ -438,6 +438,12 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  buildSuggestionSlot() và đặt null khi trang bị tháo (onDestroy/redrawKeyboard). */
     private var cachedSuggestionRow: android.widget.LinearLayout? = null
 
+    /** Cache nút Shift để updateShiftStateInPlace() highlight trực tiếp, không redrawKeyboard. */
+    private var cachedShiftKey: Button? = null
+
+    /** Cache Map ký tự → Button trang LETTERS để đổi label hoa/thường trực tiếp, không redraw. */
+    private val cachedLetterKeys = mutableMapOf<Char, Button>()
+
     /** Huy hen gio tu-an goi y emoji dang cho (neu co) - goi truoc BAT KY
      *  thoi diem nao goi y emoji bi thay doi/xoa boi ly do KHAC (chon, bam
      *  ✕, tu bien mat vi go tiep chu khac...), tranh hen gio CU vo tinh chay
