@@ -1996,6 +1996,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         chars.forEachIndexed { idx, ch ->
             val label = if (applyShiftCase && (isShiftOn || showCapitalPreview)) ch.uppercaseChar().toString() else ch.toString()
             val key = buildKey(label) { insertChar(ch) }
+            if (applyShiftCase) cachedLetterKeys[ch] = key  // cache để updateShiftStateInPlace() update đúng
             row.addView(key)
             val gridCol = sideWeight + idx
             val px = if (referenceKeyCount > 1) gridCol / (referenceKeyCount - 1) else 0.5f
