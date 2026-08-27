@@ -3479,7 +3479,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             emojiTrackWord.clear()
         }
         checkEmojiSuggestion(emojiTrackWord.toString())
-        if (shouldCapitalize) updateShiftStateInPlace()
+        if (shouldCapitalize) redrawKeyboard()
     }
 
     private fun insertVietnameseChar(ch: Char) {
@@ -3578,23 +3578,15 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // Tat showCapitalPreview XONG ROI moi check emoji
         checkEmojiSuggestion(newWordLower)
 
-        // stillCapitalizing: ký tự đầu câu đã được hoa (capitalizeAppliedAtPrefixLen = 0)
-        // và suffix hiện tại vẫn đè lên đúng vị trí đó (commonPrefixLen == 0).
-        // Cần uppercase ký tự đầu suffix dù capitalizeNextLetter đã tắt từ keystroke trước
-        // (ví dụ "aa"→"â" phải ra "Â", "ee"→"ê" phải ra "Ê", "dd"→"đ" phải ra "Đ").
-        val stillCapitalizing = !wasCapitalizingWordStart &&
-            capitalizeAppliedAtPrefixLen != null &&
-            commonPrefixLen == capitalizeAppliedAtPrefixLen &&
-            newSuffixLower.isNotEmpty()
+        // wasCapitalizingWordStart: ký tự đầu câu (bao gồm cả khi Telex gộp như aa→â)
+        // → uppercase ký tự đầu suffix. capitalizeAppliedAtPrefixLen được lưu lại để
+        // các lần gộp tiếp theo (aa→â, ee→ê...) cũng uppercase đúng qua nhánh này.
         val newSuffixDisplay = when {
-            wasCapitalizingWordStart -> {
-                val restLower = newSuffixLower.drop(1)
-                val rest = if (isShiftOn) restLower.uppercase() else restLower
-                newSuffixLower.first().uppercaseChar() + rest
-            }
-            stillCapitalizing -> {
-                // Gộp dấu Telex đè lên ký tự đầu câu đã hoa (aa→â, ee→ê, dd→đ...)
-                // → phải uppercase ký tự đầu của suffix mới
+            wasCapitalizingWordStart || (capitalizeAppliedAtPrefixLen != null
+                && commonPrefixLen == capitalizeAppliedAtPrefixLen
+                && newSuffixLower.isNotEmpty()
+                && !capitalizeNextLetter) -> {
+                // Keystroke đầu câu HOẶC Telex gộp đè lên vị trí đã hoa (aa→Â, ee→Ê, dd→Đ)
                 val restLower = newSuffixLower.drop(1)
                 val rest = if (isShiftOn) restLower.uppercase() else restLower
                 newSuffixLower.first().uppercaseChar() + rest
@@ -3615,14 +3607,8 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         } else {
             ic.commitText(newSuffixDisplay, 1)
         }
-        if (hadPendingSuggestion) {
-            // Gợi ý autocorrect vừa bị xóa → cần update hàng gợi ý
-            updateSuggestionRowInPlace()
-        }
-        if (justConsumedSingleShift || wasCapitalizingWordStart) {
-            // Chỉ cần cập nhật trạng thái Shift/label phím, không rebuild cả trang
-            updateShiftStateInPlace()
-        }
+        if (hadPendingSuggestion) updateSuggestionRowInPlace()
+        if (justConsumedSingleShift || wasCapitalizingWordStart) redrawKeyboard()
     }
 
     private fun resyncCurrentWordFromInputConnection(ic: android.view.inputmethod.InputConnection) {
@@ -3731,7 +3717,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             capitalizeAppliedAtPrefixLen = null
         }
         if (hadPendingSuggestion) updateSuggestionRowInPlace()
-        if (shouldRearmCapitalize) updateShiftStateInPlace()
+        if (shouldRearmCapitalize) redrawKeyboard()
     }
 
     private fun sendEnter() {
