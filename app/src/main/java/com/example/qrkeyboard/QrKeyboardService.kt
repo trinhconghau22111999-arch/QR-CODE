@@ -3577,8 +3577,23 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // Tat showCapitalPreview XONG ROI moi check emoji
         checkEmojiSuggestion(newWordLower)
 
+        // stillCapitalizing: ký tự đầu câu đã được hoa (capitalizeAppliedAtPrefixLen = 0)
+        // và suffix hiện tại vẫn đè lên đúng vị trí đó (commonPrefixLen == 0).
+        // Cần uppercase ký tự đầu suffix dù capitalizeNextLetter đã tắt từ keystroke trước
+        // (ví dụ "aa"→"â" phải ra "Â", "ee"→"ê" phải ra "Ê", "dd"→"đ" phải ra "Đ").
+        val stillCapitalizing = !wasCapitalizingWordStart &&
+            capitalizeAppliedAtPrefixLen != null &&
+            commonPrefixLen == capitalizeAppliedAtPrefixLen &&
+            newSuffixLower.isNotEmpty()
         val newSuffixDisplay = when {
             wasCapitalizingWordStart -> {
+                val restLower = newSuffixLower.drop(1)
+                val rest = if (isShiftOn) restLower.uppercase() else restLower
+                newSuffixLower.first().uppercaseChar() + rest
+            }
+            stillCapitalizing -> {
+                // Gộp dấu Telex đè lên ký tự đầu câu đã hoa (aa→â, ee→ê, dd→đ...)
+                // → phải uppercase ký tự đầu của suffix mới
                 val restLower = newSuffixLower.drop(1)
                 val rest = if (isShiftOn) restLower.uppercase() else restLower
                 newSuffixLower.first().uppercaseChar() + rest
