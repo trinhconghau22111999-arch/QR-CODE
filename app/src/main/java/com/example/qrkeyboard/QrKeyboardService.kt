@@ -1465,6 +1465,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                             }
                             redrawKeyboard()
                         }
+                        shiftKey.tag = isShiftOn || showCapitalPreview  // khởi tạo tag đúng
                         cachedShiftKey = shiftKey
                         rowView.addView(shiftKey, 0)
                         registerChaseKey(KeyboardMode.LETTERS, shiftKey, 0.03f, rowPhase)
@@ -2272,6 +2273,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         emojiTrackWord.clear()
         checkAutocorrectSuggestion(finishedWord)
         checkEmojiSuggestion("")
+        // Reset vị trí capitalize đã áp dụng: từ hiện tại đã kết thúc,
+        // từ tiếp theo KHÔNG được kế thừa vị trí hoa cũ (tránh lỗi
+        // "đầu mỗi từ tự động in hoa" sau khi gõ từ đầu câu).
+        if (!capitalizeNextLetter) capitalizeAppliedAtPrefixLen = null
     }
 
     /** THEM (theo yeu cau nguoi dung, tinh nang goi y emoji): kiem tra [word]
@@ -3460,6 +3465,12 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 redrawKeyboard()
                 return
             }
+            // QUAN TRỌNG: dù capitalizeNextLetter đã tắt từ trước (đã dùng hết
+            // lượt hoa đầu câu), capitalizeAppliedAtPrefixLen VẪN còn sót = 0.
+            // Nếu không reset ở đây, từ mới sau dấu cách sẽ có commonPrefixLen=0
+            // trùng với capitalizeAppliedAtPrefixLen=0 → bị nhầm là "gộp Telex
+            // đè lên vị trí đã hoa" → uppercase sai chữ đầu từ mới.
+            capitalizeAppliedAtPrefixLen = null
         }
         val shouldCapitalize = capitalizeNextLetter && ch.isLetter()
         if (shouldCapitalize) {
