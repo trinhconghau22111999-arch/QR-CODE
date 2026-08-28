@@ -4221,7 +4221,25 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }, (beepDurationMs + 100).toLong())
     }
 
+    /** Ghi log khi bàn phím bị ẩn (dù do user hay hệ thống) vào SharedPreferences.
+     *  Mở app → tab "Lỗi bàn phím" để xem log. */
+    private fun logKeyboardHide(reason: String) {
+        try {
+            val prefs = getSharedPreferences("kb_hide_log", android.content.Context.MODE_PRIVATE)
+            val time = java.text.SimpleDateFormat("MM-dd HH:mm:ss.SSS", java.util.Locale.getDefault())
+                .format(java.util.Date())
+            val entry = "[$time] $reason | shift=$isShiftOn cap=$capitalizeNextLetter " +
+                "capApplied=$capitalizeAppliedAtPrefixLen showCap=$showCapitalPreview " +
+                "isViet=$isVietnameseMode word=${currentWord.take(10)}"
+            val old = prefs.getString("log", "") ?: ""
+            val lines = old.lines().takeLast(49)  // giữ 50 dòng gần nhất
+            prefs.edit().putString("log", (lines + entry).joinToString("
+")).apply()
+        } catch (_: Exception) {}
+    }
+
     override fun onFinishInputView(finishingInput: Boolean) {
+        logKeyboardHide("onFinishInputView(finishing=$finishingInput)")
         super.onFinishInputView(finishingInput)
         // THEM: dep sach popup chon dau (neu dang hien) + huy timer nhan giu
         // dang cho (neu co) - ban phim sap an, khong de popup "mo coi" tren
@@ -4290,6 +4308,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     }
 
     override fun onDestroy() {
+        logKeyboardHide("onDestroy - service bị kill")
         super.onDestroy()
         cancelPendingFinishHide()
         hideQrOverlay()
