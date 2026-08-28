@@ -910,15 +910,13 @@ class SettingsActivity : AppCompatActivity() {
         val crash = CrashReporter.readLastCrash(this)
 
         // Nếu có cả 2, gộp lại. Nếu chỉ có log bàn phím, hiện riêng.
+        val nl = "
+"
         val combined = when {
-            crash != null && !kbLog.isNullOrBlank() -> "── CRASH LOG ──
-$crash
-
-── LOG BÀN PHÍM TỰ ĐÓNG ──
-$kbLog"
+            crash != null && !kbLog.isNullOrBlank() ->
+                "── CRASH LOG ──" + nl + crash + nl + nl + "── LOG BÀN PHÍM TỰ ĐÓNG ──" + nl + kbLog
             crash != null -> crash
-            !kbLog.isNullOrBlank() -> "── LOG BÀN PHÍM TỰ ĐÓNG ──
-$kbLog"
+            !kbLog.isNullOrBlank() -> "── LOG BÀN PHÍM TỰ ĐÓNG ──" + nl + kbLog
             else -> return
         }
         androidx.appcompat.app.AlertDialog.Builder(this)
