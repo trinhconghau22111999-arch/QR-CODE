@@ -4233,8 +4233,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 "isViet=$isVietnameseMode word=${currentWord.toString().take(10)}"
             val old = prefs.getString("log", "") ?: ""
             val lines = old.lines().takeLast(49)  // giữ 50 dòng gần nhất
-            prefs.edit().putString("log", (lines + entry).joinToString("
-")).apply()
+            prefs.edit().putString("log", (lines + entry).joinToString(System.lineSeparator())).apply()
         } catch (_: Exception) {}
     }
 
