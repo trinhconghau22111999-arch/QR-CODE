@@ -901,13 +901,36 @@ class SettingsActivity : AppCompatActivity() {
      *  bam ra ngoai/Back de tat, dam bao nguoi dung phai chu dong bam 1
      *  trong 2 nut, khong vo tinh bo lo thong tin loi. */
     private fun showLastCrashIfAny() {
-        val crash = CrashReporter.readLastCrash(this) ?: return
+        // Đọc log bàn phím tự đóng (nếu có) kết hợp với crash log
+        val kbLog = try {
+            getSharedPreferences("kb_hide_log", android.content.Context.MODE_PRIVATE)
+                .getString("log", null)
+        } catch (_: Exception) { null }
+
+        val crash = CrashReporter.readLastCrash(this)
+
+        // Nếu có cả 2, gộp lại. Nếu chỉ có log bàn phím, hiện riêng.
+        val combined = when {
+            crash != null && !kbLog.isNullOrBlank() -> "── CRASH LOG ──
+$crash
+
+── LOG BÀN PHÍM TỰ ĐÓNG ──
+$kbLog"
+            crash != null -> crash
+            !kbLog.isNullOrBlank() -> "── LOG BÀN PHÍM TỰ ĐÓNG ──
+$kbLog"
+            else -> return
+        }
         androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("\u1ee8ng d\u1ee5ng v\u1eeba g\u1eb7p l\u1ed7i (crash) l\u1ea7n tr\u01b0\u1edbc")
-            .setMessage(crash)
+            .setTitle("Log lỗi")
+            .setMessage(combined)
             .setCancelable(false)
-            .setPositiveButton("\u0110\u00e3 hi\u1ec3u") { dialog, _ ->
+            .setPositiveButton("Đã hiểu / Xóa log") { dialog, _ ->
                 CrashReporter.clearLastCrash(this)
+                try {
+                    getSharedPreferences("kb_hide_log", android.content.Context.MODE_PRIVATE)
+                        .edit().remove("log").apply()
+                } catch (_: Exception) {}
                 dialog.dismiss()
             }
             .setNeutralButton("Sao ch\u00e9p") { _, _ ->
