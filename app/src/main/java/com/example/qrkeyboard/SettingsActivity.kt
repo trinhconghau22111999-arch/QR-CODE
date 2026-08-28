@@ -910,8 +910,7 @@ class SettingsActivity : AppCompatActivity() {
         val crash = CrashReporter.readLastCrash(this)
 
         // Nếu có cả 2, gộp lại. Nếu chỉ có log bàn phím, hiện riêng.
-        val nl = "
-"
+        val nl = System.lineSeparator()
         val combined = when {
             crash != null && !kbLog.isNullOrBlank() ->
                 "── CRASH LOG ──" + nl + crash + nl + nl + "── LOG BÀN PHÍM TỰ ĐÓNG ──" + nl + kbLog
@@ -934,7 +933,7 @@ class SettingsActivity : AppCompatActivity() {
             .setNeutralButton("Sao ch\u00e9p") { _, _ ->
                 try {
                     val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Crash log", crash))
+                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Log loi", combined))
                     Toast.makeText(this, "\u0110\u00e3 sao ch\u00e9p log l\u1ed7i", Toast.LENGTH_SHORT).show()
                 } catch (e: Exception) {
                     // Bo qua - hiem gap, khong anh huong chuc nang chinh.
