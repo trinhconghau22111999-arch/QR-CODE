@@ -4230,7 +4230,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 .format(java.util.Date())
             val entry = "[$time] $reason | shift=$isShiftOn cap=$capitalizeNextLetter " +
                 "capApplied=$capitalizeAppliedAtPrefixLen showCap=$showCapitalPreview " +
-                "isViet=$isVietnameseMode word=${currentWord.take(10)}"
+                "isViet=$isVietnameseMode word=${currentWord.toString().take(10)}"
             val old = prefs.getString("log", "") ?: ""
             val lines = old.lines().takeLast(49)  // giữ 50 dòng gần nhất
             prefs.edit().putString("log", (lines + entry).joinToString("
