@@ -2656,23 +2656,17 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // lai, nen cap nhat truc tiep field nay la cach nhanh + on dinh
         // nhat (xem [updateMicButtonUi]).
         micButtonRef = micBtn
-        // SUA (theo phan anh nguoi dung, kem anh chup man hinh: nut Mic bi
-        // "lech vi tri" - nam qua xa nut Cai dat, cach 1 khoang trong rat
-        // to): truoc day dung 1 View "dem" co trong so (weight=1f) de day
-        // nut Mic ra SAT RIA PHAI CUNG cua hang - nhung dieu nay mau thuan
-        // voi chinh ten goi ban dau cua tinh nang ("dat CUNG hang, SAT BEN
-        // PHAI nut Cai dat" - xem commit gioi thieu tinh nang Mic) - "sat
-        // ben phai" dung nghia phai la NAM KE NGAY BEN CANH, khong phai o
-        // tit dau kia hang. Bo hang View dem, 2 nut gio nam SAT NHAU (Mic
-        // ngay ke phai Cai dat), khong con khoang trong lon o giua nua.
         registerChaseKey(KeyboardMode.SYMBOLS, btn, 0.1f, 1f)
-        registerChaseKey(KeyboardMode.SYMBOLS, micBtn, 0.3f, 1f)
+        registerChaseKey(KeyboardMode.SYMBOLS, micBtn, 0.9f, 1f)
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             )
             addView(btn)
+            addView(View(this@QrKeyboardService).apply {
+                layoutParams = LinearLayout.LayoutParams(0, 0, 1f)
+            })
             addView(micBtn)
         }
     }
