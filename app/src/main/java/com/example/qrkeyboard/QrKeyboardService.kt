@@ -1401,11 +1401,15 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                     pendingEmojiOriginalWord = null
                     cancelEmojiSuggestionAutoHide()
                 }
-                // FIX lệch phím (theo phản ánh người dùng): LUÔN thêm hàng gợi ý vào layout với
-                // chiều cao CỐ ĐỊNH, kể cả khi không có gợi ý nào (rỗng) - buildSuggestionSlot()
-                // tự quyết định nội dung bên trong (emoji / autocorrect / rỗng). Xem giải thích
-                // đầy đủ ngay tại định nghĩa hàm buildSuggestionSlot() bên dưới.
-                root.addView(buildSuggestionSlot())
+                // ĐÃ REVERT (theo yêu cầu người dùng - fix "luôn thêm hàng gợi ý với chiều cao
+                // cố định" ở dưới gây ra nhiều lỗi khác, phải phục hồi lại đúng cách làm CŨ):
+                // chỉ addView() hàng gợi ý vào layout LÚC THẬT SỰ có gợi ý, gỡ hẳn khỏi layout
+                // lúc không có - đúng như trước khi có fix lệch phím. Chấp nhận lại nhược điểm
+                // gốc (hàng phím bên dưới có thể bị xê dịch nhẹ lúc gợi ý bật/tắt) để đổi lấy việc
+                // bỏ các lỗi mới phát sinh từ cách làm "chiều cao cố định".
+                if (pendingEmojiSuggestion != null || pendingSuggestion != null) {
+                    root.addView(buildSuggestionSlot())
+                }
                 root.addView(buildCharRow(numberRows[0], rowPhase = 0f))
                 letterRows.forEachIndexed { index, row ->
                     // SUA LOI (theo yeu cau nguoi dung): hang chu THU 2 tu
@@ -2097,23 +2101,22 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
     /** Thanh goi y sua loi Tieng Viet: mot nut lon hien "Sua thanh: ..."
      *  va mot nut nho "\u2715" de bo qua goi y nay. */
-    /** Hàng gợi ý (autocorrect HOẶC emoji, tuỳ cái nào đang chờ) - LUÔN được add vào root với
-     *  CHIỀU CAO CỐ ĐỊNH dp(keyHeightDp - 4), kể cả khi KHÔNG có gợi ý nào (rỗng, không có nút
-     *  con, nhưng vẫn chiếm đúng bằng ấy khoảng trống).
+    /** Hàng gợi ý (autocorrect HOẶC emoji, tuỳ cái nào đang chờ) - chỉ được addView() vào layout
+     *  LÚC THẬT SỰ có gợi ý (xem chỗ gọi), gỡ hẳn khỏi layout lúc không có.
      *
-     *  FIX LỖI (theo phản ánh người dùng): "gõ liên tục, khi nó đề xuất thì hàng chữ trên cùng
-     *  xảy ra hiện tượng lệch phím, bấm phím này ăn phím kia" - nguyên nhân là TRƯỚC ĐÂY hàng
-     *  gợi ý chỉ được root.addView() vào layout LÚC có gợi ý xuất hiện (và bị gỡ hẳn khỏi layout
-     *  lúc không có) - mỗi lần gợi ý bật/tắt, layout tự co giãn lại theo, đẩy TOÀN BỘ các hàng
-     *  phím bên dưới (kể cả hàng "qwertyuiop" trên cùng) dịch lên/xuống ĐÚNG NGAY THỜI ĐIỂM
-     *  người dùng đang gõ liên tục - ngón tay đặt theo vị trí phím CŨ nên bấm trúng phím khác.
-     *  Giờ hàng này LUÔN có mặt, LUÔN cùng 1 chiều cao dù rỗng hay có nội dung -> các hàng phím
-     *  phía dưới không bao giờ bị dịch chuyển nữa. */
+     *  ĐÃ REVERT (theo yêu cầu người dùng): từng có 1 fix đổi hàng này thành LUÔN có mặt với
+     *  chiều cao cố định (kể cả rỗng) để hàng phím bên dưới không bị dịch chuyển lúc gợi ý bật/
+     *  tắt - nhưng fix đó lại gây ra nhiều lỗi khác, nên đã phục hồi lại đúng cách làm CŨ này.
+     *  Giữ nguyên tên hàm buildSuggestionSlot()/cachedSuggestionRow và tách riêng
+     *  populateAutocorrectSuggestionRow()/populateEmojiSuggestionRow() (không gộp ngược lại 2 hàm
+     *  buildAutocorrectSuggestionRow()/buildEmojiSuggestionRow() như trước fix) vì các fix tối ưu
+     *  hiệu năng sau đó (updateSuggestionRowInPlace()...) đã dựa trên đúng cấu trúc này - gộp
+     *  ngược lại sẽ phá luôn các fix đó. */
     private fun buildSuggestionSlot(): LinearLayout {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(keyHeightDp - 4)
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             )
         }
         cachedSuggestionRow = row
