@@ -1528,9 +1528,14 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  - Dong 1: 1, 2, 3, Xoa (4 nut, weight=1 deu nhau).
      *  - Dong 2: 4, 5, 6, roi 1 khoang trong RONG DUNG BANG 1 nut (khong co
      *    phim gi ca, chi de GIU THANG COT voi nut "Xoa" o dong 1 phia tren).
-     *  - Dong 3: 7, 8, 9, cung 1 khoang trong bang 1 nut y het dong 2.
-     *  - Dong 4: ABC (chuyen ve chu cai), 0, roi phim Enter RONG GAP DOI (2
-     *    lan) so voi 2 phim con lai truoc no trong CUNG dong nay.
+     *  - Dong 3: 7, 8, 9, Enter (kich thuoc = 1 nut, dung ngay duoi nut Xoa).
+     *    SUA (theo yeu cau nguoi dung): Enter TRUOC DAY nam o dong 4 voi
+     *    kich thuoc RONG GAP DOI - da "chia lam 2, chi giu lai 1 nua ben
+     *    phai" (kich thuoc = 1 nut thay vi 2) roi CHUYEN LEN dong nay, thay
+     *    the dung vao vi tri khoang trong (spacer) truoc day cua dong 3.
+     *  - Dong 4: ABC (chuyen ve chu cai), 0, roi 1 khoang trong RONG BANG 2
+     *    nut (thay cho vi tri Enter cu, giu dong nay van thang cot voi cac
+     *    dong khac).
      *  Tat ca 4 dong deu co TONG do rong quy doi bang 4 don vi (1+1+1+1),
      *  nen cac phim/khoang trong o CUNG mot cot deu thang hang voi nhau qua
      *  ca 4 dong (giong bo cuc ban phim bam so dien thoai that). */
@@ -1578,7 +1583,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         row2.addView(spacer(weight = 1f))
         root.addView(row2)
 
-        // Dong 3: 7, 8, 9, khoang trong bang 1 nut
+        // Dong 3: 7, 8, 9, Enter (kich thuoc = 1 nut, dung ngay duoi nut Xoa o
+        // dong 1 - theo yeu cau nguoi dung: "chia nut Enter (truoc day rong
+        // gap doi o dong 4) ra lam 2, chi giu lai 1 nua ben phai, roi nang
+        // no len nam cung dong voi so 9"). Thay vi dat o dong 4 rieng, Enter
+        // gio chiem dung vi tri khoang trong (spacer) truoc day cua dong nay.
         val row3 = LinearLayout(this).apply {
             isBaselineAligned = false
             layoutParams = LinearLayout.LayoutParams(
@@ -1590,10 +1599,15 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             row3.addView(key)
             registerChaseKey(KeyboardMode.NUMPAD, key, idx / 3f, 0.67f)
         }
-        row3.addView(spacer(weight = 1f))
+        val enterKeyRow3 = buildKey("\u23ce", highlight = true) { sendEnter() }
+        row3.addView(enterKeyRow3)
+        registerChaseKey(KeyboardMode.NUMPAD, enterKeyRow3, 1f, 0.67f)
         root.addView(row3)
 
-        // Dong 4: ABC, 0, Enter (rong gap doi 2 phim con lai)
+        // Dong 4: ABC, 0, khoang trong bang 2 nut (nut Enter da chuyen len
+        // dong 3 o tren - giu spacer rong 2 don vi o dung vi tri cu de cot
+        // dong 4 van thang hang voi cac dong khac, dung nguyen tac bo cuc dat
+        // ra ban dau cho trang Numpad).
         val row4 = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
@@ -1606,9 +1620,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val nk2 = buildKey("0", weight = 1f, fillRowHeight = true) { insertChar('0') }
         row4.addView(nk2)
         registerChaseKey(KeyboardMode.NUMPAD, nk2, 0.375f, 1f)
-        val nk3 = buildKey("\u23ce", weight = 2f, highlight = true, fillRowHeight = true) { sendEnter() }
-        row4.addView(nk3)
-        registerChaseKey(KeyboardMode.NUMPAD, nk3, 0.75f, 1f)
+        row4.addView(spacer(weight = 2f))
         root.addView(row4)
 
         return root
