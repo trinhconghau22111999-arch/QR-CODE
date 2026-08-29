@@ -2599,7 +2599,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             setPadding(dp(16), dp(10), dp(16), dp(10))
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, dp(keyHeightDp)
-            ).apply { setMargins(dp(4), dp(3), dp(4), dp(6)) }
+            ).apply { setMargins(dp(4), dp(1), dp(4), dp(6)) }
             isHapticFeedbackEnabled = true
             setOnClickListener {
                 vibrateKeyPress()
