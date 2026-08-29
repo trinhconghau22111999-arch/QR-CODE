@@ -112,11 +112,33 @@ class SettingsActivity : AppCompatActivity() {
 
         // THEM (theo yeu cau nguoi dung: "them code neu bi vang thi lan sau
         // mo len se hien trang loi"): kiem tra + hien NGAY hop thoai loi
-        // crash gan nhat (neu co, tu [CrashReporter]/[QrKeyboardApp]) -
-        // TRUOC CA buoc kiem tra/chuyen huong ban phim ben duoi, de dam bao
-        // luon hien duoc du nguoi dung mo app trong tinh huong nao.
-        showLastCrashIfAny()
+        // crash gan nhat (neu co, tu [CrashReporter]/[QrKeyboardApp]).
+        //
+        // FIX QUAN TRONG (sua loi nguoi dung phan anh: "bam icon app de copy
+        // loi thi no cu vao thang trang 'ban phim tren man hinh'"): TRUOC
+        // DAY showLastCrashIfAny() chi hien hop thoai (KHONG chan luong code
+        // - AlertDialog la BAT DONG BO), roi code o day VAN TIEP TUC CHAY
+        // XUONG NGAY buoc kiem tra ban phim ben duoi TRONG CUNG onCreate()
+        // nay - neu ban phim CHUA duoc bat trong Cai dat he thong (rat pho
+        // bien), no LAP TUC mo trang "Ban phim tren man hinh"
+        // (ACTION_INPUT_METHOD_SETTINGS) + finish() Activity nay NGAY, dep
+        // mat hop thoai loi vua hien len chi trong tich tac - nguoi dung
+        // KHONG KIP thay/bam Sao chep gi ca, chi thay app "nhay thang" vao
+        // trang bat ban phim moi lan mo icon.
+        //
+        // Giờ NỐI 2 bước lại: chỉ chạy tiếp bước kiểm tra + chuyển hướng bàn
+        // phím SAU KHI hộp thoại lỗi (nếu có) đã được người dùng chủ động
+        // đóng (bấm "Đã hiểu / Xóa log") - truyền vào làm callback. Nếu
+        // KHÔNG có lỗi nào để hiện, callback được gọi NGAY LẬP TỨC (giữ
+        // nguyên hành vi cũ y hệt trước đây cho trường hợp không có crash).
+        showLastCrashIfAny { runKeyboardCheckAndRedirectIfNeeded() }
+    }
 
+    /** Tách riêng từ onCreate() - xem giải thích đầy đủ + LÝ DO tách ở lời
+     *  gọi showLastCrashIfAny() phía trên: bước này giờ chỉ chạy SAU KHI hộp
+     *  thoại lỗi (nếu có) đã đóng, không còn chạy song song đè lên hộp thoại
+     *  lỗi nữa. */
+    private fun runKeyboardCheckAndRedirectIfNeeded() {
         // THEM (theo yeu cau nguoi dung): CHi kiem tra + chuyen huong sang
         // trang chon ban phim he thong khi mo TU ICON APP tren man hinh
         // chinh (KHONG co [EXTRA_SKIP_KEYBOARD_CHECK]) - khi mo TU NUT "Cai
@@ -905,7 +927,7 @@ class SettingsActivity : AppCompatActivity() {
      *  neu khong co crash moi nao xay ra them). setCancelable(false) - bat
      *  bam ra ngoai/Back de tat, dam bao nguoi dung phai chu dong bam 1
      *  trong 2 nut, khong vo tinh bo lo thong tin loi. */
-    private fun showLastCrashIfAny() {
+    private fun showLastCrashIfAny(onDismissed: () -> Unit) {
         // Đọc log bàn phím tự đóng (nếu có) kết hợp với crash log
         val kbLog = try {
             getSharedPreferences("kb_hide_log", android.content.Context.MODE_PRIVATE)
@@ -921,7 +943,9 @@ class SettingsActivity : AppCompatActivity() {
                 "── CRASH LOG ──" + nl + crash + nl + nl + "── LOG BÀN PHÍM TỰ ĐÓNG ──" + nl + kbLog
             crash != null -> crash
             !kbLog.isNullOrBlank() -> "── LOG BÀN PHÍM TỰ ĐÓNG ──" + nl + kbLog
-            else -> return
+            // KHÔNG có gì để hiện - chạy tiếp callback NGAY LẬP TỨC, giữ nguyên hành vi cũ y hệt
+            // trước đây cho trường hợp không có crash (không có gì phải chờ đóng cả).
+            else -> { onDismissed(); return }
         }
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Log lỗi")
@@ -934,6 +958,9 @@ class SettingsActivity : AppCompatActivity() {
                         .edit().remove("log").apply()
                 } catch (_: Exception) {}
                 dialog.dismiss()
+                // Người dùng đã CHỦ ĐỘNG xem/đóng xong hộp thoại lỗi - giờ mới chạy tiếp bước
+                // kiểm tra + chuyển hướng bàn phím (xem giải thích đầy đủ ở nơi gọi hàm này).
+                onDismissed()
             }
             .setNeutralButton("Sao ch\u00e9p") { _, _ ->
                 try {
@@ -943,6 +970,10 @@ class SettingsActivity : AppCompatActivity() {
                 } catch (e: Exception) {
                     // Bo qua - hiem gap, khong anh huong chuc nang chinh.
                 }
+                // KHÔNG gọi onDismissed() ở đây - "Sao chép" KHÔNG tự đóng hộp thoại (không phải
+                // positive/negative button nên AlertDialog không tự dismiss), người dùng có thể
+                // bấm Sao chép nhiều lần rồi mới bấm "Đã hiểu" - chỉ khi đó mới thực sự tính là
+                // "đã xem xong", mới chạy tiếp bước kiểm tra bàn phím.
             }
             .show()
     }
