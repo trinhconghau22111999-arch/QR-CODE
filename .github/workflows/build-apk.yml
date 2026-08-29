@@ -22,9 +22,15 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Grant execute permission for gradlew
-        run: |
-          if [ ! -f gradlew ]; then gradle wrapper; fi
-          chmod +x gradlew
+        # SUA (nguyen nhan build that bai "khong cai dat duoc"): TRUOC DAY
+        # gradlew KHONG duoc commit vao repo, moi lan CI phai tu chay
+        # "gradle wrapper" de tu sinh no - phu thuoc vao gradle co san tren
+        # may ao CI (khong dam bao luon co, hoac ban thao tac tai xuong
+        # Gradle rieng cua no co the that bai do mang chap chon) - da xay
+        # ra dung 1 lan gay build that bai. Gio gradlew/gradlew.bat/
+        # gradle/wrapper/* da duoc commit CO DINH vao repo, chi can chmod
+        # +x la du, khong con phu thuoc "gradle" co san tren may CI nua.
+        run: chmod +x gradlew
 
       - name: "Build debug APK (ca 2 flavor: direct + ggplay)"
         run: ./gradlew assembleDebug --stacktrace
