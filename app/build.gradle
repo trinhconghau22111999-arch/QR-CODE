@@ -11,12 +11,55 @@ android {
         applicationId "com.example.qrkeyboard"
         minSdk 24
         targetSdk 34
-        versionCode 1
+        // SUA (cung nguyen nhan lien quan lien quan toi loi "cap nhat khong
+        // cai duoc" ma nguoi dung phan anh): TRUOC DAY versionCode DUNG YEN
+        // o "1" MAI MAI, khong bao gio tang qua bat ky lan build nao - dung
+        // 1 con so co dinh nhu vay khien Android khong the phan biet duoc
+        // "ban nao moi hon" giua 2 lan build khac nhau (rat de nham lan/loi
+        // vat vanh o mot so may/phien ban Android khi cai de). Gio TU TANG
+        // theo giay (Unix epoch) - MOI LAN build deu chac chan co
+        // versionCode LON HON lan build truoc do, dam bao luon duoc coi la
+        // "ban moi hon" khi cai de/cap nhat.
+        versionCode (System.currentTimeMillis() / 1000).toInteger()
         versionName "1.0"
     }
 
+    // SUA LOI (theo phan anh nguoi dung: "cap nhat app bao khong cai dat
+    // duoc, phai go ban cu cai lai"): TRUOC DAY KHONG khai bao signingConfig
+    // rieng nao ca - moi lan build debug (`assembleDebug`) tren may CI GitHub
+    // Actions (may ao HOAN TOAN MOI moi lan chay, khong luu lai gi giua cac
+    // lan build), Android Gradle Plugin TU DONG SINH 1 debug.keystore MOI
+    // (chua key ky ngau nhien) NEU chua co san o "~/.android/debug.keystore"
+    // - ma may ao CI thi LUON chua co san, nen MOI LAN build la MOT chu ky
+    // (signing certificate) KHAC NHAU HOAN TOAN. Android coi day la 2 app
+    // "khac nguon goc" du cung applicationId, nen TU CHOI cai de "cap nhat"
+    // (INSTALL_FAILED_UPDATE_INCOMPATIBLE, hien ra "khong cai dat duoc") -
+    // nguoi dung buoc phai go ban cu di moi cai duoc ban moi, mat het du
+    // lieu/cai dat da luu.
+    //
+    // Sua: dung 1 file keystore CO DINH duoc commit thang vao repo
+    // (keystore/qrkeyboard-debug.keystore, mat khau "qrkeyboard123" - day
+    // CHi la debug keystore, KHONG dung de phat hanh chinh thuc len Google
+    // Play nen khong can bao mat cao, muc dich DUY NHAT la giu CHU KY GIONG
+    // NHAU qua MOI LAN build/moi may CI) cho CA 2 buildType (debug/release)
+    // - moi APK build ra tu gio ve sau (bao gom ca 2 flavor direct/ggplay)
+    // deu cung 1 chu ky, cai de/cap nhat binh thuong, khong con phai go ban
+    // cu nua.
+    signingConfigs {
+        debug {
+            storeFile file("../keystore/qrkeyboard-debug.keystore")
+            storePassword "qrkeyboard123"
+            keyAlias "qrkeyboard"
+            keyPassword "qrkeyboard123"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
         release {
+            signingConfig signingConfigs.debug
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
