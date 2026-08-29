@@ -11,16 +11,22 @@ android {
         applicationId "com.example.qrkeyboard"
         minSdk 24
         targetSdk 34
-        // SUA (cung nguyen nhan lien quan lien quan toi loi "cap nhat khong
-        // cai duoc" ma nguoi dung phan anh): TRUOC DAY versionCode DUNG YEN
-        // o "1" MAI MAI, khong bao gio tang qua bat ky lan build nao - dung
-        // 1 con so co dinh nhu vay khien Android khong the phan biet duoc
-        // "ban nao moi hon" giua 2 lan build khac nhau (rat de nham lan/loi
-        // vat vanh o mot so may/phien ban Android khi cai de). Gio TU TANG
-        // theo giay (Unix epoch) - MOI LAN build deu chac chan co
-        // versionCode LON HON lan build truoc do, dam bao luon duoc coi la
-        // "ban moi hon" khi cai de/cap nhat.
-        versionCode (System.currentTimeMillis() / 1000).toInteger()
+        // SUA (cung nguyen nhan lien quan toi loi "cap nhat khong cai duoc"
+        // ma nguoi dung phan anh): TRUOC DAY versionCode DUNG YEN o "1" MAI
+        // MAI, khong bao gio tang qua bat ky lan build nao - dung 1 con so
+        // co dinh nhu vay khien Android khong the phan biet duoc "ban nao
+        // moi hon" giua 2 lan build khac nhau. Gio TU TANG theo giay (Unix
+        // epoch) - MOI LAN build deu chac chan co versionCode LON HON lan
+        // build truoc do.
+        //
+        // LUU Y CU PHAP GROOVY (da tung gay loi "Value is null" khi build):
+        // "versionCode (bieu_thuc).toInteger()" bi Groovy hieu NHAM thanh
+        // "versionCode(bieu_thuc).toInteger()" - tuc goi .toInteger() len
+        // KET QUA TRA VE cua ham versionCode(...) (vay la null/void), CHU
+        // KHONG PHAI len bieu thuc so nhu y dinh. Phai tach ra bien rieng
+        // truoc de KHONG con nhap nhang cu phap nao ca.
+        def buildVersionCode = (System.currentTimeMillis() / 1000L).toInteger()
+        versionCode buildVersionCode
         versionName "1.0"
     }
 
