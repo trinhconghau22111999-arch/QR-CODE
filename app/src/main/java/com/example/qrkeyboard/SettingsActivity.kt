@@ -147,12 +147,12 @@ class SettingsActivity : AppCompatActivity() {
         // duoc dung/da bat roi, kiem tra lai la thua va gay phien luc dang
         // go do.
         val skipKeyboardCheck = intent?.getBooleanExtra(EXTRA_SKIP_KEYBOARD_CHECK, false) ?: false
-        // Nếu có log lỗi đang chờ xem (showLastCrashIfAny đã hiện dialog ở trên),
-        // KHÔNG redirect - giữ Activity lại để người dùng đọc và copy log.
-        val hasLog = CrashReporter.readLastCrash(this) != null ||
-            runCatching { getSharedPreferences("kb_hide_log", android.content.Context.MODE_PRIVATE)
-                .getString("log", null) }.getOrNull() != null
-        if (!skipKeyboardCheck && !isKeyboardEnabled() && !hasLog) {
+        // LƯU Ý: không cần tự kiểm tra lại "có log lỗi đang chờ xem hay không" ở đây nữa - hàm
+        // này giờ CHỈ được gọi (làm callback của showLastCrashIfAny() ở onCreate()) SAU KHI log
+        // lỗi (nếu có) đã được người dùng xem xong + CrashReporter.clearLastCrash() đã chạy, hoặc
+        // NGAY LẬP TỨC nếu vốn không có log nào - cả 2 trường hợp đều đã an toàn để kiểm tra bàn
+        // phím bên dưới, không còn nguy cơ đè lên hộp thoại lỗi đang hiện nữa.
+        if (!skipKeyboardCheck && !isKeyboardEnabled()) {
             try {
                 startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
             } catch (e: Exception) {
