@@ -1834,6 +1834,13 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  xem [isPasswordField]. */
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        // THEM (theo yeu cau nguoi dung: dieu tra "ban phim tu dong dong"):
+        // ghi log CA luc ban phim MO LAI (khong chi luc DONG nhu truoc day) -
+        // de tinh duoc chinh xac KHOANG CACH thoi gian giua lan dong gan nhat
+        // va lan mo lai nay (phan biet "chi an thoang qua" vs "dong that su
+        // lau"). logKeyboardHide() tu dong kem san "app=..." (doc tu
+        // currentInputEditorInfo) nen KHONG can tu ghep them o day.
+        logKeyboardHide("onStartInputView(restarting=$restarting)")
 
         val sessionKey = editorSessionKey(info)
         val isSameFieldAsBefore = sessionKey == lastEditorSessionKey
@@ -4275,7 +4282,13 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             val prefs = getSharedPreferences("kb_hide_log", android.content.Context.MODE_PRIVATE)
             val time = java.text.SimpleDateFormat("MM-dd HH:mm:ss.SSS", java.util.Locale.getDefault())
                 .format(java.util.Date())
-            val entry = "[$time] $reason | shift=$isShiftOn cap=$capitalizeNextLetter " +
+            // THEM (theo yeu cau nguoi dung: dieu tra "ban phim tu dong dong"):
+            // ghi kem TEN GOI ung dung dang duoc go vao (currentInputEditorInfo
+            // - lay TRUOC khi super.onFinishInputView() chay, vi sau do co the
+            // da bi he thong xoa/thay doi) - de LAN SAU khong can nguoi dung tu
+            // nho/bao lai dung ung dung nao, log tu no da cho biet san.
+            val pkg = try { currentInputEditorInfo?.packageName ?: "?" } catch (e: Exception) { "?" }
+            val entry = "[$time] $reason app=$pkg | shift=$isShiftOn cap=$capitalizeNextLetter " +
                 "capApplied=$capitalizeAppliedAtPrefixLen showCap=$showCapitalPreview " +
                 "isViet=$isVietnameseMode word=${currentWord.toString().take(10)}"
             val old = prefs.getString("log", "") ?: ""
