@@ -2613,11 +2613,26 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             stateListAnimator = null
             elevation = 0f
             outlineProvider = null
+            // SUA (theo yeu cau nguoi dung: "sua phim cai dat cho can doi, ngang
+            // bang phim micro"): ep minWidth/minHeight ve 0 - Material Button
+            // theo mac dinh co 1 KICH THUOC TOI THIEU rieng cua theme (thuong
+            // ~48dp), co the AM THAM lam nut nay TO/CAO hon dung ban dinh du
+            // layoutParams/padding da khai bao chinh xac ben duoi, gay lech
+            // ro rang so voi nut Mic ben canh (xem giai thich chi tiet o nut
+            // Mic phia duoi).
+            minWidth = 0
+            minHeight = 0
+            minimumWidth = 0
+            minimumHeight = 0
             background = buildGlowKeyBackground(cornerDp = 10, borderColor = glowColor, borderWidthDp = 2)
             setPadding(dp(16), dp(10), dp(16), dp(10))
+            // SUA (theo yeu cau nguoi dung: "do khoang cach phia tren cua mic,
+            // roi dung no cho nut cai dat"): margin TREN dung dung 3dp - LAY
+            // TU nut Mic ben canh (gia tri GOC cua no truoc khi sua, xem
+            // giai thich o nut Mic phia duoi) lam CHUAN, thay vi 1dp truoc day.
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, dp(keyHeightDp)
-            ).apply { setMargins(dp(4), dp(1), dp(4), dp(6)) }
+            ).apply { setMargins(dp(4), dp(3), dp(4), dp(6)) }
             isHapticFeedbackEnabled = true
             setOnClickListener {
                 vibrateKeyPress()
@@ -2658,8 +2673,19 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             stateListAnimator = null
             elevation = 0f
             outlineProvider = null
+            // SUA (theo yeu cau nguoi dung: "do khoang cach phia tren cua mic,
+            // roi dung no cho nut cai dat"): GIU NGUYEN margin tren GOC cua nut
+            // Mic (3dp) - day la CHUAN duoc chon, khong doi gi ca o day. Padding
+            // (16/10/16/10) va minWidth/minHeight = 0 van duoc dong bo voi nut
+            // "Cai dat" o tren (nguyen nhan chinh gay lech kich thuoc, xem giai
+            // thich chi tiet o nut do) - chi khac margin TREN la CO Y, dung dung
+            // 3dp lay tu nut nay lam chuan.
+            minWidth = 0
+            minHeight = 0
+            minimumWidth = 0
+            minimumHeight = 0
             background = buildGlowKeyBackground(cornerDp = 10, borderColor = glowColor, borderWidthDp = 2)
-            setPadding(dp(14), dp(10), dp(14), dp(10))
+            setPadding(dp(16), dp(10), dp(16), dp(10))
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, dp(keyHeightDp)
             ).apply { setMargins(dp(4), dp(3), dp(4), dp(6)) }
