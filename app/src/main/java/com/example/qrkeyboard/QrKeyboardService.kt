@@ -4364,6 +4364,40 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         keyboardRootContainer = null
         lettersPageView = null
     }
+
+    /** THEM (theo dieu tra loi "ban phim tu dong tat/mo lai giua luc dang go", xem
+     *  logKeyboardHide()): TRUOC DAY service nay KHONG he trien khai onTrimMemory() -
+     *  nghia la khi he thong bao hieu SAP THIEU RAM (qua cac muc TRIM_MEMORY_*), app
+     *  KHONG lam gi ca de tu nguyen tra bot bo nho. Neu khong tu nguyen nha bot luc he
+     *  thong con "hoi nhe nhang" nhu vay, he thong SE KHONG CON LUA CHON nao khac ngoai
+     *  GIET HAN tien trinh ban phim de lay lai RAM ngay sau do - dung khop voi log
+     *  "onDestroy - service bi kill" nguoi dung ghi nhan duoc, keo theo ban phim tu dong
+     *  roi/mo lai giua luc dang go do.
+     *
+     *  Gio chu dong giai phong cache CUA CAC TRANG KHONG DANG duoc hien thi (se tu dung
+     *  lai binh thuong qua redrawKeyboard() khi can toi lai, khong mat du lieu gi ca) -
+     *  KHONG BAO GIO dung vao trang mode HIEN TAI dang hien de tranh nguy co man hinh
+     *  trong. Phan ung tu muc TRIM_MEMORY_RUNNING_LOW tro len (bao gom ca cac muc luc
+     *  ban phim dang AN - UI_HIDDEN/BACKGROUND/MODERATE/COMPLETE) - cang som nha bot bo
+     *  nho cang giam nguy co bi giet han tien trinh sau do.
+     *
+     *  LUU Y: day la giam thieu rui ro, KHONG dam bao loai bo hoan toan hien tuong nay
+     *  neu may that su qua it RAM trong (he thong van co the buoc phai giet tien trinh
+     *  du app da co gang nha bot den dau) - nhung se giam tan suat xay ra dang ke trong
+     *  da so truong hop thuc te. */
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level < android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) return
+        if (mode != KeyboardMode.NUMBERS) cachedNumbersView = null
+        if (mode != KeyboardMode.SYMBOLS) cachedSymbolsView = null
+        if (mode != KeyboardMode.NUMPAD) cachedNumpadView = null
+        // Cache goi y/Shift/phim chu chi phuc vu trang Chu cai dang hien - vAN an toan
+        // xoa (redrawKeyboard() tu dung lai ngay khi can, khong gay man hinh trong vi
+        // KHONG dung toi lettersPageView/keyboardRootContainer o day).
+        cachedSuggestionRow = null
+        cachedShiftKey = null
+        cachedLetterKeys.clear()
+    }
 }
 
 /**
