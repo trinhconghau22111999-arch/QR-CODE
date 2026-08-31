@@ -1924,8 +1924,31 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             // chi redraw vi ly do "mat khau" khi THAT SU dang o trang LETTERS
             // (trang duy nhat co hien thi nhan V/EN tren phim cach can cap
             // nhat) - o NUMPAD khong co gi can ve lai nen bo qua.
-            if (didAutoCapitalize || hadPendingSuggestion || (isPasswordField(info) && targetMode == KeyboardMode.LETTERS)) {
+            // SUA (theo dieu tra loi "ban phim tro nen chop/giat luc mo lai, khac
+            // han cac ban phim khac nhu Gboard"): TRUOC DAY ca 3 nguyen nhan
+            // (didAutoCapitalize/hadPendingSuggestion/isPasswordField) DEU goi
+            // chung redrawKeyboard() - ham NANG, DUNG LAI TU DAU toan bo trang
+            // Chu cai (30-40+ nut moi) MOI LAN goi. didAutoCapitalize xay ra RAT
+            // THUONG XUYEN (moi lan cham vao 1 o nhap TRONG moi - vd mo doan
+            // chat/binh luan moi - la truong hop cuc ky pho bien hang ngay), nen
+            // hau nhu MOI LAN mo lai ban phim tren 1 o nhap moi la 1 lan dung
+            // lai toan bo giao diem DONG BO tren luong chinh, dung LUC ban phim
+            // dang truot len hien ra - gay giat/chop ro ret ma cac ban phim toi
+            // uu hon (dung view tai che, khong dung lai toan bo) khong bi.
+            //
+            // Da co san 2 ham NHE duoc viet dung cho tinh huong nay
+            // (updateShiftStateInPlace()/updateSuggestionRowInPlace() - chi doi
+            // truc tiep tren cac nut/hang DA CO SAN, khong dung lai gi ca) nhung
+            // TRUOC DAY khong duoc dung toi o day - gio doi sang dung 2 ham nay
+            // cho 2 truong hop pho bien nhat. Rieng truong hop o nhap MAT KHAU
+            // (hiem gap hon nhieu - chi xay ra dung luc vua cham vao 1 o mat
+            // khau MOI) van giu redrawKeyboard() vi can cap nhat nhan V/EN tren
+            // phim cach, chua co san ham cap nhat rieng nhe hon cho phan do.
+            if (isPasswordField(info) && targetMode == KeyboardMode.LETTERS) {
                 redrawKeyboard()
+            } else {
+                if (didAutoCapitalize) updateShiftStateInPlace()
+                if (hadPendingSuggestion) updateSuggestionRowInPlace()
             }
         } else if (forceLettersReset) {
             // THEM: ban phim VUA duoc "bat lai" sau khi THAT SU bi tat truoc
@@ -1936,10 +1959,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             if (mode != KeyboardMode.LETTERS) {
                 switchMode(KeyboardMode.LETTERS)
             } else if (hadPendingSuggestion) {
-                redrawKeyboard()
+                updateSuggestionRowInPlace()
             }
         } else if (hadPendingSuggestion) {
-            redrawKeyboard()
+            updateSuggestionRowInPlace()
         }
     }
 
