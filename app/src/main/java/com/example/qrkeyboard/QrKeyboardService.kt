@@ -1467,7 +1467,12 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                                     capitalizeAppliedAtPrefixLen = null
                                 }
                             }
-                            redrawKeyboard()
+                            // SUA (theo dieu tra "do muot khi go phim" so voi Laban
+                            // Key) - QUAN TRONG NHAT: day la chinh onClick cua NUT
+                            // SHIFT - moi lan nguoi dung CHU DONG bam vao no (thao
+                            // tac truc tiep, do tre/giat o day de cam nhan NHAT).
+                            // updateShiftStateInPlace() thay redrawKeyboard().
+                            updateShiftStateInPlace()
                         }
                         shiftKey.tag = isShiftOn || showCapitalPreview  // khởi tạo tag đúng
                         cachedShiftKey = shiftKey
@@ -3521,7 +3526,13 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 capitalizeAppliedAtPrefixLen = null
                 insertText(" ")
                 finishWordTracking()
-                redrawKeyboard()
+                // SUA (theo dieu tra "do muot khi go phim" so voi Laban Key):
+                // TRUOC DAY goi redrawKeyboard() (nang, dung lai toan bo trang)
+                // chi de cap nhat trang thai viet hoa - day la duong dan chay
+                // MOI LAN go dau cach sau dau cham, rat thuong xuyen luc go
+                // that. Doi sang updateShiftStateInPlace() (nhe, chi doi label
+                // hoa/thuong cac phim + highlight nut Shift, dung dung muc dich).
+                updateShiftStateInPlace()
                 return
             }
             // SUA LOI "bam cach van con in hoa": khi go phim Cach ma DANG co
@@ -3539,7 +3550,9 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 capitalizeAppliedAtPrefixLen = null
                 insertText(" ")
                 finishWordTracking()
-                redrawKeyboard()
+                // SUA (tuong tu nhanh tren): updateShiftStateInPlace() thay vi
+                // redrawKeyboard() - chi can cap nhat lai label hoa/thuong.
+                updateShiftStateInPlace()
                 return
             }
             // QUAN TRỌNG: dù capitalizeNextLetter đã tắt từ trước (đã dùng hết
@@ -3567,7 +3580,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             emojiTrackWord.clear()
         }
         checkEmojiSuggestion(emojiTrackWord.toString())
-        if (shouldCapitalize) redrawKeyboard()
+        // SUA (tuong tu 2 cho tren): updateShiftStateInPlace() thay vi
+        // redrawKeyboard() - day la duong dan chay MOI LAN go CHU CAI DAU
+        // TIEN cua 1 cau moi (rat thuong xuyen), chi can cap nhat label
+        // hoa/thuong cac phim, khong can dung lai toan bo trang.
+        if (shouldCapitalize) updateShiftStateInPlace()
     }
 
     private fun insertVietnameseChar(ch: Char) {
@@ -3704,7 +3721,14 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             }.joinToString("")
         currentWordCased = StringBuilder(newCasedPrefix + newSuffixDisplay)
         if (hadPendingSuggestion) updateSuggestionRowInPlace()
-        if (justConsumedSingleShift || wasCapitalizingWordStart) redrawKeyboard()
+        // SUA (theo dieu tra "do muot khi go phim" so voi Laban Key) - QUAN
+        // TRONG NHAT trong 4 cho vua sua: day la ham chay MOI LAN go 1 CHU
+        // CAI TIENG VIET (duong dan go THAT chinh cua app), va nhanh nay kich
+        // hoat moi khi trang thai viet hoa duoc "tieu thu" - tuc RAT thuong
+        // xuyen (dau moi cau/tu can hoa). TRUOC DAY goi redrawKeyboard() (dung
+        // lai toan bo 30-40+ nut) chi de cap nhat hoa/thuong - doi sang
+        // updateShiftStateInPlace() (nhe, dung dung muc dich).
+        if (justConsumedSingleShift || wasCapitalizingWordStart) updateShiftStateInPlace()
     }
 
     private fun resyncCurrentWordFromInputConnection(ic: android.view.inputmethod.InputConnection) {
@@ -3813,7 +3837,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             capitalizeAppliedAtPrefixLen = null
         }
         if (hadPendingSuggestion) updateSuggestionRowInPlace()
-        if (shouldRearmCapitalize) redrawKeyboard()
+        // SUA (theo dieu tra "do muot khi go phim" so voi Laban Key): ham
+        // nay chay MOI LAN bam ⌫ - THUONG XUYEN hon ca, dac biet luc giu de
+        // xoa lien tuc (deleteRepeatHandler). updateShiftStateInPlace() thay
+        // cho redrawKeyboard() - chi can cap nhat lai hoa/thuong.
+        if (shouldRearmCapitalize) updateShiftStateInPlace()
     }
 
     private fun sendEnter() {
@@ -3835,7 +3863,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             capitalizeNextLetter = true
             showCapitalPreview = true
             capitalizeAppliedAtPrefixLen = null
-            redrawKeyboard()
+            // SUA (theo dieu tra "do muot khi go phim"): updateShiftStateInPlace()
+            // thay redrawKeyboard() - moi lan xuong dong (Enter) trong o nhap
+            // nhieu dong la kha thuong xuyen, chi can cap nhat hoa/thuong.
+            updateShiftStateInPlace()
             return
         }
         val action = currentInputEditorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION)
@@ -3850,7 +3881,9 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             capitalizeNextLetter = true
             showCapitalPreview = true
             capitalizeAppliedAtPrefixLen = null
-            redrawKeyboard()
+            // SUA (tuong tu nhanh multi-line tren): updateShiftStateInPlace()
+            // thay redrawKeyboard().
+            updateShiftStateInPlace()
         }
     }
 
