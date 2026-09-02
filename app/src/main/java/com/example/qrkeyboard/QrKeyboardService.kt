@@ -1254,15 +1254,34 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             keyboardRootContainer = null
             lettersPageView = null
             buildKeyboardContainer()
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            // SUA (theo dieu tra loi "man hinh chi con 1 day den nho o duoi,
+            // khong the mo lai" - nguoi dung xac nhan CO TU TRUOC, chua tung
+            // bat duoc nguyen nhan that): doi catch (e: Exception) THANH catch
+            // (e: Throwable) - Exception KHONG bat duoc OutOfMemoryError (no
+            // ke thua truc tiep tu Error, khac nhanh voi Exception trong cay
+            // phan cap Throwable cua Java/Kotlin). May nguoi dung dang dung
+            // DA TUNG bi he thong giet tien trinh vi thieu RAM (xem
+            // onTrimMemory() da them truoc do) - buildKeyboardContainer() xay
+            // dung hang tram View/Drawable CUNG LUC, hoan toan co the nem
+            // OutOfMemoryError giua chung khi may dang can RAM. TRUOC DAY loi
+            // nay LOT QUA catch (e: Exception), roi xuong pha vo toan bo
+            // onCreateInputView(), khien Android tu hien giao dien du phong
+            // TOI THIEU cua CHINH HE THONG (dung "1 day den + icon chuyen ban
+            // phim" nguoi dung mo ta) - khac voi buildFallbackKeyboardView()
+            // cua APP (co it nhat QWERTY co ban) le ra phai duoc dung neu bat
+            // duoc loi dung cach. Gio bat ca Throwable, dam bao MOI loai loi
+            // (ke ca OutOfMemoryError) deu roi vao nhanh du phong cua APP.
             android.util.Log.e("QrKeyboardService", "Loi khi tao ban phim: ${e.message}", e)
+            logKeyboardHide("LOI onCreateInputView(): ${e.javaClass.simpleName}: ${e.message}")
             try {
                 buildFallbackKeyboardView()
-            } catch (e2: Exception) {
+            } catch (e2: Throwable) {
                 // Neu ca ban phim toi gian cung loi (cuc ky hiem gap) -
                 // danh chiu, tra ve 1 View rong de it nhat KHONG crash het
                 // Service (nguoi dung se thay ban phim trong, nhung Service
                 // van song, co the thu lai sau).
+                logKeyboardHide("LOI onCreateInputView() LAN 2 (day chiu): ${e2.javaClass.simpleName}: ${e2.message}")
                 View(this)
             }
         }
@@ -1811,8 +1830,25 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             } else {
                 setInputView(buildKeyboardContainer())
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
+            // SUA (theo dieu tra "day den nho"): doi catch (e: Exception)
+            // thanh catch (e: Throwable) - Exception khong bat duoc
+            // OutOfMemoryError, xem giai thich day du o onCreateInputView()
+            // (nguyen nhan giong het o day: buildLettersPage()/
+            // buildKeyboardContainer() xay dung nhieu View/Drawable cung luc,
+            // co the OOM khi may can RAM).
             android.util.Log.e("QrKeyboardService", "Loi khi ve lai ban phim: ${e.message}", e)
+            // THEM (theo dieu tra loi "man hinh chi con 1 day den nho o duoi,
+            // khong the mo lai" - nguoi dung xac nhan lỗi CÓ TỪ TRƯỚC, chưa
+            // từng bắt được nguyên nhân thật): ghi lai NGAY vao [kb_hide_log]
+            // (cung file dang dung de chan doan "ban phim tu dong") - Log.e()
+            // o tren CHi ghi vao logcat he thong, BIEN MAT ngay khi app dong/
+            // logcat bi xoay vong, nguoi dung KHONG CO CACH nao xem lai duoc
+            // qua man hinh Cai dat cua app. Nhung neu day THAT SU la nguyen
+            // nhan (redrawKeyboard nem loi giua chung), lan toi nguoi dung
+            // gap lai "day den" va copy log gui ra, dong nay se xuat hien
+            // ngay, xac nhan/loai tru duoc gia thuyet nay mot cach chac chan.
+            logKeyboardHide("LOI redrawKeyboard(): ${e.javaClass.simpleName}: ${e.message}")
             try {
                 cachedNumbersView = null
                 cachedSymbolsView = null
@@ -1820,8 +1856,9 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 lettersPageView = null
                 keyboardRootContainer = null
                 setInputView(buildKeyboardContainer())
-            } catch (e2: Exception) {
+            } catch (e2: Throwable) {
                 // Danh chiu - da co log de xem lai sau.
+                logKeyboardHide("LOI redrawKeyboard() LAN 2 (day chiu): ${e2.javaClass.simpleName}: ${e2.message}")
             }
         }
     }
@@ -2182,40 +2219,59 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
     /** Cập nhật trạng thái Shift/capitalize TRỰC TIẾP trên các nút đã cache - không redrawKeyboard().
      *  Chỉ đổi text label (hoa/thường) và màu highlight nút Shift. Gọi thay vì redrawKeyboard()
-     *  khi chỉ cần phản ánh thay đổi isShiftOn/showCapitalPreview/capitalizeNextLetter. */
+     *  khi chỉ cần phản ánh thay đổi isShiftOn/showCapitalPreview/capitalizeNextLetter.
+     *  BỌC try/catch (theo điều tra "dãy đen nhỏ, mở lại không được"): hàm này giờ chạy ở
+     *  HOT-PATH (mỗi lần gõ phím/bấm Shift/xoá/Enter) nhưng TRƯỚC ĐÂY không hề có bảo vệ - lỗi
+     *  bất kỳ ở đây (kể cả OutOfMemoryError) sẽ crash thẳng ra ngoài callback đang xử lý, có thể
+     *  gây đúng triệu chứng "dãy đen" y hệt các hàm dựng view khác. Nếu lỗi, rơi về
+     *  redrawKeyboard() (đã có sẵn 2 lớp bảo vệ) thay vì để crash lan ra ngoài. */
     private fun updateShiftStateInPlace() {
-        // Cập nhật nút Shift: highlight hay không
-        val shiftBtn = cachedShiftKey
-        if (shiftBtn == null) { redrawKeyboard(); return }
-        val shouldHighlight = isShiftOn || showCapitalPreview
-        // Chỉ rebuild background nút Shift nếu trạng thái highlight thực sự thay đổi
-        val wasHighlight = shiftBtn.tag as? Boolean ?: false
-        if (wasHighlight != shouldHighlight) {
-            shiftBtn.background = buildGlowKeyBackground(borderWidthDp = if (shouldHighlight) 3 else 1)
-            shiftBtn.tag = shouldHighlight
-        }
-        // Cập nhật label các phím chữ cái (hoa/thường)
-        val toUpper = isShiftOn || showCapitalPreview
-        for ((ch, btn) in cachedLetterKeys) {
-            val newLabel = if (toUpper) ch.uppercaseChar().toString() else ch.toString()
-            if (btn.text.toString() != newLabel) btn.text = newLabel
+        try {
+            // Cập nhật nút Shift: highlight hay không
+            val shiftBtn = cachedShiftKey
+            if (shiftBtn == null) { redrawKeyboard(); return }
+            val shouldHighlight = isShiftOn || showCapitalPreview
+            // Chỉ rebuild background nút Shift nếu trạng thái highlight thực sự thay đổi
+            val wasHighlight = shiftBtn.tag as? Boolean ?: false
+            if (wasHighlight != shouldHighlight) {
+                shiftBtn.background = buildGlowKeyBackground(borderWidthDp = if (shouldHighlight) 3 else 1)
+                shiftBtn.tag = shouldHighlight
+            }
+            // Cập nhật label các phím chữ cái (hoa/thường)
+            val toUpper = isShiftOn || showCapitalPreview
+            for ((ch, btn) in cachedLetterKeys) {
+                val newLabel = if (toUpper) ch.uppercaseChar().toString() else ch.toString()
+                if (btn.text.toString() != newLabel) btn.text = newLabel
+            }
+        } catch (e: Throwable) {
+            android.util.Log.e("QrKeyboardService", "Loi updateShiftStateInPlace: ${e.message}", e)
+            logKeyboardHide("LOI updateShiftStateInPlace(): ${e.javaClass.simpleName}: ${e.message}")
+            try { redrawKeyboard() } catch (e2: Throwable) { /* redrawKeyboard() da tu bao ve rieng */ }
         }
     }
 
     /** Cập nhật hàng gợi ý TRỰC TIẾP (không redrawKeyboard) nếu row đang tồn tại trong cây view.
      *  Chỉ clear + repopulate children của row đó - không rebuild trang QWERTY.
-     *  Gọi khi gợi ý thay đổi do gõ phím bình thường (checkEmojiSuggestion). */
+     *  Gọi khi gợi ý thay đổi do gõ phím bình thường (checkEmojiSuggestion).
+     *  BỌC try/catch - xem giải thích đầy đủ ở updateShiftStateInPlace() phía trên, lý do và
+     *  nguy cơ tương tự (hot-path, trước đây không có bảo vệ). */
     private fun updateSuggestionRowInPlace() {
-        val row = cachedSuggestionRow ?: run {
-            // Row chưa tồn tại (chưa build trang Letters) → redraw bình thường
-            redrawKeyboard()
-            return
-        }
-        row.removeAllViews()
-        when {
-            pendingEmojiSuggestion != null -> populateEmojiSuggestionRow(row)
-            pendingSuggestion != null -> populateAutocorrectSuggestionRow(row)
-            // Rỗng: giữ row rỗng, chiều cao cố định đã đảm bảo layout không co
+        try {
+            val row = cachedSuggestionRow ?: run {
+                // Row chưa tồn tại (chưa build trang Letters) → redraw bình thường
+                redrawKeyboard()
+                return
+            }
+            row.removeAllViews()
+            when {
+                pendingEmojiSuggestion != null -> populateEmojiSuggestionRow(row)
+                pendingSuggestion != null -> populateAutocorrectSuggestionRow(row)
+                // Rỗng: giữ row rỗng, chiều cao cố định đã đảm bảo layout không co
+            }
+        } catch (e: Throwable) {
+            android.util.Log.e("QrKeyboardService", "Loi updateSuggestionRowInPlace: ${e.message}", e)
+            logKeyboardHide("LOI updateSuggestionRowInPlace(): ${e.javaClass.simpleName}: ${e.message}")
+            try { redrawKeyboard() } catch (e2: Throwable) { /* redrawKeyboard() da tu bao ve rieng */ }
         }
     }
 
