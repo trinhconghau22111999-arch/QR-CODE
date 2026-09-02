@@ -2700,6 +2700,16 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             text = "\u2699\ufe0f  C\u00e0i \u0111\u1eb7t"
             isAllCaps = false
             textSize = 14f
+            // SUA (theo phan anh nguoi dung: "Cai dat ro rang thap hon Mic, con
+            // bi tuot xuong khuat mat 1 ti"): nguyen nhan THAT SU khong phai o
+            // margin (da dong bo dung) ma o CACH TINH NOI DUNG khac nhau giua 2
+            // nut - xem giai thich chi tiet o nut Mic ben duoi. Khai bao TUONG
+            // MINH gravity=CENTER + includeFontPadding=false o CA 2 nut de dam
+            // bao cach can giua giong het nhau, khong con phu thuoc vao gia tri
+            // MAC DINH (co the khac nhau ngam giua 2 kieu noi dung text-thuong
+            // vs icon-compound-drawable).
+            gravity = Gravity.CENTER
+            includeFontPadding = false
             setTextColor(if (isDarkTheme) Color.WHITE else Color.BLACK)
             stateListAnimator = null
             elevation = 0f
@@ -2750,12 +2760,29 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // PHAI CUNG cua hang (dung 1 View "dem" co trong so (weight) = 1f de
         // day no ra sat le phai, xem [addView] ben duoi).
         val micBtn = Button(this).apply {
-            // SUA (CHi doi PHAN NAY - icon, KHONG dung gi den padding/
-            // margins/background/vien ben duoi): thay "text = emoji" bang 1
-            // icon tu ve qua [MicIconDrawable], gan vao vi tri "top" cua
-            // compound drawable rong (khong text) - nut van giu NGUYEN kich
-            // thuoc/vien/nen nhu truoc, chi thay THU BEN TRONG hien thi.
+            // SUA (nguyen nhan CHINH gay lech vi tri so voi nut "Cai dat", theo
+            // phan anh nguoi dung): setCompoundDrawables(null, icon, null, null)
+            // dat icon o VI TRI "TOP" cua compound drawable, dung cho truong hop
+            // TEXT o BEN DUOI icon do (kieu "icon tren, chu duoi") - dù text="",
+            // Android VAN tinh 1 KHOANG TRONG cho dong chu "ao" do theo font-
+            // metrics MAC DINH (line height khong tu bien mat chi vi chuoi
+            // rong), lam KHOI NOI DUNG "icon + dong chu ao" CAO HON han khoi chi
+            // co 1 dong chu that su cua nut "Cai dat" ben canh - khi ca 2 cung
+            // canh giua trong khung CAO BANG NHAU, icon Mic bi day LEN CAO hon
+            // vi tri that su, con chu "Cai dat" (kem dau tieng Viet nhu "ặ" can
+            // nhieu khoang trong hon) lai bi lech xuong duoi/gan bi cat mat.
+            //
+            // Khai bao TUONG MINH textSize=14f (BANG nut "Cai dat", truoc day
+            // KHONG he set gi ca cho nut nay) + includeFontPadding=false (bo
+            // phan dem font them vao tren/duoi dong chu, thuong la nguyen nhan
+            // chinh khien "dong chu ao" chiem nhieu khong gian hon can thiet) +
+            // gravity=CENTER (tuong minh, khong phu thuoc mac dinh) - giam toi
+            // da chenh lech chieu cao giua 2 khoi noi dung, dam bao canh giua
+            // giong nhu nut "Cai dat".
             text = ""
+            textSize = 14f
+            gravity = Gravity.CENTER
+            includeFontPadding = false
             val iconSize = dp(20)
             val micIcon = MicIconDrawable(if (isDarkTheme) Color.WHITE else Color.BLACK, listening = false, sizePx = iconSize)
             micIcon.setBounds(0, 0, iconSize, iconSize)
