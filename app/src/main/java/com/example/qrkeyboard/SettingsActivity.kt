@@ -193,8 +193,6 @@ class SettingsActivity : AppCompatActivity() {
         content.addView(spacer(24))
         content.addView(buildRgbEffectSection())
         content.addView(spacer(24))
-        content.addView(buildSuggestionSection())
-        content.addView(spacer(24))
         content.addView(buildScanLimitSection())
         content.addView(spacer(24))
         content.addView(buildHistorySection())
@@ -629,65 +627,7 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
-    // ─────────────────── 1.5 Goi y sua chinh ta / Goi y emoji ───────────────────
-
-    private lateinit var autocorrectToggleBtn: Button
-    private lateinit var emojiToggleBtn: Button
-
-    /** THEM (theo yeu cau nguoi dung): 2 cong tac "Goi y sua chinh ta" (dua
-     *  tren tu dien Tieng Viet co san) va "Goi y emoji" - LOAI TRU LAN NHAU
-     *  (bat 1 cai se TU DONG tat cai kia), vi ca 2 dung CHUNG 1 hang hien
-     *  thi phia tren ban phim, chi hien duoc 1 trong 2 tai 1 thoi diem (xem
-     *  giai thich chi tiet trong SuggestionPrefs.kt). MAC DINH: goi y sua
-     *  chinh ta TAT (tinh nang moi), goi y emoji BAT (hanh vi cu, giu
-     *  nguyen). */
-    private fun buildSuggestionSection(): View {
-        val wrap = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            background = cardBackground()
-            setPadding(dp(16), dp(16), dp(16), dp(16))
-        }
-        wrap.addView(sectionTitle("G\u1ee3i \u00fd khi g\u00f5"))
-        wrap.addView(sectionSubtitle(
-            "Ch\u1ec9 1 trong 2 lo\u1ea1i g\u1ee3i \u00fd sau \u0111\u01b0\u1ee3c b\u1eadt t\u1ea1i 1 th\u1eddi \u0111i\u1ec3m " +
-            "(d\u00f9ng chung 1 h\u00e0ng ph\u00eda tr\u00ean b\u00e0n ph\u00edm) - b\u1eadt c\u00e1i n\u00e0y s\u1ebd t\u1ef1 \u0111\u1ed9ng t\u1eaft c\u00e1i kia."
-        ))
-        wrap.addView(spacer(10))
-
-        autocorrectToggleBtn = neonButton("", accentNow) { toggleAutocorrect() }
-        wrap.addView(autocorrectToggleBtn)
-        wrap.addView(spacer(8))
-        emojiToggleBtn = neonButton("", accentNow) { toggleEmojiSuggestion() }
-        wrap.addView(emojiToggleBtn)
-
-        refreshSuggestionUi()
-        return wrap
-    }
-
-    private fun toggleAutocorrect() {
-        SuggestionPrefs.setAutocorrectEnabled(this, !SuggestionPrefs.isAutocorrectEnabled(this))
-        refreshSuggestionUi()
-    }
-
-    private fun toggleEmojiSuggestion() {
-        SuggestionPrefs.setEmojiSuggestionEnabled(this, !SuggestionPrefs.isEmojiSuggestionEnabled(this))
-        refreshSuggestionUi()
-    }
-
-    private fun refreshSuggestionUi() {
-        val autocorrectOn = SuggestionPrefs.isAutocorrectEnabled(this)
-        val emojiOn = SuggestionPrefs.isEmojiSuggestionEnabled(this)
-        autocorrectToggleBtn.text = if (autocorrectOn)
-            "\u2705  \u0110ang B\u1eacT g\u1ee3i \u00fd s\u1eeda ch\u00ednh t\u1ea3"
-        else
-            "\u26aa  \u0110ang T\u1eaeT g\u1ee3i \u00fd s\u1eeda ch\u00ednh t\u1ea3"
-        autocorrectToggleBtn.setTextColor(textPrimary)
-        emojiToggleBtn.text = if (emojiOn)
-            "\u2705  \u0110ang B\u1eacT g\u1ee3i \u00fd emoji"
-        else
-            "\u26aa  \u0110ang T\u1eaeT g\u1ee3i \u00fd emoji"
-        emojiToggleBtn.setTextColor(textPrimary)
-    }
+    // ─────────────────── 1.5 (ĐÃ GỠ theo yêu cầu người dùng: mục "Gợi ý khi gõ") ───────────────────
 
     // ─────────────────── 2. Gioi han quet trung lap ───────────────────
 

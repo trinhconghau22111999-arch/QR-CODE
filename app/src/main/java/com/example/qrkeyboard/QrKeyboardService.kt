@@ -371,16 +371,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  Enter, hoac chuyen o nhap. */
     private var currentWord = StringBuilder()
 
-    /** THEM (theo yeu cau nguoi dung, tinh nang goi y emoji): bo dem RIENG,
-     *  DOC LAP voi [currentWord] o tren - chua ky tu (thuong, GIU dau neu
-     *  la Tieng Viet) cua "tu" dang go, dung DUY NHAT de doi chieu voi
-     *  [EMOJI_TRIGGERS] va quyet dinh co hien goi y emoji hay khong. Tach
-     *  RIENG (khong dung chung [currentWord]) de KHONG dung cham/anh huong
-     *  toi co che Telex von da rat tinh vi (currentWord bi [insertText] tu
-     *  dong xoa sau MOI lan chen van ban, khong phu hop de theo doi tu qua
-     *  nhieu ky tu lien tiep o che do go THUONG/khong phai Tieng Viet). */
-    private var emojiTrackWord = StringBuilder()
-
     /** THEM (theo yeu cau nguoi dung): ban sao GIU NGUYEN hoa/thuong THAT SU
      *  cua [currentWord] (currentWord luon la chu THUONG, dung lam "goc" cho
      *  Telex xu ly) - CUNG do dai, CUNG vi tri voi [currentWord] tai MOI thoi
@@ -410,49 +400,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     private val accentLongPressHandler = Handler(Looper.getMainLooper())
     private val ACCENT_LONG_PRESS_MS = 350L
 
-    /** Goi y sua loi Tieng Viet (xem [VietnameseAutocorrect]). */
-    private var pendingSuggestion: String? = null
-    private var pendingSuggestionOriginalWord: String? = null
-
-    /** THEM (theo yeu cau nguoi dung, tinh nang goi y emoji): emoji dang duoc
-     *  goi y (vd go "hihi" -> goi y "\ud83d\ude02") va tu GOC da go ra no
-     *  (dung de XOA DUNG SO KY TU khi nguoi dung chon emoji - xem
-     *  [acceptEmojiSuggestion]). null nghia la KHONG co goi y nao dang hien. */
-    private var pendingEmojiSuggestion: String? = null
-    private var pendingEmojiOriginalWord: String? = null
-
-    /** THEM (theo yeu cau nguoi dung "nút đề xuất emoji chỉ hiện tối đa 3s,
-     *  không chọn là nó ẩn đi"): hen gio TU DONG AN goi y emoji sau
-     *  [EMOJI_SUGGESTION_AUTO_HIDE_MS] neu nguoi dung KHONG bam chon (hoac
-     *  bam "✕") trong khoang thoi gian do - tranh goi y "dinh" mai tren ban
-     *  phim, chiem mat hang tren cung neu nguoi dung khong de y toi no. Chi
-     *  MOT hen gio hoat dong tai 1 thoi diem (huy cai CU truoc khi dat cai
-     *  MOI moi lan mot goi y MOI xuat hien - xem [checkEmojiSuggestion]).*/
-    private var emojiSuggestionHideRunnable: Runnable? = null
-    private val emojiSuggestionHideHandler = Handler(Looper.getMainLooper())
-    private val EMOJI_SUGGESTION_AUTO_HIDE_MS = 2000L
-
-    /** Cache tham chiếu đến hàng gợi ý (LinearLayout trên cùng trang Chữ cái) - dùng để
-     *  cập nhật nội dung gợi ý TRỰC TIẾP (addView/removeView con bên trong) thay vì gọi
-     *  redrawKeyboard() rebuild toàn bộ trang phím mỗi khi gợi ý thay đổi. Được gán trong
-     *  buildSuggestionSlot() và đặt null khi trang bị tháo (onDestroy/redrawKeyboard). */
-    private var cachedSuggestionRow: android.widget.LinearLayout? = null
-
     /** Cache nút Shift để updateShiftStateInPlace() highlight trực tiếp, không redrawKeyboard. */
     private var cachedShiftKey: Button? = null
 
     /** Cache Map ký tự → Button trang LETTERS để đổi label hoa/thường trực tiếp, không redraw. */
     private val cachedLetterKeys = mutableMapOf<Char, Button>()
-
-    /** Huy hen gio tu-an goi y emoji dang cho (neu co) - goi truoc BAT KY
-     *  thoi diem nao goi y emoji bi thay doi/xoa boi ly do KHAC (chon, bam
-     *  ✕, tu bien mat vi go tiep chu khac...), tranh hen gio CU vo tinh chay
-     *  va an nham mot goi y MOI xuat hien SAU do (trung hop hiem nhung van
-     *  co the xay ra neu khong huy). */
-    private fun cancelEmojiSuggestionAutoHide() {
-        emojiSuggestionHideRunnable?.let { emojiSuggestionHideHandler.removeCallbacks(it) }
-        emojiSuggestionHideRunnable = null
-    }
 
     /** Danh dau lan thay doi selection/con tro SAP TOI trong o nhap lieu la
      *  do CHINH ban phim nay gay ra (qua commitText/deleteSurroundingText). */
@@ -678,13 +630,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     // THEM (theo yeu cau nguoi dung: "có chạy led nhiều màu nhưng lại không
     // có chạy 1 màu"): xem giai thich chi tiet trong RgbEffectPrefs.kt.
     private var rgbChaseColorMode: String = RgbEffectPrefs.DEFAULT_COLOR_MODE
-
-    // ───────────────── THEM: 2 cong tac goi y (loai tru lan nhau) ─────────────────
-    // (theo yeu cau nguoi dung - xem giai thich chi tiet o SuggestionPrefs.kt).
-    // Dong bo tu SuggestionPrefs giong het co che rgbChaseEnabled o tren.
-
-    private var autocorrectEnabled: Boolean = false
-    private var emojiSuggestionEnabled: Boolean = true
 
     // ───────────────── THEM: Mic rieng (SpeechRecognizer) - theo yeu cau ─────────────────
     // nguoi dung "mic phải dùng mic riêng, giờ đang dùng cái của gg không tốt".
@@ -1117,66 +1062,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     // ky hieu "care of").
     private val extendedSymbolRow3 = "%\u00a9\u00ae\u2122\u2105\u00b1[]"
 
-    /** THEM (theo yeu cau nguoi dung "bo sung tu goi y nhieu nhat co the"):
-     *  bang tu khoa -> emoji GOI Y khi go TRUNG KHOP HOAN TOAN 1 tu (khong
-     *  phai chuoi con) - CHi dung lai cac emoji DA CO SAN trong [emojiList]
-     *  o trang Ky hieu/So (trang 2), KHONG them emoji moi nao ca, dung yeu
-     *  cau "phan icon o trang 2 co dinh giu nguyen, phan nay chi truy xuat
-     *  no". Ca ban KHONG dau (go nhanh, go tieng Anh) LAN CO dau (Tieng
-     *  Viet chuan) deu duoc liet ke rieng de khop chinh xac voi
-     *  [emojiTrackWord] (giu nguyen dau neu dang go Tieng Viet). */
-    private val EMOJI_TRIGGERS: Map<String, String> = mapOf(
-        // Cuoi
-        "hihi" to "\ud83d\ude02", "haha" to "\ud83d\ude02", "hehe" to "\ud83d\ude04",
-        "khakha" to "\ud83e\udd23", "lol" to "\ud83e\udd23",
-        "cuoi" to "\ud83d\ude04", "c\u01b0\u1eddi" to "\ud83d\ude04",
-        "vui" to "\ud83d\ude0a",
-        // Yeu thich
-        "yeu" to "\u2764\ufe0f", "y\u00eau" to "\u2764\ufe0f", "iu" to "\u2764\ufe0f",
-        "thich" to "\ud83d\ude0d", "th\u00edch" to "\ud83d\ude0d",
-        "tim" to "\u2764\ufe0f",
-        "hon" to "\ud83d\ude18", "h\u00f4n" to "\ud83d\ude18",
-        "ngau" to "\ud83d\ude0e", "ng\u1ea7u" to "\ud83d\ude0e",
-        // Buon / gian / so
-        "buon" to "\ud83d\ude22", "bu\u1ed3n" to "\ud83d\ude22",
-        "khoc" to "\ud83d\ude2d", "kh\u00f3c" to "\ud83d\ude2d",
-        "gian" to "\ud83d\ude20", "gi\u1eadn" to "\ud83d\ude20",
-        "tuc" to "\ud83d\ude21", "t\u1ee9c" to "\ud83d\ude21",
-        "so" to "\ud83d\ude31", "s\u1ee3" to "\ud83d\ude31",
-        "soc" to "\ud83d\ude33", "s\u1ed1c" to "\ud83d\ude33",
-        "ngu" to "\ud83d\ude34", "ng\u1ee7" to "\ud83d\ude34",
-        // Nghi/dong y
-        "nghi" to "\ud83e\udd14", "ngh\u0129" to "\ud83e\udd14",
-        "ok" to "\ud83d\udc4c", "oke" to "\ud83d\udc4c", "okay" to "\ud83d\udc4c",
-        "tot" to "\ud83d\udc4d", "t\u1ed1t" to "\ud83d\udc4d",
-        "xau" to "\ud83d\udc4e", "x\u1ea5u" to "\ud83d\udc4e",
-        "done" to "\u2705", "xong" to "\u2705",
-        "sai" to "\u274c", "no" to "\u274c",
-        // Chao hoi / cam on
-        "chao" to "\ud83d\udc4b", "ch\u00e0o" to "\ud83d\udc4b",
-        "hi" to "\ud83d\udc4b", "hello" to "\ud83d\udc4b",
-        "camon" to "\ud83d\ude4f", "c\u1ea3m\u01a1n" to "\ud83d\ude4f",
-        "thanks" to "\ud83d\ude4f", "thank" to "\ud83d\ude4f",
-        "khoe" to "\ud83d\udcaa", "kh\u1ecfe" to "\ud83d\udcaa",
-        // Thien nhien / do vat
-        "lua" to "\ud83d\udd25", "l\u1eeda" to "\ud83d\udd25",
-        "sao" to "\u2b50",
-        "nang" to "\u2600\ufe0f", "n\u1eafng" to "\u2600\ufe0f",
-        "mua" to "\ud83c\udf27\ufe0f", "m\u01b0a" to "\ud83c\udf27\ufe0f",
-        "hoa" to "\ud83c\udf38",
-        "tiec" to "\ud83c\udf89", "ti\u1ec7c" to "\ud83c\udf89",
-        "cafe" to "\u2615", "caphe" to "\u2615", "c\u00e0ph\u00ea" to "\u2615",
-        "tien" to "\ud83d\udcb0", "ti\u1ec1n" to "\ud83d\udcb0",
-        "dienthoai" to "\ud83d\udcf1",
-        // Dong vat
-        "cho" to "\ud83d\udc36", "ch\u00f3" to "\ud83d\udc36",
-        "meo" to "\ud83d\udc31", "m\u00e8o" to "\ud83d\udc31", "meocon" to "\ud83d\udc31",
-        "ca" to "\ud83d\udc20", "c\u00e1" to "\ud83d\udc20",
-        // Khac
-        "robot" to "\ud83e\udd16",
-        "gio" to "\u23f0", "gi\u1edd" to "\u23f0"
-    )
-
     private fun dp(value: Int): Int =
         TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value.toFloat(), resources.displayMetrics).toInt()
 
@@ -1384,7 +1269,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     }
 
     /** Build trang chu cai (LETTERS). Ham nay duoc goi moi khi can cap nhat
-     *  trang thai dong (Shift on/off, ngon ngu, pendingSuggestion). */
+     *  trang thai dong (Shift on/off, ngon ngu). */
     private fun buildLettersPage(): View {
         clearChaseRegistryForPage(KeyboardMode.LETTERS)
         val verticalPaddingDp = if (keyHeightDp < 48) 2 else 6
@@ -1395,40 +1280,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
         when (mode) {
             KeyboardMode.LETTERS -> {
-                // SUA (nguoi dung phan anh: "gõ liên tục mà gợi ý không chịu
-                // ẩn"): THEM 1 lop kiem tra "con dung" (freshness) CUOI CUNG
-                // NGAY TAI DAY - phong ho truong hop (chua xac dinh chinh xac
-                // duoc, co the la 1 tinh huong hiem/dua xen chua luong ra) mot
-                // vai diem trong code quen goi [checkEmojiSuggestion] de tu
-                // dep goi y emoji CU khi tu dang go da thay doi - neu
-                // [pendingEmojiOriginalWord] (tu GOC luc goi y duoc tao ra)
-                // KHONG CON KHOP voi [emojiTrackWord] HIEN TAI (tu THAT SU
-                // dang go luc nay - CHi ap dung cho goi y EMOJI, vi day la
-                // goi y "song" theo TUNG ky tu dang go, khac voi goi y
-                // AUTOCORRECT ben duoi von duoc tao ra SAU KHI 1 tu da go
-                // XONG va [emojiTrackWord] da duoc xoa rong - xem
-                // [checkAutocorrectSuggestion]/[finishWordTracking], nen
-                // KHONG the/KHONG can ap dung kieu kiem tra tuong tu cho
-                // pendingSuggestion o day), coi goi y do la CU/khong con hop
-                // le nua - don sach NGAY truoc khi quyet dinh co hien hang
-                // goi y nao hay khong, thay vi tin tuong mu quang vao
-                // [pendingEmojiSuggestion] co the dang "treo" sai tu 1 nhip
-                // go truoc do.
-                val currentTrack = emojiTrackWord.toString()
-                if (pendingEmojiSuggestion != null && pendingEmojiOriginalWord != currentTrack) {
-                    pendingEmojiSuggestion = null
-                    pendingEmojiOriginalWord = null
-                    cancelEmojiSuggestionAutoHide()
-                }
-                // ĐÃ REVERT (theo yêu cầu người dùng - fix "luôn thêm hàng gợi ý với chiều cao
-                // cố định" ở dưới gây ra nhiều lỗi khác, phải phục hồi lại đúng cách làm CŨ):
-                // chỉ addView() hàng gợi ý vào layout LÚC THẬT SỰ có gợi ý, gỡ hẳn khỏi layout
-                // lúc không có - đúng như trước khi có fix lệch phím. Chấp nhận lại nhược điểm
-                // gốc (hàng phím bên dưới có thể bị xê dịch nhẹ lúc gợi ý bật/tắt) để đổi lấy việc
-                // bỏ các lỗi mới phát sinh từ cách làm "chiều cao cố định".
-                if (pendingEmojiSuggestion != null || pendingSuggestion != null) {
-                    root.addView(buildSuggestionSlot())
-                }
                 root.addView(buildCharRow(numberRows[0], rowPhase = 0f))
                 letterRows.forEachIndexed { index, row ->
                     // SUA LOI (theo yeu cau nguoi dung): hang chu THU 2 tu
@@ -1790,7 +1641,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  [switchMode] khi nguoi dung THAT SU can toi. */
     private fun redrawKeyboard() {
         // Xóa cache (sắp rebuild toàn trang)
-        cachedSuggestionRow = null
         cachedShiftKey = null
         cachedLetterKeys.clear()
         try {
@@ -1919,15 +1769,13 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // luc ban phim bi he thong tai tao View tam thoi.
         if (!isSameFieldAsBefore && isPasswordField(info) && isVietnameseMode) {
             activeIsLang1 = !activeIsLang1
-            currentWord.clear(); emojiTrackWord.clear()
+            currentWord.clear()
         }
 
-        currentWord.clear(); emojiTrackWord.clear()
+        currentWord.clear()
         capitalizeNextLetter = false
         showCapitalPreview = false
         capitalizeAppliedAtPrefixLen = null
-        val hadPendingSuggestion = pendingSuggestion != null
-        clearAutocorrectSuggestion()
         if (!isSameFieldAsBefore) {
             // O nhap/ung dung THAT SU khac truoc - chon trang mac dinh: neu
             // la o nhap CHI NHAN SO (vd o nhap ma PIN/OTP, so dien thoai -
@@ -1956,33 +1804,22 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 false
             }
 
-            // SUA LOI: dieu kien cu "targetMode == mode" LUON DUNG (vi [mode]
-            // da duoc gan = [targetMode] boi khoi if ngay tren day), nen no
-            // khong loc duoc gi ca - voi o nhap MA PIN dang MAT KHAU (targetMode
-            // = NUMPAD), dieu kien cu VAN kich hoat redrawKeyboard(), va vi
-            // [mode] luc do la NUMPAD (khac LETTERS), [redrawKeyboard] roi vao
-            // nhanh REBUILD TOAN BO container (setInputView) mot cach vo ich
-            // - pha vo toi uu lazy-build moi khi mo o nhap loai nay. GIO DAY:
-            // chi redraw vi ly do "mat khau" khi THAT SU dang o trang LETTERS
-            // (trang duy nhat co hien thi nhan V/EN tren phim cach can cap
-            // nhat) - o NUMPAD khong co gi can ve lai nen bo qua.
             // SUA (theo dieu tra loi "ban phim tro nen chop/giat luc mo lai, khac
-            // han cac ban phim khac nhu Gboard"): TRUOC DAY ca 3 nguyen nhan
-            // (didAutoCapitalize/hadPendingSuggestion/isPasswordField) DEU goi
-            // chung redrawKeyboard() - ham NANG, DUNG LAI TU DAU toan bo trang
-            // Chu cai (30-40+ nut moi) MOI LAN goi. didAutoCapitalize xay ra RAT
-            // THUONG XUYEN (moi lan cham vao 1 o nhap TRONG moi - vd mo doan
-            // chat/binh luan moi - la truong hop cuc ky pho bien hang ngay), nen
-            // hau nhu MOI LAN mo lai ban phim tren 1 o nhap moi la 1 lan dung
-            // lai toan bo giao diem DONG BO tren luong chinh, dung LUC ban phim
-            // dang truot len hien ra - gay giat/chop ro ret ma cac ban phim toi
-            // uu hon (dung view tai che, khong dung lai toan bo) khong bi.
+            // han cac ban phim khac nhu Gboard"): TRUOC DAY didAutoCapitalize/
+            // isPasswordField DEU goi chung redrawKeyboard() - ham NANG, DUNG LAI
+            // TU DAU toan bo trang Chu cai (30-40+ nut moi) MOI LAN goi.
+            // didAutoCapitalize xay ra RAT THUONG XUYEN (moi lan cham vao 1 o
+            // nhap TRONG moi - vd mo doan chat/binh luan moi - la truong hop cuc
+            // ky pho bien hang ngay), nen hau nhu MOI LAN mo lai ban phim tren 1
+            // o nhap moi la 1 lan dung lai toan bo giao diem DONG BO tren luong
+            // chinh, dung LUC ban phim dang truot len hien ra - gay giat/chop ro
+            // ret ma cac ban phim toi uu hon (dung view tai che, khong dung lai
+            // toan bo) khong bi.
             //
-            // Da co san 2 ham NHE duoc viet dung cho tinh huong nay
-            // (updateShiftStateInPlace()/updateSuggestionRowInPlace() - chi doi
-            // truc tiep tren cac nut/hang DA CO SAN, khong dung lai gi ca) nhung
-            // TRUOC DAY khong duoc dung toi o day - gio doi sang dung 2 ham nay
-            // cho 2 truong hop pho bien nhat. Rieng truong hop o nhap MAT KHAU
+            // Da co san 1 ham NHE duoc viet dung cho tinh huong nay
+            // (updateShiftStateInPlace() - chi doi truc tiep tren cac nut da co
+            // san, khong dung lai gi ca) nhung TRUOC DAY khong duoc dung toi o
+            // day - gio doi sang dung ham nay. Rieng truong hop o nhap MAT KHAU
             // (hiem gap hon nhieu - chi xay ra dung luc vua cham vao 1 o mat
             // khau MOI) van giu redrawKeyboard() vi can cap nhat nhan V/EN tren
             // phim cach, chua co san ham cap nhat rieng nhe hon cho phan do.
@@ -1990,7 +1827,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 redrawKeyboard()
             } else {
                 if (didAutoCapitalize) updateShiftStateInPlace()
-                if (hadPendingSuggestion) updateSuggestionRowInPlace()
             }
         } else if (forceLettersReset) {
             // THEM: ban phim VUA duoc "bat lai" sau khi THAT SU bi tat truoc
@@ -2000,11 +1836,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             // trang dang dung, gio theo yeu cau moi se RESET ve Chu cai).
             if (mode != KeyboardMode.LETTERS) {
                 switchMode(KeyboardMode.LETTERS)
-            } else if (hadPendingSuggestion) {
-                updateSuggestionRowInPlace()
             }
-        } else if (hadPendingSuggestion) {
-            updateSuggestionRowInPlace()
         }
     }
 
@@ -2170,8 +2002,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                     vibrateKeyPress()
                     playKeyClickTone()
                     insertText(emoji)
-                    emojiTrackWord.clear()
-                    checkEmojiSuggestion("")
                 }
             }
             inner.addView(btn)
@@ -2187,34 +2017,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             )
             addView(inner)
         }
-    }
-
-    /** Thanh goi y sua loi Tieng Viet: mot nut lon hien "Sua thanh: ..."
-     *  va mot nut nho "\u2715" de bo qua goi y nay. */
-    /** Hàng gợi ý (autocorrect HOẶC emoji, tuỳ cái nào đang chờ) - chỉ được addView() vào layout
-     *  LÚC THẬT SỰ có gợi ý (xem chỗ gọi), gỡ hẳn khỏi layout lúc không có.
-     *
-     *  ĐÃ REVERT (theo yêu cầu người dùng): từng có 1 fix đổi hàng này thành LUÔN có mặt với
-     *  chiều cao cố định (kể cả rỗng) để hàng phím bên dưới không bị dịch chuyển lúc gợi ý bật/
-     *  tắt - nhưng fix đó lại gây ra nhiều lỗi khác, nên đã phục hồi lại đúng cách làm CŨ này.
-     *  Giữ nguyên tên hàm buildSuggestionSlot()/cachedSuggestionRow và tách riêng
-     *  populateAutocorrectSuggestionRow()/populateEmojiSuggestionRow() (không gộp ngược lại 2 hàm
-     *  buildAutocorrectSuggestionRow()/buildEmojiSuggestionRow() như trước fix) vì các fix tối ưu
-     *  hiệu năng sau đó (updateSuggestionRowInPlace()...) đã dựa trên đúng cấu trúc này - gộp
-     *  ngược lại sẽ phá luôn các fix đó. */
-    private fun buildSuggestionSlot(): LinearLayout {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-        }
-        cachedSuggestionRow = row
-        when {
-            pendingEmojiSuggestion != null -> populateEmojiSuggestionRow(row)
-            pendingSuggestion != null -> populateAutocorrectSuggestionRow(row)
-        }
-        return row
     }
 
     /** Cập nhật trạng thái Shift/capitalize TRỰC TIẾP trên các nút đã cache - không redrawKeyboard().
@@ -2250,250 +2052,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
     }
 
-    /** Cập nhật hàng gợi ý TRỰC TIẾP (không redrawKeyboard) nếu row đang tồn tại trong cây view.
-     *  Chỉ clear + repopulate children của row đó - không rebuild trang QWERTY.
-     *  Gọi khi gợi ý thay đổi do gõ phím bình thường (checkEmojiSuggestion).
-     *  BỌC try/catch - xem giải thích đầy đủ ở updateShiftStateInPlace() phía trên, lý do và
-     *  nguy cơ tương tự (hot-path, trước đây không có bảo vệ). */
-    private fun updateSuggestionRowInPlace() {
-        try {
-            val row = cachedSuggestionRow ?: run {
-                // Row chưa tồn tại (chưa build trang Letters) → redraw bình thường
-                redrawKeyboard()
-                return
-            }
-            row.removeAllViews()
-            when {
-                pendingEmojiSuggestion != null -> populateEmojiSuggestionRow(row)
-                pendingSuggestion != null -> populateAutocorrectSuggestionRow(row)
-                // Rỗng: giữ row rỗng, chiều cao cố định đã đảm bảo layout không co
-            }
-        } catch (e: Throwable) {
-            android.util.Log.e("QrKeyboardService", "Loi updateSuggestionRowInPlace: ${e.message}", e)
-            logKeyboardHide("LOI updateSuggestionRowInPlace(): ${e.javaClass.simpleName}: ${e.message}")
-            try { redrawKeyboard() } catch (e2: Throwable) { /* redrawKeyboard() da tu bao ve rieng */ }
-        }
-    }
-
-    private fun populateAutocorrectSuggestionRow(row: LinearLayout) {
-        val suggestion = pendingSuggestion ?: return
-
-        val bg = GradientDrawable().apply {
-            cornerRadius = dp(4).toFloat()
-            setColor(Color.parseColor("#1A0F2E"))
-            setStroke(dp(1), glowColor)
-        }
-        val suggestionBtn = Button(this).apply {
-            text = "Sua th\u00e0nh: \u201c$suggestion\u201d"
-            isAllCaps = false
-            setTextColor(Color.parseColor("#D4BBFF"))
-            textSize = 13f
-            includeFontPadding = true
-            isSingleLine = true
-            background = bg
-            gravity = Gravity.CENTER
-            stateListAnimator = null
-            elevation = 0f
-            outlineProvider = null
-            layoutParams = LinearLayout.LayoutParams(0, dp(keyHeightDp - 8), 6f).apply {
-                setMargins(dp(2), dp(2), dp(2), dp(2))
-            }
-            setOnClickListener {
-                vibrateKeyPress()
-                playKeyClickTone()
-                acceptAutocorrectSuggestion()
-            }
-        }
-        row.addView(suggestionBtn)
-        row.addView(buildKey("\u2715", weight = 1.2f) {
-            clearAutocorrectSuggestion()
-            redrawKeyboard()
-        })
-    }
-
-    private fun acceptAutocorrectSuggestion() {
-        val original = pendingSuggestionOriginalWord ?: return
-        val suggestion = pendingSuggestion ?: return
-        val ic = currentInputConnection
-        if (ic != null) {
-            selfInitiatedChange = true
-            ic.beginBatchEdit()
-            try {
-                ic.deleteSurroundingText(original.length + 1, 0)
-                ic.commitText("$suggestion ", 1)
-            } finally {
-                ic.endBatchEdit()
-            }
-        }
-        clearAutocorrectSuggestion()
-        redrawKeyboard()
-    }
-
-    private fun clearAutocorrectSuggestion() {
-        if (pendingSuggestion != null || pendingSuggestionOriginalWord != null) {
-            pendingSuggestion = null
-            pendingSuggestionOriginalWord = null
-        }
-        // THEM: dep luon goi y emoji (2 loai goi y dung CHUNG 1 hang tren
-        // cung cua trang Chu cai, chi hien 1 trong 2 tai 1 thoi diem - xem
-        // [buildLettersPage]) - moi diem goi ham nay TRUOC DAY (bat dau tu
-        // dong go moi, xoa het, chuyen o nhap...) deu la thoi diem HOP LY de
-        // dep goi y emoji cu di.
-        pendingEmojiSuggestion = null
-        pendingEmojiOriginalWord = null
-        cancelEmojiSuggestionAutoHide()
-    }
-
-    /** THEM (theo yeu cau nguoi dung, cong tac "Goi y sua chinh ta"): kiem
-     *  tra [word] (1 tu Tieng Viet vua go XONG, chu thuong, CO the co dau)
-     *  co can goi y sua khong, qua [VietnameseAutocorrect]. CHi goi o CAC
-     *  DIEM RANH GIOI TU (go xong 1 tu - gap dau cach/dau cau/Enter), KHONG
-     *  goi sau MOI ky tu nhu [checkEmojiSuggestion] - vi tra tu dien (du da
-     *  co cache) van ton vai mili-giay, goi sau MOI ky tu se lam ban phim
-     *  khung nhe luc dang go (day chinh la ly do tinh nang nay TRUOC DAY bi
-     *  vo hieu hoa hoan toan - xem comment o [VietnameseAutocorrect]); goi 1
-     *  LAN DUY NHAT luc tu vua go xong thi chi phi khong dang ke, khong gay
-     *  giat. CHi ap dung cho Tieng Viet (tu dien chi co tu Tieng Viet). */
-    private fun checkAutocorrectSuggestion(word: String) {
-        if (!autocorrectEnabled || !isVietnameseMode || word.isBlank()) return
-        val suggestion = try {
-            VietnameseAutocorrect.suggestFor(this, word)
-        } catch (e: Exception) {
-            null
-        }
-        if (suggestion != null) {
-            pendingSuggestion = suggestion
-            pendingSuggestionOriginalWord = word
-            // 2 loai goi y dung CHUNG 1 hang (xem [buildLettersPage]) - dam
-            // bao goi y emoji CU (neu co) khong con "dinh" lai nua.
-            pendingEmojiSuggestion = null
-            pendingEmojiOriginalWord = null
-            cancelEmojiSuggestionAutoHide()
-            redrawKeyboard()
-        }
-    }
-
-    /** THEM: goi CHUNG 1 cho ca 2 buoc luon di kem nhau tai MOI diem RANH
-     *  GIOI TU (go xong 1 tu) trong code - (1) kiem tra goi y sua chinh ta
-     *  cho tu VUA go xong (truoc khi xoa dau vet cua no), roi (2) xoa
-     *  [emojiTrackWord] + kiem tra lai goi y emoji cho tu MOI (rong). Thay
-     *  the cho pattern "emojiTrackWord.clear(); checkEmojiSuggestion(\"\")"
-     *  lap lai nhieu noi truoc day - gom lai 1 cho de KHONG bi thieu buoc
-     *  kiem tra autocorrect o bat ky diem ranh gioi tu nao. */
+    /** Gọi khi kết thúc gõ 1 từ (gặp dấu cách/dấu câu/Enter) - xoá bộ đếm từ đang theo dõi và
+     *  reset vị trí capitalize đã áp dụng: từ hiện tại đã kết thúc, từ tiếp theo KHÔNG được kế
+     *  thừa vị trí hoa cũ (tránh lỗi "đầu mỗi từ tự động in hoa" sau khi gõ từ đầu câu). */
     private fun finishWordTracking() {
-        val finishedWord = emojiTrackWord.toString()
-        emojiTrackWord.clear()
-        checkAutocorrectSuggestion(finishedWord)
-        checkEmojiSuggestion("")
-        // Reset vị trí capitalize đã áp dụng: từ hiện tại đã kết thúc,
-        // từ tiếp theo KHÔNG được kế thừa vị trí hoa cũ (tránh lỗi
-        // "đầu mỗi từ tự động in hoa" sau khi gõ từ đầu câu).
         if (!capitalizeNextLetter) capitalizeAppliedAtPrefixLen = null
-    }
-
-    /** THEM (theo yeu cau nguoi dung, tinh nang goi y emoji): kiem tra [word]
-     *  (chu thuong) co trung khop HOAN TOAN voi 1 tu khoa trong
-     *  [EMOJI_TRIGGERS] khong - neu co, hien goi y; khong thi dep goi y cu
-     *  (neu co) di. Goi lai sau MOI ky tu duoc go/xoa (ca 2 luong Tieng Viet
-     *  va ngon ngu khac). */
-    private fun checkEmojiSuggestion(word: String) {
-        // THEM (theo yeu cau nguoi dung, cong tac Cai dat): tinh nang dang
-        // TAT - dep sach goi y CU (neu co - vd nguoi dung vua tat trong luc
-        // dang go dang) va thoat som, KHONG tra cuu/hien goi y moi nao nua.
-        if (!emojiSuggestionEnabled) {
-            if (pendingEmojiSuggestion != null) {
-                pendingEmojiSuggestion = null
-                pendingEmojiOriginalWord = null
-                cancelEmojiSuggestionAutoHide()
-                redrawKeyboard()
-            }
-            return
-        }
-        val emoji = EMOJI_TRIGGERS[word.lowercase()]
-        if (emoji != null) {
-            if (pendingEmojiSuggestion != emoji || pendingEmojiOriginalWord != word) {
-                pendingEmojiSuggestion = emoji
-                pendingEmojiOriginalWord = word
-                pendingSuggestion = null
-                pendingSuggestionOriginalWord = null
-                // THEM (tu dong an sau 3s): moi lan MOT goi y MOI xuat hien
-                // (khac voi goi y dang hien, hoac lan dau xuat hien), huy hen
-                // gio CU (neu co) va dat hen gio MOI dem lai tu dau - dung y
-                // "hien toi da 3s" tinh tu luc goi y NAY xuat hien, khong
-                // phai tinh don don theo lan go phim.
-                cancelEmojiSuggestionAutoHide()
-                val runnable = Runnable {
-                    pendingEmojiSuggestion = null
-                    pendingEmojiOriginalWord = null
-                    emojiSuggestionHideRunnable = null
-                    updateSuggestionRowInPlace()
-                }
-                emojiSuggestionHideRunnable = runnable
-                emojiSuggestionHideHandler.postDelayed(runnable, EMOJI_SUGGESTION_AUTO_HIDE_MS)
-                updateSuggestionRowInPlace()
-            }
-        } else if (pendingEmojiSuggestion != null) {
-            pendingEmojiSuggestion = null
-            pendingEmojiOriginalWord = null
-            cancelEmojiSuggestionAutoHide()
-            updateSuggestionRowInPlace()
-        }
-    }
-
-    /** THEM (theo yeu cau nguoi dung, ro rang: "go hihi hien icon, bam vao
-     *  thanh 'hihi 😄'"): nguoi dung bam vao emoji dang duoc goi y - GIU
-     *  NGUYEN chu vua go, CHi CHEN THEM emoji vao NGAY SAU (kem 1 dau cach
-     *  o truoc de tach voi chu, KHONG xoa bat ky ky tu nao ca). */
-    private fun acceptEmojiSuggestion() {
-        val emoji = pendingEmojiSuggestion ?: return
-        cancelEmojiSuggestionAutoHide()
-        val ic = currentInputConnection
-        if (ic != null) {
-            selfInitiatedChange = true
-            ic.commitText(" $emoji ", 1)
-        }
-        currentWord.clear(); emojiTrackWord.clear()
-        currentWordCased.clear()
-        clearAutocorrectSuggestion()
-        redrawKeyboard()
-    }
-
-    private fun populateEmojiSuggestionRow(row: LinearLayout) {
-        val emoji = pendingEmojiSuggestion ?: return
-
-        val bg = GradientDrawable().apply {
-            cornerRadius = dp(4).toFloat()
-            setColor(Color.parseColor("#1A0F2E"))
-            setStroke(dp(1), glowColor)
-        }
-        val suggestionBtn = Button(this).apply {
-            text = "$emoji  Th\u00eam emoji n\u00e0y?"
-            isAllCaps = false
-            setTextColor(Color.parseColor("#D4BBFF"))
-            textSize = 15f
-            includeFontPadding = true
-            isSingleLine = true
-            background = bg
-            gravity = Gravity.CENTER
-            stateListAnimator = null
-            elevation = 0f
-            outlineProvider = null
-            layoutParams = LinearLayout.LayoutParams(0, dp(keyHeightDp - 8), 6f).apply {
-                setMargins(dp(2), dp(2), dp(2), dp(2))
-            }
-            setOnClickListener {
-                vibrateKeyPress()
-                playKeyClickTone()
-                acceptEmojiSuggestion()
-            }
-        }
-        row.addView(suggestionBtn)
-        row.addView(buildKey("\u2715", weight = 1.2f) {
-            pendingEmojiSuggestion = null
-            pendingEmojiOriginalWord = null
-            cancelEmojiSuggestionAutoHide()
-            redrawKeyboard()
-        })
     }
 
     /** Hang duoi cung trang chu cai: "," / phim cach / "." / Enter, cung
@@ -3037,7 +2600,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  trang (tranh dinh lien vao tu truoc do). */
     private fun insertRecognizedVoiceText(text: String) {
         val ic = currentInputConnection ?: return
-        currentWord.clear(); emojiTrackWord.clear()
+        currentWord.clear()
         currentWordCased.clear()
         val before = ic.getTextBeforeCursor(1, 0)?.toString()
         val needsLeadingSpace = !before.isNullOrEmpty() && !before.last().isWhitespace()
@@ -3149,7 +2712,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         if (lang2 == null) return
         if (activeIsLang1 == useLang1) return
         activeIsLang1 = useLang1
-        currentWord.clear(); emojiTrackWord.clear()
+        currentWord.clear()
         val label = LanguagePrefs.displayName(activeLangCode)
         Toast.makeText(this, "G\u00f5 $label", Toast.LENGTH_SHORT).show()
         redrawKeyboard()
@@ -3653,16 +3216,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
         val out = if (isShiftOn || shouldCapitalize) ch.uppercaseChar() else ch
         insertText(out.toString())
-        // THEM (theo yeu cau nguoi dung, tinh nang goi y emoji): cap nhat tu
-        // dang go RIENG (xem [emojiTrackWord]) - neu la chu cai thi noi
-        // them, khong phai (dau cach/dau cau/so...) thi coi nhu HET tu, xoa
-        // sach de bat dau tu MOI. Kiem tra goi y sau MOI lan cap nhat.
-        if (out.isLetter()) {
-            emojiTrackWord.append(out.lowercaseChar())
-        } else {
-            emojiTrackWord.clear()
-        }
-        checkEmojiSuggestion(emojiTrackWord.toString())
         // SUA (tuong tu 2 cho tren): updateShiftStateInPlace() thay vi
         // redrawKeyboard() - day la duong dan chay MOI LAN go CHU CAI DAU
         // TIEN cua 1 cau moi (rat thuong xuyen), chi can cap nhat label
@@ -3672,8 +3225,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
     private fun insertVietnameseChar(ch: Char) {
         val ic = currentInputConnection ?: return
-        val hadPendingSuggestion = pendingSuggestion != null
-        clearAutocorrectSuggestion()
         val lower = ch.lowercaseChar()
 
         resyncCurrentWordFromInputConnection(ic)
@@ -3720,7 +3271,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             VietnameseTelex.processKey(oldWordLower, lower, oldWordCased, keyIsUpper, capitalizeAppliedAtPrefixLen)
         }
         currentWord = StringBuilder(newWordLower)
-        emojiTrackWord = StringBuilder(newWordLower)
 
         var commonPrefixLen = 0
         val minLen = minOf(oldWordLower.length, newWordLower.length)
@@ -3735,11 +3285,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val wasCapitalizingWordStart = capitalizeNextLetter && touchesCapitalizeTarget
         if (wasCapitalizingWordStart) {
             capitalizeAppliedAtPrefixLen = commonPrefixLen
-            // SUA LOI "luon hien in hoa": tat showCapitalPreview TRUOC khi goi
-            // checkEmojiSuggestion (co the goi redrawKeyboard() ben trong neu
-            // emoji trung khop) - tranh redraw bàn phim voi showCapitalPreview
-            // = true lam phim luon hien chu HOA.
-            showCapitalPreview = false
             // SUA LOI (theo yeu cau nguoi dung "bàn phím tự hiện in hoa hết,
             // gõ ra chữ thường"): BAN SUA TRUOC chi tat [showCapitalPreview]
             // (co dieu khien HIEN THI) ma QUEN tat luon [capitalizeNextLetter]
@@ -3756,6 +3301,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             // tuy thuoc ngu canh redraw. SUA: tat CA HAI cung luc, dung y
             // "da tieu thu xong luot viet hoa dau cau nay, KHONG con gi de
             // ap dung cho ky tu tiep theo nua" ca ve hien thi LAN hanh vi.
+            showCapitalPreview = false
             capitalizeNextLetter = false
         }
         val justConsumedSingleShift = capitalizeNextLetter && !touchesCapitalizeTarget
@@ -3763,8 +3309,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             capitalizeNextLetter = false
             capitalizeAppliedAtPrefixLen = null
         }
-        // Tat showCapitalPreview XONG ROI moi check emoji
-        checkEmojiSuggestion(newWordLower)
 
         // wasCapitalizingWordStart: ký tự đầu câu (bao gồm cả khi Telex gộp như aa→â)
         // → uppercase ký tự đầu suffix. capitalizeAppliedAtPrefixLen được lưu lại để
@@ -3803,7 +3347,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 currentWordCased.getOrNull(i)?.let { if (it.isUpperCase()) c.uppercaseChar() else c } ?: c
             }.joinToString("")
         currentWordCased = StringBuilder(newCasedPrefix + newSuffixDisplay)
-        if (hadPendingSuggestion) updateSuggestionRowInPlace()
         // SUA (theo dieu tra "do muot khi go phim" so voi Laban Key) - QUAN
         // TRONG NHAT trong 4 cho vua sua: day la ham chay MOI LAN go 1 CHU
         // CAI TIENG VIET (duong dan go THAT chinh cua app), va nhanh nay kich
@@ -3859,35 +3402,15 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         selfInitiatedChange = true
         currentInputConnection?.commitText(text, 1)
         currentWord.clear()
-        // SUA LOI nguoi dung phan anh ("chon emoji khong xoa chu, hihi
-        // thanh hihi 😂"): TRUOC DAY co [emojiTrackWord.clear()] o day -
-        // ham nay duoc GOI CHO TUNG KY TU trong luong go thuong (qua
-        // [insertChar]), nen moi lan go 1 chu cai, [emojiTrackWord] bi XOA
-        // SACH ngay truoc khi [insertChar] kip noi them ky tu do vao - lam
-        // [emojiTrackWord] KHONG BAO GIO tich luy qua 1 ky tu, [pendingEmojiOriginalWord]
-        // vi vay LUON SAI (qua ngan/rong) - khi bam chon emoji,
-        // [ic.deleteSurroundingText] xoa SAI so ky tu (qua it hoac 0), chu
-        // van con nguyen tren man hinh. SUA: BO xoa [emojiTrackWord] o day -
-        // de CHINH [insertChar] tu quan ly no (da co san logic dung: chu
-        // cai thi noi them, khong phai thi xoa - xem [insertChar]). Cac noi
-        // GOI insertText() KHAC (dau cau, ky hieu...) TU xoa [emojiTrackWord]
-        // rieng ngay sau khi goi ham nay, dam bao van dung ranh gioi tu.
-
-        if (pendingSuggestion != null) {
-            clearAutocorrectSuggestion()
-            redrawKeyboard()
-        }
     }
 
     private fun deleteChar() {
-        val hadPendingSuggestion = pendingSuggestion != null
-        clearAutocorrectSuggestion()
         selfInitiatedChange = true
         val ic = currentInputConnection
         val selectedText = ic?.getSelectedText(0)
         if (!selectedText.isNullOrEmpty()) {
             ic.commitText("", 1)
-            currentWord.clear(); emojiTrackWord.clear()
+            currentWord.clear()
             currentWordCased.clear()
         } else {
             ic?.deleteSurroundingText(1, 0)
@@ -3897,11 +3420,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             if (currentWordCased.isNotEmpty()) {
                 currentWordCased.deleteCharAt(currentWordCased.length - 1)
             }
-            if (emojiTrackWord.isNotEmpty()) {
-                emojiTrackWord.deleteCharAt(emojiTrackWord.length - 1)
-            }
         }
-        checkEmojiSuggestion(emojiTrackWord.toString())
 
         // THEM (theo yeu cau nguoi dung): "xoa het viet lai thi van [tu dong
         // viet hoa chu dau]" - neu SAU khi xoa, O NHAP TRO THANH RONG HOAN
@@ -3919,7 +3438,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             showCapitalPreview = true
             capitalizeAppliedAtPrefixLen = null
         }
-        if (hadPendingSuggestion) updateSuggestionRowInPlace()
         // SUA (theo dieu tra "do muot khi go phim" so voi Laban Key): ham
         // nay chay MOI LAN bam ⌫ - THUONG XUYEN hon ca, dac biet luc giu de
         // xoa lien tuc (deleteRepeatHandler). updateShiftStateInPlace() thay
@@ -3929,8 +3447,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
     private fun sendEnter() {
         val ic = currentInputConnection ?: return
-        currentWord.clear(); emojiTrackWord.clear()
-        clearAutocorrectSuggestion()
+        currentWord.clear()
         selfInitiatedChange = true
         val inputType = currentInputEditorInfo?.inputType ?: InputType.TYPE_NULL
         val isMultiLine = (inputType and InputType.TYPE_TEXT_FLAG_MULTI_LINE) != 0 ||
@@ -3980,7 +3497,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     ) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
         if (!selfInitiatedChange) {
-            currentWord.clear(); emojiTrackWord.clear()
+            currentWord.clear()
             capitalizeNextLetter = false
             showCapitalPreview = false
             capitalizeAppliedAtPrefixLen = null
@@ -4002,9 +3519,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         rgbChaseEnabled = RgbEffectPrefs.isEnabled(this)
         rgbChaseDirection = RgbEffectPrefs.getDirection(this)
         rgbChaseColorMode = RgbEffectPrefs.getColorMode(this)
-        autocorrectEnabled = SuggestionPrefs.isAutocorrectEnabled(this)
-        emojiSuggestionEnabled = SuggestionPrefs.isEmojiSuggestionEnabled(this)
-        if (autocorrectEnabled) VietnameseAutocorrect.preload(this)
     }
 
     /** THEM: man Cai dat (SettingsActivity) gio la noi DUY NHAT nguoi dung
@@ -4023,31 +3537,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val newRgbEnabled = RgbEffectPrefs.isEnabled(this)
         val newRgbDirection = RgbEffectPrefs.getDirection(this)
         val newRgbColorMode = RgbEffectPrefs.getColorMode(this)
-        // THEM: dong bo 2 cong tac goi y (xem SuggestionPrefs.kt) - KHONG can
-        // gop vao [needsFullRebuild] ben duoi (khac voi mau/nen/RGB, 2 cong
-        // tac nay KHONG anh huong toi CACH VE cac phim, chi anh huong toi
-        // hang goi y tren cung se hien hay khong lan go tiep theo - chi can
-        // cap nhat co, KHONG can xay lai toan bo ban phim). Neu 1 goi y
-        // dang HIEN ma nguoi dung vua TAT tinh nang do di, dep sach NGAY
-        // (khong doi den lan go tiep theo) de tranh hang goi y "mo coi" con
-        // luu tren man hinh du tinh nang da bi tat.
-        val newAutocorrectEnabled = SuggestionPrefs.isAutocorrectEnabled(this)
-        val newEmojiEnabled = SuggestionPrefs.isEmojiSuggestionEnabled(this)
-        if (newAutocorrectEnabled != autocorrectEnabled || newEmojiEnabled != emojiSuggestionEnabled) {
-            autocorrectEnabled = newAutocorrectEnabled
-            emojiSuggestionEnabled = newEmojiEnabled
-            if (autocorrectEnabled) VietnameseAutocorrect.preload(this)
-            // SUA: [clearAutocorrectSuggestion] dep sach CA HAI loai goi y
-            // cung luc (xem giai thich chi tiet o chinh ham do) - don gian
-            // hon la tach rieng tung loai, va van dam bao dung yeu cau "dep
-            // NGAY hang goi y mo coi neu tinh nang vua bi tat di".
-            if ((!autocorrectEnabled && pendingSuggestion != null) ||
-                (!emojiSuggestionEnabled && pendingEmojiSuggestion != null)
-            ) {
-                clearAutocorrectSuggestion()
-                redrawKeyboard()
-            }
-        }
         val needsFullRebuild = newColor != glowColor || newDark != isDarkTheme ||
             newLang1 != lang1 || newLang2 != lang2 || newRgbEnabled != rgbChaseEnabled
         if (needsFullRebuild) {
@@ -4395,10 +3884,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             selfInitiatedChange = true
             ic?.commitText(text, 1)
             ic?.commitText("\n", 1)
-            currentWord.clear(); emojiTrackWord.clear()
-            val hadPendingSuggestion = pendingSuggestion != null
-            clearAutocorrectSuggestion()
-            if (hadPendingSuggestion) redrawKeyboard()
+            currentWord.clear()
             Toast.makeText(this, "\u0110\u00e3 qu\u00e9t: $text", Toast.LENGTH_SHORT).show()
         }
 
@@ -4444,11 +3930,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // man hinh hoac timer chay ngam vo ich.
         accentLongPressRunnable?.let { accentLongPressHandler.removeCallbacks(it) }
         accentLongPressRunnable = null
-        // THEM: huy luon hen gio tu-an goi y emoji (xem [cancelEmojiSuggestionAutoHide])
-        // - ban phim sap an, khong can hen gio nay chay ngam vo ich (se tu
-        // kiem tra lai tu dau qua [checkEmojiSuggestion] khi go tiep sau khi
-        // mo lai).
-        cancelEmojiSuggestionAutoHide()
         dismissAccentPopup()
         // THEM (theo yeu cau nguoi dung "mic phải dùng mic riêng"): dung
         // nghe/giai phong SpeechRecognizer neu dang mo - ban phim sap an,
@@ -4530,7 +4011,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // giu phim ⌫, nhung phong ve van hon).
         activeDeleteRepeatRunnable?.let { deleteRepeatHandler.removeCallbacks(it) }
         activeDeleteRepeatRunnable = null
-        cancelEmojiSuggestionAutoHide()
         dismissAccentPopup()
         lifecycleRegistry.currentState = Lifecycle.State.DESTROYED
         previewPopup?.let { if (it.isShowing) it.dismiss() }
@@ -4569,118 +4049,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         if (mode != KeyboardMode.NUMBERS) cachedNumbersView = null
         if (mode != KeyboardMode.SYMBOLS) cachedSymbolsView = null
         if (mode != KeyboardMode.NUMPAD) cachedNumpadView = null
-        // Cache goi y/Shift/phim chu chi phuc vu trang Chu cai dang hien - vAN an toan
-        // xoa (redrawKeyboard() tu dung lai ngay khi can, khong gay man hinh trong vi
-        // KHONG dung toi lettersPageView/keyboardRootContainer o day).
-        cachedSuggestionRow = null
+        // Cache Shift/phím chữ chỉ phục vụ trang Chữ cái đang hiện - vẫn an toàn
+        // xoá (redrawKeyboard() tự dựng lại ngay khi cần, không gây màn hình trống vì
+        // KHÔNG đụng tới lettersPageView/keyboardRootContainer ở đây).
         cachedShiftKey = null
         cachedLetterKeys.clear()
-    }
-}
-
-/**
- * Goi y sua loi chinh ta Tieng Viet don gian, dua tren mot tu dien co san
- * (file assets/vn_words.txt, ~6600 tu Tieng Viet thong dung, moi tu 1 dong).
- * LUU Y: tinh nang GOI Y (hien thanh goi y tren ban phim) hien dang KHONG
- * duoc goi toi trong luong go binh thuong (xem [insertText]/[checkAutocorrectSuggestion])
- * vi viec doc/duyet tu dien lam ban phim khung dung luc vua go xong 1 tu -
- * object nay van duoc GIU LAI (khong xoa) de co the bat lai de dang neu sau
- * nay toi uu duoc cach tra cuu (vd chuyen sang Trie/nen tang khac).
- */
-private object VietnameseAutocorrect {
-
-    private const val DICTIONARY_ASSET_PATH = "vn_words.txt"
-
-    @Volatile
-    private var dictionaryByLength: Map<Int, List<String>>? = null
-
-    @Volatile
-    private var dictionarySet: Set<String>? = null
-
-    private fun ensureLoaded(context: android.content.Context) {
-        if (dictionarySet != null) return
-        synchronized(this) {
-            if (dictionarySet != null) return
-            val words = try {
-                context.assets.open(DICTIONARY_ASSET_PATH)
-                    .bufferedReader(Charsets.UTF_8)
-                    .useLines { lines -> lines.filter { it.isNotBlank() }.toHashSet() }
-            } catch (e: Exception) {
-                emptySet()
-            }
-            dictionarySet = words
-            dictionaryByLength = words.groupBy { it.length }
-        }
-    }
-
-    /** THEM: "lam nong" (nap san) tu dien vao bo nho o 1 THREAD NEN, goi 1
-     *  LAN luc ban phim vua mo len NEU tinh nang dang bat (xem [onCreate]) -
-     *  de tranh lan GIAT NHE DAU TIEN khi nguoi dung go xong tu DAU TIEN
-     *  (luc do [ensureLoaded] moi phai doc + parse file tu dien tu assets,
-     *  ~6.600 dong, neu KHONG lam nong truoc se chay dong bo tren main
-     *  thread dung luc do). Cac lan goi [suggestFor] SAU DO deu dùng lai
-     *  cache (Volatile field), khong doc file lai nua du goi tu thread nao. */
-    fun preload(context: android.content.Context) {
-        Thread {
-            try {
-                ensureLoaded(context)
-            } catch (e: Exception) {
-                // Bo qua - hiem gap, lan goi [suggestFor] tiep theo se tu thu lai.
-            }
-        }.start()
-    }
-
-    fun suggestFor(context: android.content.Context, word: String): String? {
-        ensureLoaded(context)
-        val set = dictionarySet ?: return null
-        if (word.isEmpty() || word in set) return null
-
-        val byLength = dictionaryByLength ?: return null
-        val pool = (byLength[word.length].orEmpty()) +
-            (byLength[word.length - 1].orEmpty()) +
-            (byLength[word.length + 1].orEmpty())
-
-        val firstChar = word[0]
-        return pool.firstOrNull { candidate ->
-            candidate.isNotEmpty() && candidate[0] == firstChar &&
-                isEditDistanceAtMostOne(word, candidate)
-        }
-    }
-
-    private fun isEditDistanceAtMostOne(a: String, b: String): Boolean {
-        if (a == b) return true
-        val lenA = a.length
-        val lenB = b.length
-        if (kotlin.math.abs(lenA - lenB) > 1) return false
-
-        if (lenA == lenB) {
-            var diffCount = 0
-            for (i in a.indices) {
-                if (a[i] != b[i]) {
-                    diffCount++
-                    if (diffCount > 1) return false
-                }
-            }
-            return diffCount == 1
-        }
-
-        val longer = if (lenA > lenB) a else b
-        val shorter = if (lenA > lenB) b else a
-        var i = 0
-        var j = 0
-        var skipped = false
-        while (i < longer.length && j < shorter.length) {
-            if (longer[i] == shorter[j]) {
-                i++
-                j++
-            } else if (!skipped) {
-                skipped = true
-                i++
-            } else {
-                return false
-            }
-        }
-        return true
     }
 }
 
