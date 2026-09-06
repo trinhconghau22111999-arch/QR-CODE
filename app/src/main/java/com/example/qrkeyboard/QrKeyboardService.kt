@@ -275,21 +275,22 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  view, bat ke view nao dang giu phim. */
     private var activeDeleteRepeatRunnable: Runnable? = null
 
-    /** SUA (theo yeu cau nguoi dung "banl phim tốc độ chạm bị khựng nhiều"):
-     *  moi lan cham 1 phim ky tu don, [showKeyPreview] mo/cap nhat mot
-     *  PopupWindow qua WindowManager - day la 1 lenh IPC that su (giao tiep
-     *  voi tien trinh he thong), ton vai mili-giay MOI LAN, chay DONG BO
-     *  tren UI thread. Khi go BINH THUONG (khong qua nhanh) thi khong dang
-     *  ke, nhung khi go NHANH LIEN TUC (nhieu phim/giay), CONG DON hang
-     *  chuc lenh IPC nhu vay MOI GIAY chinh la nguyen nhan pho bien gay
-     *  cam giac "khung/tre" luc go nhanh. SUA: BO QUA rieng buoc hien popup
-     *  xem-truoc (preview bubble) - von CHI la hieu ung tham my, KHONG anh
-     *  huong toi viec ky tu co duoc chen hay khong - neu khoang cach voi
-     *  lan cham phim TRUOC do duoi [FAST_TYPING_THRESHOLD_MS], coi la dang
-     *  go nhanh. Van chen chu/rung/am thanh binh thuong, chi tat rieng
-     *  popup xem-truoc trong luc go nhanh. */
+    /** SUA (theo yeu cau nguoi dung MOI NHAT: "bam cham co bong, bam nhanh
+     *  khong co bong - lam cho no co bong nhu nhau het"): TRUOC DAY (theo 1
+     *  yeu cau KHAC, cu hon: "bàn phím tốc độ chạm bị khựng nhiều") co logic
+     *  BO QUA rieng buoc hien popup xem-truoc (preview bubble) khi go NHANH
+     *  LIEN TUC, vi moi lan hien popup la 1 lenh IPC that su (giao tiep voi
+     *  WindowManager), CONG DON nhieu lenh nhu vay/giay tung la nguyen nhan
+     *  gay cam giac "khung/tre" luc go nhanh.
+     *
+     *  GIO DAY: theo yeu cau moi hon, BO HAN dieu kien do - popup LUON hien
+     *  cho MOI lan cham phim don, bat ke go nhanh hay cham, uu tien tinh
+     *  NHAT QUAN hon la toi uu hieu nang. LUU Y cho lan sua sau: neu co
+     *  nguoi dung khac phan anh lai dung cam giac "khung/tre luc go nhanh"
+     *  nhu truoc, day chinh la 2 yeu cau TRAI NGUOC NHAU (nhat quan vs muot
+     *  ma) - can hoi lai nguoi dung uu tien cai nao truoc khi sua tiep,
+     *  khong the thoa man ca 2 cung luc voi kien truc popup hien tai. */
     private var lastKeyDownTimestamp = 0L
-    private val FAST_TYPING_THRESHOLD_MS = 280L  // Tăng từ 180 lên 280ms: preview ít IPC hơn khi gõ vừa
 
     /** Handler + lenh "hoan" dung rieng cho co che TRE truoc khi dong khung
      *  quet QR sau [onFinishInputView] (xem [FINISH_INPUT_HIDE_DEBOUNCE_MS]).
@@ -2861,9 +2862,17 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                     vibrateKeyPress()
                     playKeyClickTone()
                     val now = android.os.SystemClock.uptimeMillis()
-                    val isFastTyping = (now - lastKeyDownTimestamp) < FAST_TYPING_THRESHOLD_MS
                     lastKeyDownTimestamp = now
-                    if (label.length == 1 && !isFastTyping) showKeyPreview(v, label)
+                    // SUA (theo yeu cau nguoi dung: "bam cham thi co bong, bam
+                    // nhanh thi khong co - lam cho no co bong nhu nhau het"):
+                    // TRUOC DAY co dieu kien "!isFastTyping" (isFastTyping =
+                    // khoang cach voi lan cham phim TRUOC do < 280ms) de CO Y
+                    // BO QUA hien bong xem-truoc luc go nhanh, muc dich giam
+                    // tai xu ly PopupWindow (IPC voi WindowManager) khi go
+                    // lien tuc. Nguoi dung muon HANH VI NHAT QUAN - bong luon
+                    // hien du go nhanh hay cham - nen bo han dieu kien nay,
+                    // luon hien bong cho MOI lan cham phim 1 ky tu.
+                    if (label.length == 1) showKeyPreview(v, label)
                     repeatTriggered = false
                     movedTooFar = false
                     downX = event.rawX
