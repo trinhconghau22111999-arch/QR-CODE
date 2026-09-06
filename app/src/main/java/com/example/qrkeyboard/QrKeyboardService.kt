@@ -524,6 +524,12 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
     private var loggedNoVibrator = false
 
+    /** THEM (theo yeu cau nguoi dung: "cho phep tu chinh cuong do rung"):
+     *  muc rung do nguoi dung tu chon qua SeekBar trong Cai dat (0-100%,
+     *  0 = TAT HAN rung) - xem [VibrationPrefs]. Doc lai gia tri moi nhat o
+     *  onCreate()/onWindowShown(). */
+    private var vibrationLevelPercent: Int = VibrationPrefs.DEFAULT_LEVEL_PERCENT
+
     /** TOI UU (theo yeu cau nguoi dung "toi uu cho phim nhanh hon"): TRUOC
      *  DAY, MOI LAN go phim deu phai thu LAN LUOT tu buoc 1 (VibrationAttributes)
      *  xuong buoc 4 (deprecated vibrate(Long)) - tren cac may/ROM chan cac
@@ -539,6 +545,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     private var resolvedVibrationStep = 0 // 0 = chua xac dinh, 1..4 = buoc da biet hoat dong
 
     private fun vibrateKeyPress() {
+        // THEM (theo yeu cau nguoi dung "cho phep dung dung"): muc 0% nghia
+        // la nguoi dung da CHU DONG tat han rung khi go - bo qua ngay, khong
+        // goi bat ky API rung nao ca (khac voi "may khong co dong co rung"
+        // ben duoi, day la lua chon CO Y cua nguoi dung).
+        if (vibrationLevelPercent <= 0) return
         if (!vibrator.hasVibrator()) {
             if (!loggedNoVibrator) {
                 loggedNoVibrator = true
@@ -546,7 +557,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             }
             return
         }
-        val effect = VibrationEffect.createOneShot(40L, 200)
+        // THEM: cuong do (amplitude) gio lay tu muc nguoi dung tu chinh
+        // (VibrationPrefs) thay vi con so co dinh 200 nhu truoc - xem
+        // [VibrationPrefs.percentToAmplitude].
+        val amplitude = VibrationPrefs.percentToAmplitude(vibrationLevelPercent)
+        val effect = VibrationEffect.createOneShot(40L, amplitude)
 
         fun tryStep1(): Boolean {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return false
@@ -3519,6 +3534,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         rgbChaseEnabled = RgbEffectPrefs.isEnabled(this)
         rgbChaseDirection = RgbEffectPrefs.getDirection(this)
         rgbChaseColorMode = RgbEffectPrefs.getColorMode(this)
+        vibrationLevelPercent = VibrationPrefs.getLevelPercent(this)
     }
 
     /** THEM: man Cai dat (SettingsActivity) gio la noi DUY NHAT nguoi dung
@@ -3537,6 +3553,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val newRgbEnabled = RgbEffectPrefs.isEnabled(this)
         val newRgbDirection = RgbEffectPrefs.getDirection(this)
         val newRgbColorMode = RgbEffectPrefs.getColorMode(this)
+        // THEM: doc lai muc rung MOI NHAT tu Cai dat - KHONG can gop vao
+        // [needsFullRebuild] ben duoi (khac mau/nen/RGB, muc rung KHONG anh
+        // huong cach VE cac phim, chi anh huong cuong do luc rung khi go -
+        // chi can cap nhat bien, khong can xay lai ban phim).
+        vibrationLevelPercent = VibrationPrefs.getLevelPercent(this)
         val needsFullRebuild = newColor != glowColor || newDark != isDarkTheme ||
             newLang1 != lang1 || newLang2 != lang2 || newRgbEnabled != rgbChaseEnabled
         if (needsFullRebuild) {

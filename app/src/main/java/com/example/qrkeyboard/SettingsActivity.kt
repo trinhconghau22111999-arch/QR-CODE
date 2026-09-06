@@ -20,6 +20,7 @@ import android.widget.Button
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
@@ -192,6 +193,8 @@ class SettingsActivity : AppCompatActivity() {
         content.addView(buildColorSection())
         content.addView(spacer(24))
         content.addView(buildRgbEffectSection())
+        content.addView(spacer(24))
+        content.addView(buildVibrationSection())
         content.addView(spacer(24))
         content.addView(buildScanLimitSection())
         content.addView(spacer(24))
@@ -628,6 +631,84 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     // ─────────────────── 1.5 (ĐÃ GỠ theo yêu cầu người dùng: mục "Gợi ý khi gõ") ───────────────────
+
+    // ─────────────────── 1.6 Cuong do rung phim ───────────────────
+
+    private lateinit var vibrationSeekBar: SeekBar
+    private lateinit var vibrationValueText: TextView
+
+    /** THEM (theo yeu cau nguoi dung: "cho phep dung dung tu chinh cuong do
+     *  rung theo y muon, lam 1 thanh ngang de keo chon"): TRUOC DAY cuong do
+     *  rung phim la 1 con so CO DINH khong the doi - gio them SeekBar (thanh
+     *  truot ngang) cho nguoi dung tu keo chon 0-100% (0 = tat han rung khi
+     *  go). Luu ngay khi keo (khong can bam nut "Luu" rieng) qua
+     *  [VibrationPrefs] - QrKeyboardService doc lai gia tri moi trong
+     *  onWindowShown() moi lan mo lai ban phim, ap dung ngay khong can khoi
+     *  dong lai app/ban phim. */
+    private fun buildVibrationSection(): View {
+        val wrap = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = cardBackground()
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+        }
+        wrap.addView(sectionTitle("C\u01b0\u1eddng \u0111\u1ed9 rung ph\u00edm"))
+        wrap.addView(sectionSubtitle(
+            "K\u00e9o thanh \u0111\u1ec3 t\u1ef1 ch\u1ec9nh \u0111\u1ed9 rung khi g\u00f5 - k\u00e9o v\u1ec1 0% \u0111\u1ec3 t\u1eaft h\u1eb3n rung."
+        ))
+        wrap.addView(spacer(12))
+
+        val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        vibrationValueText = TextView(this).apply {
+            textSize = 14f
+            setTextColor(textPrimary)
+            layoutParams = LinearLayout.LayoutParams(dp(56), ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
+        row.addView(vibrationValueText)
+
+        vibrationSeekBar = SeekBar(this).apply {
+            max = 100
+            progress = VibrationPrefs.getLevelPercent(this@SettingsActivity)
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginStart = dp(8)
+            }
+            // Tô màu thanh trượt theo đúng màu viền (accent) đang dùng cho bàn phím -
+            // đồng bộ giao diện với các phần khác trong Cài đặt.
+            progressTintList = android.content.res.ColorStateList.valueOf(accentNow)
+            thumbTintList = android.content.res.ColorStateList.valueOf(accentNow)
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                    vibrationValueText.text = "$progress%"
+                    // Lưu NGAY trong lúc kéo (không đợi thả tay) - đúng ý "kéo chọn",
+                    // phản hồi tức thì; ghi SharedPreferences rất nhẹ, không giật lag.
+                    if (fromUser) VibrationPrefs.setLevelPercent(this@SettingsActivity, progress)
+                }
+                override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                    // Rung thử 1 cái NGAY khi thả tay - để người dùng CẢM NHẬN được
+                    // ngay mức vừa chọn mà không cần rời màn hình Cài đặt ra gõ thử.
+                    val percent = seekBar?.progress ?: return
+                    if (percent <= 0) return
+                    try {
+                        val vib = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                            getSystemService(android.os.VibratorManager::class.java).defaultVibrator
+                        } else {
+                            @Suppress("DEPRECATION")
+                            getSystemService(android.os.Vibrator::class.java)
+                        }
+                        val amplitude = VibrationPrefs.percentToAmplitude(percent)
+                        vib.vibrate(android.os.VibrationEffect.createOneShot(40L, amplitude))
+                    } catch (e: Exception) {
+                        // Bo qua - chi la rung thu nghiem, khong anh huong chuc nang chinh.
+                    }
+                }
+            })
+        }
+        row.addView(vibrationSeekBar)
+        wrap.addView(row)
+        vibrationValueText.text = "${vibrationSeekBar.progress}%"
+
+        return wrap
+    }
 
     // ─────────────────── 2. Gioi han quet trung lap ───────────────────
 
