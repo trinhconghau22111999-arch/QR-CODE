@@ -6,6 +6,7 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
@@ -23,6 +24,7 @@ import android.os.VibratorManager
 import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
+import android.view.TouchDelegate
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -250,6 +252,88 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
          *  cho toi luc ban phim mo lai, de con duoc coi la "tu mo lai khung
          *  quet" - xem [reopenQrScannerOnNextStart]. */
         private const val QR_AUTO_REOPEN_WINDOW_MS = 4000L
+
+        /** THEM (theo yeu cau nguoi dung: "chạm mạnh mới ăn, chạm nhẹ/tiếp
+         *  xúc quá ít không ăn" - so sanh voi cac ban phim khac nhu LabanKey):
+         *  vung CHAM DUOC (hit area) cua moi phim TRUOC DAY chi dung bang
+         *  dung khung HINH VE ra (tru margin 1dp) - mot cu cham hoi LECH mep
+         *  phim (rat de xay ra voi cham NHE/luot, vi dau ngon tay khong tao
+         *  diem tiep xuc tron hoan hao) se ROI VAO "vung chet" giua 2 phim,
+         *  KHONG phim nao nhan duoc su kien -> cam giac "phai cham that
+         *  chinh xac/that manh moi an". Gia tri nay (dp) la khoang NO RA
+         *  THEM moi canh phim (qua [MultiTouchDelegate] ben duoi) - cham
+         *  lech nhe van duoc tinh la cham trung phim gan nhat. */
+        private const val EXTRA_TOUCH_PADDING_DP = 8
+    }
+
+    /** Cho phep NHIEU View con trong CUNG mot View cha deu co vung cham mo
+     *  rong ra ngoai khung ve THUC TE cua chung - Android chi cho phep 1
+     *  [TouchDelegate] cho moi View cha (dat cai sau se DE MAT cai truoc),
+     *  nen gom nhieu vung (Rect da no rong, phim dich) lai thanh 1 delegate
+     *  DUY NHAT cho ca hang phim, tu dinh tuyen su kien cham toi dung phim
+     *  dua theo toa do cham roi vao vung nao (uu tien phim co TAM gan diem
+     *  cham nhat, neu nhieu vung da no rong de len nhau o giua khe ho).
+     *
+     *  Khong can chinh sua/subclass lai LinearLayout dang dung de dung hang
+     *  phim - co che TouchDelegate cua Android tu dong duoc View cha (bat
+     *  ky loai nao) tham van khi mot cham ROI VAO trong bounds cua no NHUNG
+     *  KHONG co child nao (theo bounds THAT) nhan duoc, dung chinh xac cho
+     *  truong hop "khe ho giua 2 phim" can xu ly o day. */
+    private class MultiTouchDelegate(hostView: View) : TouchDelegate(Rect(), hostView) {
+        private val entries = mutableListOf<Pair<Rect, View>>()
+        private var activeTarget: View? = null
+
+        fun put(target: View, expandedBounds: Rect) {
+            entries.removeAll { it.second === target }
+            entries.add(expandedBounds to target)
+        }
+
+        override fun onTouchEvent(event: MotionEvent): Boolean {
+            val x = event.x.toInt()
+            val y = event.y.toInt()
+            val target = when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    val candidates = entries.filter { it.first.contains(x, y) }
+                    val found = when (candidates.size) {
+                        0 -> null
+                        1 -> candidates[0].second
+                        else -> candidates.minByOrNull { (_, v) ->
+                            val cx = v.left + v.width / 2
+                            val cy = v.top + v.height / 2
+                            val dx = (x - cx).toDouble()
+                            val dy = (y - cy).toDouble()
+                            dx * dx + dy * dy
+                        }?.second
+                    }
+                    activeTarget = found
+                    found
+                }
+                else -> activeTarget
+            }
+            val t = target ?: return false
+            // Phong ho: neu phim da bi go khoi cay View (vd trang duoc cache
+            // roi thao ra) nhung entry chua kip don (khong the xay ra trong
+            // luong binh thuong vi [put] duoc goi lai moi lan layout, chi la
+            // luoi an toan) - coi nhu khong xu ly duoc, tranh loi ngam.
+            if (!t.isAttachedToWindow) {
+                entries.removeAll { it.second === t }
+                activeTarget = null
+                return false
+            }
+            val offset = MotionEvent.obtain(event)
+            offset.setLocation((x - t.left).toFloat(), (y - t.top).toFloat())
+            val handled = try {
+                t.dispatchTouchEvent(offset)
+            } finally {
+                offset.recycle()
+            }
+            if (event.actionMasked == MotionEvent.ACTION_UP ||
+                event.actionMasked == MotionEvent.ACTION_CANCEL
+            ) {
+                activeTarget = null
+            }
+            return handled
+        }
     }
 
     /** Thoi diem (uptimeMillis) cua lan cham nut Shift (⇧) gan nhat, dung de
@@ -2812,6 +2896,27 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             }
             gravity = Gravity.CENTER
             isHapticFeedbackEnabled = true
+        }
+
+        // THEM (xem [EXTRA_TOUCH_PADDING_DP]/[MultiTouchDelegate]): moi lan
+        // phim nay duoc do lai kich thuoc (lan dau hien, xoay man hinh, doi
+        // kich thuoc ban phim...), tinh lai vung cham DA NO RONG cua no va
+        // dang ky vao [MultiTouchDelegate] cua View cha HIEN TAI (tu tao moi
+        // neu cha chua co, hoac tim thay cha da DOI - truong hop cache trang
+        // roi gan lai vao container khac). Lam o day (khong phai luc buildKey
+        // tra ve) vi TAI THOI DIEM NAY button CHUA co cha/kich thuoc thuc.
+        run {
+            val extraTouchPx = dp(EXTRA_TOUCH_PADDING_DP)
+            button.addOnLayoutChangeListener { v, left, top, right, bottom, _, _, _, _ ->
+                if (right <= left || bottom <= top) return@addOnLayoutChangeListener
+                val parent = v.parent as? ViewGroup ?: return@addOnLayoutChangeListener
+                val delegate = (parent.touchDelegate as? MultiTouchDelegate)
+                    ?: MultiTouchDelegate(parent).also { parent.touchDelegate = it }
+                delegate.put(
+                    v,
+                    Rect(left, top, right, bottom).apply { inset(-extraTouchPx, -extraTouchPx) }
+                )
+            }
         }
 
         var repeatRunnable: Runnable? = null
