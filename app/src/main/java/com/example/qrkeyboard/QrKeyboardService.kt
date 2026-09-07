@@ -2979,6 +2979,14 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 // dinh mai neu loi xay ra GIUA chung mot cu cham) roi coi
                 // nhu cu cham nay khong lam gi ca.
                 android.util.Log.e("QrKeyboardService", "Loi khi xu ly cham phim '$label': ${e.message}", e)
+                // THEM (theo yeu cau nguoi dung "dieu tra go nhanh co bi mat
+                // ky tu khong"): ghi lai NGAY vao kb_hide_log (file chan
+                // doan da dung xuyen suot, xem lai qua icon app) - Log.e o
+                // tren chi ghi logcat he thong, nguoi dung KHONG THAY duoc.
+                // Neu day THAT SU la nguyen nhan mat ky tu luc go nhanh, lan
+                // toi gap lai se co bang chung cu the (dung ky tu nao, loi
+                // gi) thay vi chi "bi mat chu, khong biet vi sao".
+                logKeyboardHide("LOI cham phim '$label' (ACTION_TOUCH): ${e.javaClass.simpleName}: ${e.message}")
                 try {
                     v.isPressed = false
                     cancelPendingTimers()
@@ -2996,6 +3004,13 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 onClick()
             } catch (e: Exception) {
                 android.util.Log.e("QrKeyboardService", "Loi khi xu ly bam phim '$label': ${e.message}", e)
+                // THEM: ghi lai vao kb_hide_log - xem giai thich day du o
+                // catch tuong tu trong setOnTouchListener phia tren. Day
+                // CHINH LA diem neu loi xay ra, KY TU SE KHONG duoc chen vao
+                // o nhap (onClick() la noi thuc su goi insertChar/insertText/
+                // deleteChar... nem loi giua chung nghia la thao tac CHUA
+                // hoan tat, chu KHONG duoc chen).
+                logKeyboardHide("LOI bam phim '$label' (onClick, co the mat ky tu): ${e.javaClass.simpleName}: ${e.message}")
             }
         }
         return button
