@@ -1335,17 +1335,44 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
         when (mode) {
             KeyboardMode.NUMBERS -> {
+                // SUA LOI THAT SU cua "ban phim tu dong dong" (bat duoc qua
+                // log LOI redrawKeyboard(): IllegalStateException "child da
+                // co cha"): TRUOC DAY o day chi kiem tra "cachedNumbersView
+                // == null" roi container.addView(numbers) THANG, KHONG kiem
+                // tra/go View do khoi container CU truoc - neu redrawKeyboard()
+                // goi lai ham nay LUC dang o trang NUMBERS/SYMBOLS/NUMPAD (vd
+                // doi mau/RGB/ngon ngu trong khi khong o trang Chu cai),
+                // cachedNumbersView VAN con la con cua container CU (sap bi
+                // vut bo), gan no vao container MOI se nem thang
+                // IllegalStateException "specified child already has a
+                // parent" - loi nay LOT QUA catch (e: Exception) TRUOC DAY o
+                // redrawKeyboard() (da doi thanh Throwable o 1 fix khac,
+                // nhung ban than LOI NAY van la Exception binh thuong, van
+                // bi bat - VAN DE la no khien buildKeyboardContainer() THAT
+                // BAI GIUA CHUNG, roi ca redrawKeyboard() phai roi vao
+                // nhanh du phong, thu lai lan 2 cung LOI Y HET (vi
+                // cachedNumbersView van chua duoc go) - dung khop 2 dong LOI
+                // lien tiep trong log nguoi dung gui, ke tiep la
+                // "onDestroy - service bi kill".
+                //
+                // SUA: dung DUNG pattern da co san o switchMode() (xem
+                // giai thich chi tiet o do) - detachFromParentIfAny() TRUOC
+                // khi addView(), du la View MOI xay hay View CACHE tai su
+                // dung.
                 val numbers = cachedNumbersView ?: buildNumbersPage().also { cachedNumbersView = it }
+                detachFromParentIfAny(numbers)
                 container.addView(numbers)
                 numbers.visibility = View.VISIBLE
             }
             KeyboardMode.SYMBOLS -> {
                 val symbols = cachedSymbolsView ?: buildSymbolsPage().also { cachedSymbolsView = it }
+                detachFromParentIfAny(symbols)
                 container.addView(symbols)
                 symbols.visibility = View.VISIBLE
             }
             KeyboardMode.NUMPAD -> {
                 val numpad = cachedNumpadView ?: buildNumpadPage().also { cachedNumpadView = it }
+                detachFromParentIfAny(numpad)
                 container.addView(numpad)
                 numpad.visibility = View.VISIBLE
             }
