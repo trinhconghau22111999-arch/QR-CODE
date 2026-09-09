@@ -1475,7 +1475,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                         cachedShiftKey = shiftKey
                         rowView.addView(shiftKey, 0)
                         registerChaseKey(KeyboardMode.LETTERS, shiftKey, 0.03f, rowPhase)
-                        val backspaceKey = buildKey("\u232b", weight = 1.5f, onRepeat = { deleteChar() }) { deleteChar() }
+                        val backspaceKey = buildKey("\u232b", weight = 1.5f, onRepeat = { deleteChar(isAutoRepeat = true) }) { deleteChar() }
                         rowView.addView(backspaceKey)
                         registerChaseKey(KeyboardMode.LETTERS, backspaceKey, 0.97f, rowPhase)
                     }
@@ -1567,7 +1567,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             row1.addView(key)
             registerChaseKey(KeyboardMode.NUMPAD, key, idx / 3f, 0f)
         }
-        val delKey = buildKey("\u232b", onRepeat = { deleteChar() }) { deleteChar() }
+        val delKey = buildKey("\u232b", onRepeat = { deleteChar(isAutoRepeat = true) }) { deleteChar() }
         row1.addView(delKey)
         registerChaseKey(KeyboardMode.NUMPAD, delKey, 1f, 0f)
         root.addView(row1)
@@ -2258,7 +2258,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             row.addView(symKey)
             registerChaseKey(KeyboardMode.NUMBERS, symKey, (1.5f + i + 0.5f) / (1.5f + symTotal + 1.5f), 0.75f)
         }
-        val bsKey = buildKey("\u232b", weight = 1.5f, onRepeat = { deleteChar() }) { deleteChar() }
+        val bsKey = buildKey("\u232b", weight = 1.5f, onRepeat = { deleteChar(isAutoRepeat = true) }) { deleteChar() }
         row.addView(bsKey)
         registerChaseKey(KeyboardMode.NUMBERS, bsKey, 0.925f, 0.75f)
 
@@ -2328,7 +2328,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             row.addView(symKey)
             registerChaseKey(KeyboardMode.SYMBOLS, symKey, (1.3f + i + 0.5f) / totalW2, 0.75f)
         }
-        val sq2 = buildKey("\u232b", weight = 1.3f, onRepeat = { deleteChar() }) { deleteChar() }
+        val sq2 = buildKey("\u232b", weight = 1.3f, onRepeat = { deleteChar(isAutoRepeat = true) }) { deleteChar() }
         row.addView(sq2)
         registerChaseKey(KeyboardMode.SYMBOLS, sq2, 1f - 0.061f, 0.75f)
 
@@ -3398,7 +3398,34 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val ic = currentInputConnection ?: return
         val lower = ch.lowercaseChar()
 
-        resyncCurrentWordFromInputConnection(ic)
+        // SUA (dieu tra "ban phim bi dơ/cham, bam khong phan ung - ngau
+        // nhien, co tu truoc gio"): TRUOC DAY goi resyncCurrentWordFromInputConnection()
+        // VO DIEU KIEN o MOI LAN go 1 chu Tieng Viet - ham do goi
+        // ic.getTextBeforeCursor(), la 1 LENH IPC DONG BO thuc su toi TIEN
+        // TRINH cua ung dung DICH (Chrome, Zalo, Facebook...). Neu ung dung
+        // do dang BAN (ve lai trang nang, xu ly rieng cua no, GC...), lenh
+        // nay TREO ngay tren luong chinh cua ban phim CHO TOI KHI ung dung
+        // do phan hoi xong - dung khop kieu "dơ/cham NGAU NHIEN, tuy luc,
+        // khong co quy luat" nguoi dung phan anh, vi do tre hoan toan phu
+        // thuoc vao app dang go vao luc do, khong phai loi co dinh trong
+        // ban phim.
+        //
+        // Theo dung comment lich sư cua chinh ham resync (xem dinh nghia
+        // ben duoi): muc dich GOC cua no la sua loi "go 2 chu NGAY LUC VUA
+        // BAT DAU go" (khi ban phim CHUA CHAC CHAN noi dung co san trong o
+        // nhap la gi). Va [currentWordCased]/[currentWord] da duoc CHINH
+        // ham nay (o cuoi, sau moi lan commit) cap nhat CHINH XAC ngay sau
+        // MOI keystroke - nen tu ky tu THU HAI cua 1 tu tro di, du lieu noi
+        // bo la DANG TIN CAY, KHONG can hoi lai ung dung dich qua IPC nua.
+        //
+        // SUA: CHi goi resync khi [currentWord] dang RONG (that su la keystroke
+        // DAU TIEN cua 1 tu moi/phien go moi - dung tinh huong resync duoc
+        // thiet ke de xu ly) - bo qua hoan toan cho cac keystroke TIEP THEO
+        // trong CUNG 1 tu dang go lien tuc, giam manh so lan goi IPC dong bo
+        // ma van giu dung muc dich/hanh vi sua loi ban dau.
+        if (currentWord.isEmpty()) {
+            resyncCurrentWordFromInputConnection(ic)
+        }
 
         val oldWordLower = currentWord.toString()
         // SUA LOI QUAN TRONG: ban phim ao LUON truyen [ch] o dang CHU
@@ -3575,10 +3602,30 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         currentWord.clear()
     }
 
-    private fun deleteChar() {
+    /** [isAutoRepeat]: true khi ham nay duoc goi TU DONG boi vong lap giu-de-
+     *  xoa-lien-tuc ([deleteRepeatHandler]), false khi la 1 lan cham THAT SU
+     *  cua nguoi dung (lan dau bam, hoac bam-tha nhanh khong giu). Dung de
+     *  BO QUA lenh IPC kiem tra "co dang boi den van ban" (getSelectedText)
+     *  trong CAC LAN LAP TU DONG - xem giai thich day du ben duoi. */
+    private fun deleteChar(isAutoRepeat: Boolean = false) {
         selfInitiatedChange = true
         val ic = currentInputConnection
-        val selectedText = ic?.getSelectedText(0)
+        // SUA (dieu tra "ban phim bi dơ/cham, bam khong phan ung - ngau
+        // nhien, co tu truoc gio"): ham nay TRUOC DAY LUON goi
+        // ic.getSelectedText(0) - 1 LENH IPC DONG BO toi tien trinh ung dung
+        // DICH - o MOI LAN goi, KE CA khi dang giu phim ⌫ de XOA LIEN TUC
+        // (goi lai MOI [DELETE_REPEAT_INTERVAL_MS] qua deleteRepeatHandler).
+        // Neu ung dung dich dang ban, moi lan goi la 1 co hoi bi treo tam
+        // thoi - giu phim xoa cang lau, CONG DON cang nhieu lan co the bi
+        // treo. Trong luc dang TU DONG LAP LAI (nguoi dung chi giu yen ngon
+        // tay tren phim ⌫, KHONG the tao ra 1 vung boi den van ban MOI giua
+        // luc do - can thao tac khac nhu vuot/cham vao noi dung, khong the
+        // xay ra DONG THOI voi viec giu phim ⌫), nen AN TOAN de BO QUA han
+        // lenh kiem tra nay, coi nhu LUON khong co vung boi den - chi kiem
+        // tra THAT SU (goi IPC) o lan dau tien (isAutoRepeat = false, tuc
+        // lan nguoi dung MOI cham/tha nhanh, luc do THAT SU co the dang co
+        // 1 vung van ban da duoc boi den tu truoc).
+        val selectedText = if (isAutoRepeat) null else ic?.getSelectedText(0)
         if (!selectedText.isNullOrEmpty()) {
             ic.commitText("", 1)
             currentWord.clear()
