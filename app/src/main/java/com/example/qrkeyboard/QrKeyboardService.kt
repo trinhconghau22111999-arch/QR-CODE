@@ -1505,14 +1505,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(4), dp(verticalPaddingDp), dp(4), dp(verticalPaddingDp + EXTRA_BOTTOM_LIFT_DP))
             addView(buildEmojiRow())
-            numberRows.forEachIndexed { i, row ->
-                addView(
-                    buildCharRow(
-                        row, rowPhase = i.toFloat() / (numberRows.size),
-                        heightDp = if (i == 0) topNumberRowHeightDp else keyHeightDp
-                    )
-                )
-            }
+            numberRows.forEachIndexed { i, row -> addView(buildCharRow(row, rowPhase = i.toFloat() / (numberRows.size))) }
             addView(buildNumbersRow3())
             addView(buildNumbersBottomRow())
         }
@@ -2072,13 +2065,16 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     }
 
     /** SUA (theo yeu cau nguoi dung: "giam chieu cao hang phim so tren cung
-     *  o trang 1 va 2 xuong con 75% so voi hien tai, giu nguyen kich thuoc
-     *  ky tu ben trong phim"): chieu cao rieng (75% [keyHeightDp]) danh
-     *  CHI cho hang so "1234567890" (numberRows[0]) o trang Chu cai (trang
-     *  1 - hang tren cung cua QWERTY) va trang So/Ky hieu (trang 2 - hang
-     *  so dau tien, ngay duoi hang emoji). Chi anh huong CHIEU CAO khung
-     *  phim (buildKey van tu tinh textSize theo do dai nhan nhu cu, KHONG
-     *  phu thuoc heightDp), nen ky tu ben trong khong doi kich thuoc. */
+     *  o trang 1 xuong con 75% so voi hien tai, giu nguyen kich thuoc ky tu
+     *  ben trong phim"): chieu cao rieng (75% [keyHeightDp]) danh CHI cho
+     *  hang so "1234567890" (numberRows[0]) o trang Chu cai (trang 1 - hang
+     *  tren cung cua QWERTY). SUA LAI (theo yeu cau nguoi dung ngay sau do:
+     *  "thoi khong doi kich thuoc o trang 2 nua"): KHONG con ap dung cho
+     *  trang So/Ky hieu (trang 2) nua - hang so dau tien o trang do da
+     *  duoc TRA VE dung [keyHeightDp] binh thuong nhu truoc. Chi anh huong
+     *  CHIEU CAO khung phim (buildKey van tu tinh textSize theo do dai
+     *  nhan nhu cu, KHONG phu thuoc heightDp), nen ky tu ben trong khong
+     *  doi kich thuoc. */
     private val topNumberRowHeightDp: Int
         get() = (keyHeightDp * 3) / 4
 
