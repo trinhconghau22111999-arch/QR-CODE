@@ -1551,10 +1551,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             setPadding(dp(4), dp(verticalPaddingDp), dp(4), dp(verticalPaddingDp + EXTRA_BOTTOM_LIFT_DP))
         }
 
-        fun spacer(weight: Float): View = View(this).apply {
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, weight)
-        }
-
         // Dong 1: 1, 2, 3, Xoa
         val row1 = LinearLayout(this).apply {
             isBaselineAligned = false
@@ -1592,12 +1588,42 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         registerChaseKey(KeyboardMode.NUMPAD, abcKeyRow2, 1f, 0.33f)
         root.addView(row2)
 
-        // Dong 3: 7, 8, 9, Enter (kich thuoc = 1 nut, dung ngay duoi nut Xoa o
-        // dong 1 - theo yeu cau nguoi dung: "chia nut Enter (truoc day rong
-        // gap doi o dong 4) ra lam 2, chi giu lai 1 nua ben phai, roi nang
-        // no len nam cung dong voi so 9"). Thay vi dat o dong 4 rieng, Enter
-        // gio chiem dung vi tri khoang trong (spacer) truoc day cua dong nay.
-        val row3 = LinearLayout(this).apply {
+        // Dong 3+4 (gop chung mot khoi ngang): theo yeu cau nguoi dung -
+        // (1) them 2 nut nho "+"/"-" nam ngay duoi so "7" (chia doi dung vi
+        // tri cot 1, tong dien tich 2 nut = dien tich 1 nut binh thuong);
+        // (2) them 2 nut nho "x"/"/" nam ngay duoi so "9" (chia doi dung vi
+        // tri cot 3, tuong tu "+"/"-"); (3) nut Enter to gap doi, LAP DAY
+        // khoang trong truoc day o ben duoi no (chiem tron cot 4 xuyen SUOT
+        // ca chieu cao cua dong 3 lan dong 4 gop lai).
+        // Cach lam: khoi ngang nay chia lam 2 phan theo trong so 3:1 (dung
+        // ty le 3 cot so voi 1 cot Enter, giong het 3 dong tren) - ben trai
+        // (trong so 3, cao bang CA khoi) la 1 cot doc gom 2 dong con (dong
+        // con 3a: 7,8,9; dong con 3b: +/-, 0, x//); ben phai (trong so 1) la
+        // dung 1 nut Enter cao bang CA khoi (= cao dong con 3a + dong con 3b
+        // gop lai), nen nhin no "to gap doi" so voi 1 nut thuong va lap kin
+        // khoang trong phia duoi truoc day.
+        val subRow4HeightPx = dp(keyHeightDp + 2)
+        val subRow4BottomMarginPx = dp(6)
+        val subRow3HeightPx = dp(keyHeightDp + 2) // WRAP_CONTENT thuc te cua 1 dong phim thuong (cao phim + 2*margin doc)
+        val row34TotalHeightPx = subRow3HeightPx + subRow4HeightPx + subRow4BottomMarginPx
+
+        val row34 = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            isBaselineAligned = false
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, row34TotalHeightPx
+            )
+        }
+
+        // Cot doc ben trai (3 cot dau, trong so 3) - cao bang CA khoi row34.
+        val leftCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            isBaselineAligned = false
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 3f)
+        }
+
+        // Dong con 3a: 7, 8, 9 (dung ngay duoi nut Xoa o dong 1, giong cu).
+        val subRow3 = LinearLayout(this).apply {
             isBaselineAligned = false
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
@@ -1605,31 +1631,68 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
         listOf("7", "8", "9").forEachIndexed { idx, d ->
             val key = buildKey(d) { insertChar(d[0]) }
-            row3.addView(key)
+            subRow3.addView(key)
             registerChaseKey(KeyboardMode.NUMPAD, key, idx / 3f, 0.67f)
         }
-        val enterKeyRow3 = buildKey("\u23ce", highlight = true) { sendEnter() }
-        row3.addView(enterKeyRow3)
-        registerChaseKey(KeyboardMode.NUMPAD, enterKeyRow3, 1f, 0.67f)
-        root.addView(row3)
+        leftCol.addView(subRow3)
 
-        // Dong 4: khoang trong bang 1 nut (thay cho vi tri ABC cu, da chuyen
-        // len dong 2), 0, khoang trong bang 2 nut (thay cho vi tri Enter cu,
-        // da chuyen len dong 3) - dong nay gio chi con nut "0", van dung
-        // giua cot cua no nhu truoc, cac vi tri khac deu la khoang trong de
-        // van thang cot voi cac dong khac.
-        val row4 = LinearLayout(this).apply {
+        // Dong con 3b: [+ / -] (duoi so 7), 0 (giu nguyen cot giua nhu cu),
+        // [x / /] (duoi so 9). Moi cap nut nho chiem DUNG 1 o (trong so 1,
+        // bang 1 cot binh thuong) va tu chia doi trong so 0.5/0.5 cho nhau -
+        // nen tong dien tich 2 nut nho = dien tich 1 nut thuong (7 hoac 9)
+        // ngay phia tren no.
+        val subRow4 = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
+            isBaselineAligned = false
             layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, dp(keyHeightDp + 2)
-            ).apply { bottomMargin = dp(6) }
+                ViewGroup.LayoutParams.MATCH_PARENT, subRow4HeightPx
+            ).apply { bottomMargin = subRow4BottomMarginPx }
         }
-        row4.addView(spacer(weight = 1f))
+
+        // Cap [+ / -] - duoi so 7.
+        val plusMinusSlot = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            isBaselineAligned = false
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
+        }
+        val plusKey = buildKey("+", weight = 0.5f, fillRowHeight = true) { insertChar('+') }
+        val minusKey = buildKey("\u2212", weight = 0.5f, fillRowHeight = true) { insertChar('-') }
+        plusMinusSlot.addView(plusKey)
+        plusMinusSlot.addView(minusKey)
+        registerChaseKey(KeyboardMode.NUMPAD, plusKey, 0f, 1f)
+        registerChaseKey(KeyboardMode.NUMPAD, minusKey, 0.17f, 1f)
+        subRow4.addView(plusMinusSlot)
+
+        // "0" - giu nguyen vi tri cot giua nhu truoc.
         val nk2 = buildKey("0", weight = 1f, fillRowHeight = true) { insertChar('0') }
-        row4.addView(nk2)
+        subRow4.addView(nk2)
         registerChaseKey(KeyboardMode.NUMPAD, nk2, 0.375f, 1f)
-        row4.addView(spacer(weight = 2f))
-        root.addView(row4)
+
+        // Cap [x / /] - duoi so 9.
+        val mulDivSlot = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            isBaselineAligned = false
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
+        }
+        val mulKey = buildKey("\u00d7", weight = 0.5f, fillRowHeight = true) { insertChar('x') }
+        val divKey = buildKey("/", weight = 0.5f, fillRowHeight = true) { insertChar('/') }
+        mulDivSlot.addView(mulKey)
+        mulDivSlot.addView(divKey)
+        registerChaseKey(KeyboardMode.NUMPAD, mulKey, 0.67f, 1f)
+        registerChaseKey(KeyboardMode.NUMPAD, divKey, 0.84f, 1f)
+        subRow4.addView(mulDivSlot)
+
+        leftCol.addView(subRow4)
+        row34.addView(leftCol)
+
+        // Cot Enter ben phai (cot 4, trong so 1) - cao bang CA khoi row34
+        // (= cao dong con 3a + dong con 3b gop lai, tuc GAP DOI 1 nut thuong
+        // va LAP DAY khoang trong truoc day o phia duoi no).
+        val enterKeyRow3 = buildKey("\u23ce", weight = 1f, highlight = true, fillRowHeight = true) { sendEnter() }
+        row34.addView(enterKeyRow3)
+        registerChaseKey(KeyboardMode.NUMPAD, enterKeyRow3, 1f, 0.835f)
+
+        root.addView(row34)
 
         return root
     }
