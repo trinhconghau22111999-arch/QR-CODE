@@ -240,8 +240,14 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
         /** So dp them vao vien DUOI CUNG cua toan bo ban phim de NHICH CA
          *  BAN PHIM LEN cao hon mot chut so voi day man hinh/thanh dieu
-         *  huong, theo phan anh cua nguoi dung. */
-        private const val EXTRA_BOTTOM_LIFT_DP = 1
+         *  huong. SUA (theo phan anh MOI cua nguoi dung: "khoang cach voi
+         *  thanh da nhiem/dieu huong bi du thua, ha bot ban phim xuong ti"
+         *  - tuc NGUOC lai voi yeu cau TRUOC DAY da them hang so nay): DAT
+         *  VE 0 - bo hoan toan phan "nhich len" nay, de vien duoi cua ban
+         *  phim tro lai sat voi day khung IME (khong con khoang trong du ra
+         *  do hang so nay tao ra nua), giup ban phim ha xuong thap hon mot
+         *  chut nhu yeu cau. */
+        private const val EXTRA_BOTTOM_LIFT_DP = 0
 
         /** Khoang thoi gian (ms) TRE truoc khi thuc su dong khung quet QR +
          *  coi la "roi ban phim" sau khi he thong bao [onFinishInputView] voi
