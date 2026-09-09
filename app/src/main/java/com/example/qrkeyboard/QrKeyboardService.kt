@@ -1413,7 +1413,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
         when (mode) {
             KeyboardMode.LETTERS -> {
-                root.addView(buildCharRow(numberRows[0], rowPhase = 0f))
+                root.addView(buildCharRow(numberRows[0], rowPhase = 0f, heightDp = topNumberRowHeightDp))
                 letterRows.forEachIndexed { index, row ->
                     // SUA LOI (theo yeu cau nguoi dung): hang chu THU 2 tu
                     // tren xuong ("asdfghjkl", 9 ky tu) TRUOC DAY bi kiem
@@ -1505,7 +1505,14 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(4), dp(verticalPaddingDp), dp(4), dp(verticalPaddingDp + EXTRA_BOTTOM_LIFT_DP))
             addView(buildEmojiRow())
-            numberRows.forEachIndexed { i, row -> addView(buildCharRow(row, rowPhase = i.toFloat() / (numberRows.size))) }
+            numberRows.forEachIndexed { i, row ->
+                addView(
+                    buildCharRow(
+                        row, rowPhase = i.toFloat() / (numberRows.size),
+                        heightDp = if (i == 0) topNumberRowHeightDp else keyHeightDp
+                    )
+                )
+            }
             addView(buildNumbersRow3())
             addView(buildNumbersBottomRow())
         }
@@ -2064,9 +2071,20 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         rgbChaseRegistryByPage[page]?.clear()
     }
 
+    /** SUA (theo yeu cau nguoi dung: "giam chieu cao hang phim so tren cung
+     *  o trang 1 va 2 xuong con 75% so voi hien tai, giu nguyen kich thuoc
+     *  ky tu ben trong phim"): chieu cao rieng (75% [keyHeightDp]) danh
+     *  CHI cho hang so "1234567890" (numberRows[0]) o trang Chu cai (trang
+     *  1 - hang tren cung cua QWERTY) va trang So/Ky hieu (trang 2 - hang
+     *  so dau tien, ngay duoi hang emoji). Chi anh huong CHIEU CAO khung
+     *  phim (buildKey van tu tinh textSize theo do dai nhan nhu cu, KHONG
+     *  phu thuoc heightDp), nen ky tu ben trong khong doi kich thuoc. */
+    private val topNumberRowHeightDp: Int
+        get() = (keyHeightDp * 3) / 4
+
     private fun buildCharRow(
         chars: String, applyShiftCase: Boolean = false, rowPhase: Float = 0.5f,
-        chasePage: KeyboardMode = mode
+        chasePage: KeyboardMode = mode, heightDp: Int = keyHeightDp
     ): LinearLayout {
         val row = LinearLayout(this).apply {
             isBaselineAligned = false
@@ -2077,7 +2095,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val total = chars.length
         chars.forEachIndexed { idx, ch ->
             val label = if (applyShiftCase && (isShiftOn || showCapitalPreview)) ch.uppercaseChar().toString() else ch.toString()
-            val key = buildKey(label) { insertChar(ch) }
+            val key = buildKey(label, heightDp = heightDp) { insertChar(ch) }
             if (applyShiftCase) cachedLetterKeys[ch] = key
             row.addView(key)
             registerChaseKey(chasePage, key, if (total > 1) idx.toFloat() / (total - 1) else 0.5f, rowPhase)
@@ -2927,6 +2945,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         weight: Float = 1f,
         highlight: Boolean = false,
         fillRowHeight: Boolean = false,
+        heightDp: Int = keyHeightDp,
         onRepeat: (() -> Unit)? = null,
         onClick: () -> Unit
     ): Button {
@@ -2985,7 +3004,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             outlineProvider = null
             layoutParams = LinearLayout.LayoutParams(
                 0,
-                if (fillRowHeight) ViewGroup.LayoutParams.MATCH_PARENT else dp(keyHeightDp),
+                if (fillRowHeight) ViewGroup.LayoutParams.MATCH_PARENT else dp(heightDp),
                 weight
             ).apply {
                 setMargins(dp(1), dp(1), dp(1), dp(1))
