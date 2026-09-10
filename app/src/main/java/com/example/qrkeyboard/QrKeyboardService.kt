@@ -3576,11 +3576,28 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // wasCapitalizingWordStart: ký tự đầu câu (bao gồm cả khi Telex gộp như aa→â)
         // → uppercase ký tự đầu suffix. capitalizeAppliedAtPrefixLen được lưu lại để
         // các lần gộp tiếp theo (aa→â, ee→ê...) cũng uppercase đúng qua nhánh này.
+        // THEM (theo yeu cau nguoi dung: "khi nao go chu thuong ma ban phim
+        // hien phim in hoa thi bam icon app la copy duoc loi"): tach rieng
+        // nhanh "hoa vi TRUNG moc vi tri cu" (isStaleMergeCapitalize) - day
+        // CHINH LA nhanh gay ra loi "tu in hoa ngau nhien khi go chu thuong"
+        // da dieu tra va sua o [deleteChar] (commit truoc). Sau khi sua,
+        // nhanh nay LE RA hiem/khong con kich hoat sai nua - nhung neu VAN
+        // con xay ra (vd do 1 tinh huong khac chua luong het), GHI LOG NGAY
+        // vao chinh [kb_hide_log] (CUNG cho voi log "bam icon app -> Sao
+        // chep loi" o SettingsActivity - TAI SU DUNG y het co che cu, khong
+        // tao man hinh/nut moi) - de nguoi dung chi can bam icon app la lay
+        // duoc chi tiet (thoi diem, ung dung dang go, trang thai shift/cap)
+        // ngay khi thay phim hien sai, khong can mo ta lai bang loi.
+        val isStaleMergeCapitalize = !wasCapitalizingWordStart && capitalizeAppliedAtPrefixLen != null &&
+            commonPrefixLen == capitalizeAppliedAtPrefixLen && newSuffixLower.isNotEmpty() && !capitalizeNextLetter
         val newSuffixDisplay = when {
-            wasCapitalizingWordStart || (capitalizeAppliedAtPrefixLen != null
-                && commonPrefixLen == capitalizeAppliedAtPrefixLen
-                && newSuffixLower.isNotEmpty()
-                && !capitalizeNextLetter) -> {
+            wasCapitalizingWordStart || isStaleMergeCapitalize -> {
+                if (isStaleMergeCapitalize) {
+                    logKeyboardHide(
+                        "AUTO-CAP-ANOMALY: hoa nham 1 chu do trung moc vi tri cu " +
+                            "(capitalizeAppliedAtPrefixLen=$capitalizeAppliedAtPrefixLen, commonPrefixLen=$commonPrefixLen)"
+                    )
+                }
                 // Keystroke đầu câu HOẶC Telex gộp đè lên vị trí đã hoa (aa→Â, ee→Ê, dd→Đ)
                 val restLower = newSuffixLower.drop(1)
                 val rest = if (isShiftOn) restLower.uppercase() else restLower

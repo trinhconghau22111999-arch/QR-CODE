@@ -1064,13 +1064,20 @@ class SettingsActivity : AppCompatActivity() {
 
         val crash = CrashReporter.readLastCrash(this)
 
-        // Nếu có cả 2, gộp lại. Nếu chỉ có log bàn phím, hiện riêng.
+        // SUA (theo yeu cau nguoi dung: "thay the [cho] ... lam theo y toi
+        // vua gui" - tuc tai su dung CHINH log nay de bao ca loi "tu in hoa
+        // ngau nhien khi go chu thuong", xem [insertVietnameseChar]): doi
+        // tieu de tu "LOG BAN PHIM TU DONG" (chi dung cho 1 loai su kien)
+        // thanh "LOG HOAT DONG BAN PHIM" (bao quat hon) - vi gio [kb_hide_log]
+        // co the chua CA 2 loai: (1) ly do ban phim bi an/dong, (2) canh bao
+        // "AUTO-CAP-ANOMALY" khi phat hien tu in hoa nham 1 chu do trung moc
+        // vi tri cu.
         val nl = System.lineSeparator()
         val combined = when {
             crash != null && !kbLog.isNullOrBlank() ->
-                "── CRASH LOG ──" + nl + crash + nl + nl + "── LOG BÀN PHÍM TỰ ĐÓNG ──" + nl + kbLog
+                "── CRASH LOG ──" + nl + crash + nl + nl + "── LOG HOẠT ĐỘNG BÀN PHÍM ──" + nl + kbLog
             crash != null -> crash
-            !kbLog.isNullOrBlank() -> "── LOG BÀN PHÍM TỰ ĐÓNG ──" + nl + kbLog
+            !kbLog.isNullOrBlank() -> "── LOG HOẠT ĐỘNG BÀN PHÍM ──" + nl + kbLog
             // KHÔNG có gì để hiện - chạy tiếp callback NGAY LẬP TỨC, giữ nguyên hành vi cũ y hệt
             // trước đây cho trường hợp không có crash (không có gì phải chờ đóng cả).
             else -> { onDismissed(); return }
