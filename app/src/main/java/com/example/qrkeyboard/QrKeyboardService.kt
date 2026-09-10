@@ -2187,37 +2187,76 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // Android quy dinh khi can dung 1 Drawable cho nhieu View.
         val sharedEmojiBg = buildGlowKeyBackground(cornerDp = 4)
         val emojiBgConstantState = sharedEmojiBg.constantState
-        emojiList.forEach { emoji ->
-            val btn = Button(this).apply {
-                text = emoji
-                isAllCaps = false
-                textSize = 20f
-                includeFontPadding = true
-                isSingleLine = true
-                setPadding(0, 0, 0, 0)
-                minWidth = 0
-                minimumWidth = 0
-                minHeight = 0
-                minimumHeight = 0
-                gravity = Gravity.CENTER
-                background = emojiBgConstantState?.newDrawable(resources) ?: buildGlowKeyBackground(cornerDp = 4)
-                stateListAnimator = null
-                elevation = 0f
-                outlineProvider = null
-                isHapticFeedbackEnabled = true
-                layoutParams = LinearLayout.LayoutParams(emojiKeySizePx, emojiKeySizePx).apply {
-                    setMargins(dp(3), dp(3), dp(3), dp(3))
-                }
-                setOnClickListener {
-                    vibrateKeyPress()
-                    playKeyClickTone()
-                    insertText(emoji)
-                }
+
+        fun makeEmojiButton(emoji: String): Button = Button(this).apply {
+            text = emoji
+            isAllCaps = false
+            textSize = 20f
+            includeFontPadding = true
+            isSingleLine = true
+            setPadding(0, 0, 0, 0)
+            minWidth = 0
+            minimumWidth = 0
+            minHeight = 0
+            minimumHeight = 0
+            gravity = Gravity.CENTER
+            background = emojiBgConstantState?.newDrawable(resources) ?: buildGlowKeyBackground(cornerDp = 4)
+            stateListAnimator = null
+            elevation = 0f
+            outlineProvider = null
+            isHapticFeedbackEnabled = true
+            layoutParams = LinearLayout.LayoutParams(emojiKeySizePx, emojiKeySizePx).apply {
+                setMargins(dp(3), dp(3), dp(3), dp(3))
             }
-            inner.addView(btn)
+            setOnClickListener {
+                vibrateKeyPress()
+                playKeyClickTone()
+                insertText(emoji)
+            }
         }
+
+        // TOI UU (sua loi "chuyen sang trang So/Ky hieu bi khung/giat"): danh
+        // sach [emojiList] co ~150 emoji - TRUOC DAY ca 150 nut nay duoc dung
+        // DONG BO, HET MOT LUOT, TRONG CUNG 1 khung hinh voi luc trang So
+        // dang duoc xay (dung luc nguoi dung vua bam "?123"/chuyen trang) -
+        // day la phan TON THOI GIAN NHAT trong toan bo qua trinh xay trang
+        // So (nang hon han hang chuc phim so/ky hieu con lai CONG LAI), lam
+        // "dong" main thread dung khung hinh ban phim dang can hien len,
+        // cam giac y het "khung/giat" moi lan chuyen trang (dac biet ro RET
+        // moi khi cache bi mat - vd tien trinh ban phim vua bi he thong tao
+        // lai). SUA: CHi dung NGAY LAP TUC vua du so nut de LAP DAY 1 man
+        // hinh (uoc luong theo be rong man hinh / kich thuoc 1 nut, + du
+        // phong vai nut) - nguoi dung KHONG thay "thieu" gi khi vua mo trang.
+        // Phan CON LAI duoc chen dan qua NHIEU khung hinh ke tiep (moi lan 1
+        // nhom nho qua Handler.post) SAU KHI trang da hien len va co the
+        // tuong tac binh thuong - viec chen them nut vao cuoi HorizontalScrollView
+        // (ngoai vung nhin dau tien) khong lam giat khung dang hien, nguoi
+        // dung chi thay them emoji "xuat hien dan" khi cuon toi neu cuon rat
+        // nhanh ngay tuc thi, khong con thay "dung hinh" luc chuyen trang nua.
+        val screenWidthPx = resources.displayMetrics.widthPixels
+        val approxKeySlotPx = emojiKeySizePx + dp(6)
+        val firstBatchCount = (screenWidthPx / approxKeySlotPx.coerceAtLeast(1) + 4)
+            .coerceIn(1, emojiList.size)
+
+        emojiList.take(firstBatchCount).forEach { inner.addView(makeEmojiButton(it)) }
         if (inner.childCount > 0) {
             registerChaseKey(KeyboardMode.NUMBERS, inner.getChildAt(0), 0.5f, 0f)
+        }
+
+        val remaining = emojiList.drop(firstBatchCount)
+        if (remaining.isNotEmpty()) {
+            val batchHandler = Handler(Looper.getMainLooper())
+            val batchSize = 15
+            var nextIndex = 0
+            val postNextBatch = object : Runnable {
+                override fun run() {
+                    val end = (nextIndex + batchSize).coerceAtMost(remaining.size)
+                    for (i in nextIndex until end) inner.addView(makeEmojiButton(remaining[i]))
+                    nextIndex = end
+                    if (nextIndex < remaining.size) batchHandler.post(this)
+                }
+            }
+            batchHandler.post(postNextBatch)
         }
 
         return HorizontalScrollView(this).apply {
@@ -3908,6 +3947,66 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // moi nhat - goi lai moi lan ban phim hien len (an toan, tu huy vong
         // cu truoc khi tao vong moi neu co).
         startRgbChaseLoopIfNeeded()
+        // TOI UU (sua loi nguoi dung phan anh: "chuyen trang 1 qua 2 va cac
+        // trang khac deu bi khung") - xem giai thich day du o [prewarmOtherPagesIfIdle].
+        prewarmOtherPagesIfIdle()
+    }
+
+    /** TOI UU (sua loi "chuyen trang 1 qua 2 va cac trang khac deu bi khung"):
+     *  TRUOC DAY moi trang (Numbers/Symbols/Numpad) CHi duoc xay dung (build)
+     *  DUNG LUC nguoi dung THAT SU bam nut chuyen toi no lan dau tien (xem
+     *  [switchMode]) - viec dung dong bo ~30-150 View/Drawable (dac biet
+     *  trang So co them hang ~150 nut emoji) CHAN TRUC TIEP main thread NGAY
+     *  DUNG luc ban phim can chuyen/hien khung hinh moi, tao cam giac
+     *  "khung/giat" ro ret - VA vi cache bi mat moi khi tien trinh ban phim
+     *  bi he thong tao lai (xem dieu tra "onDestroy - service bi kill"), hien
+     *  tuong nay lap lai RAT THUONG XUYEN trong thuc te, khong chi "lan dau
+     *  dung app".
+     *
+     *  SUA: ngay sau khi trang Chu cai (mac dinh) da hien len xong xuoi va
+     *  vong lap RGB da khoi dong ([onWindowShown]), CHU DONG dung san 3 trang
+     *  con lai (neu chua co cache) NGAY TRONG LUC RANH (nguoi dung vua mo
+     *  ban phim, chua kip go/bam gi) - moi trang duoc dung o MOT khung hinh
+     *  RIENG (Handler.post noi tiep nhau, khong dung chung 1 khung hinh voi
+     *  trang truoc) de KHONG cong don thanh 1 khoi lon lam giat khung hinh
+     *  dau tien luc mo ban phim. Ket qua: den luc nguoi dung THAT SU bam nut
+     *  chuyen trang, [switchMode] chi con viec GAN (attach) 1 View co san vao
+     *  container (re, tuc thi) thay vi phai DUNG MOI hoan toan - het khung.
+     *
+     *  AN TOAN: neu nguoi dung bam chuyen trang TRUOC KHI qua trinh lam
+     *  truoc nay kip chay xong, [switchMode] van tu dung binh thuong nhu cu
+     *  (kiem tra "== null" y het truoc day) - day chi la toi uu "lam truoc
+     *  cho nhanh", hoan toan khong bat buoc, khong the gay loi/trung lap (vi
+     *  luon kiem tra "cached == null" truoc khi dung moi). */
+    private fun prewarmOtherPagesIfIdle() {
+        val prewarmHandler = Handler(Looper.getMainLooper())
+        prewarmHandler.post {
+            if (cachedNumbersView == null) {
+                try {
+                    cachedNumbersView = buildNumbersPage()
+                } catch (e: Exception) {
+                    android.util.Log.e("QrKeyboardService", "Loi lam truoc trang So: ${e.message}", e)
+                }
+            }
+            prewarmHandler.post {
+                if (cachedSymbolsView == null) {
+                    try {
+                        cachedSymbolsView = buildSymbolsPage()
+                    } catch (e: Exception) {
+                        android.util.Log.e("QrKeyboardService", "Loi lam truoc trang Ky hieu: ${e.message}", e)
+                    }
+                }
+                prewarmHandler.post {
+                    if (cachedNumpadView == null) {
+                        try {
+                            cachedNumpadView = buildNumpadPage()
+                        } catch (e: Exception) {
+                            android.util.Log.e("QrKeyboardService", "Loi lam truoc trang So dien thoai: ${e.message}", e)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private fun openQrScanner(continuous: Boolean = false) {
