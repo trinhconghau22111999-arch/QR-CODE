@@ -746,6 +746,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     // THEM (theo yeu cau nguoi dung: "có chạy led nhiều màu nhưng lại không
     // có chạy 1 màu"): xem giai thich chi tiet trong RgbEffectPrefs.kt.
     private var rgbChaseColorMode: String = RgbEffectPrefs.DEFAULT_COLOR_MODE
+    // THEM (theo yeu cau nguoi dung: "1 cai dat thanh truot cho toc do
+    // chuyen mau nhanh cham cua den vien phim"): doc lai o onCreate()/
+    // onWindowShown() giong het 3 bien tren - xem [RgbEffectPrefs.speedPercentToDegPerFrame].
+    private var rgbChaseSpeedPercent: Int = RgbEffectPrefs.DEFAULT_SPEED_PERCENT
 
     // ───────────────── THEM: Mic rieng (SpeechRecognizer) - theo yeu cau ─────────────────
     // nguoi dung "mic phải dùng mic riêng, giờ đang dùng cái của gg không tốt".
@@ -849,13 +853,14 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  muot de mat nguoi thay "chay" lien tuc nhung khong ve lai qua nhieu
      *  lan/giay (do pin, tranh giat khi go phim nhanh cung luc). */
     private val RGB_CHASE_FRAME_MS = 66L
-    // SUA (theo yeu cau nguoi dung): tang toc do doi mau THEM 15% nua so voi
-    // muc truoc do (5.46 -> 6.279 do/khung hinh = 5.46 * 1.15; muc 5.46 nay
-    // ban than da la ket qua tang 30% so voi goc 4.2). GIU NGUYEN tan suat
-    // khung hinh (RGB_CHASE_FRAME_MS khong doi) de KHONG ton them pin, chi
-    // tang do LECH mau moi khung hinh -> mau "chay" nhanh hon ma van muot,
-    // khong ve lai nhieu lan/giay hon truoc.
-    private val RGB_CHASE_DEG_PER_FRAME = 6.279f
+    // SUA (theo yeu cau nguoi dung: "1 cai dat thanh truot cho toc do
+    // chuyen mau nhanh cham"): TRUOC DAY la 1 HANG SO CO DINH (6.279f) -
+    // GIO la 1 gia tri TINH DONG theo [rgbChaseSpeedPercent] (0-100% nguoi
+    // dung tu chon trong Cai dat), qua [RgbEffectPrefs.speedPercentToDegPerFrame].
+    // GIU NGUYEN tan suat khung hinh (RGB_CHASE_FRAME_MS khong doi) de
+    // KHONG ton them pin, chi thay doi do LECH mau moi khung hinh.
+    private val RGB_CHASE_DEG_PER_FRAME: Float
+        get() = RgbEffectPrefs.speedPercentToDegPerFrame(rgbChaseSpeedPercent)
 
     /** SUA (chong lag/nong may khi dung ban phim lien tuc lau - xem giai
      *  thich chi tiet o [applyRgbChaseFrame]): neu qua khoang thoi gian nay
@@ -3854,6 +3859,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         rgbChaseEnabled = RgbEffectPrefs.isEnabled(this)
         rgbChaseDirection = RgbEffectPrefs.getDirection(this)
         rgbChaseColorMode = RgbEffectPrefs.getColorMode(this)
+        rgbChaseSpeedPercent = RgbEffectPrefs.getSpeedPercent(this)
         vibrationLevelPercent = VibrationPrefs.getLevelPercent(this)
     }
 
@@ -3878,6 +3884,12 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // huong cach VE cac phim, chi anh huong cuong do luc rung khi go -
         // chi can cap nhat bien, khong can xay lai ban phim).
         vibrationLevelPercent = VibrationPrefs.getLevelPercent(this)
+        // THEM (theo yeu cau nguoi dung: "1 cai dat thanh truot cho toc do
+        // chuyen mau nhanh cham"): tuong tu muc rung o tren - toc do RGB
+        // duoc [RGB_CHASE_DEG_PER_FRAME] doc TRUC TIEP tu bien nay MOI
+        // khung hinh (xem getter), nen chi can cap nhat bien la hieu ung
+        // doi toc do NGAY LAP TUC, KHONG can xay lai ca ban phim.
+        rgbChaseSpeedPercent = RgbEffectPrefs.getSpeedPercent(this)
         val needsFullRebuild = newColor != glowColor || newDark != isDarkTheme ||
             newLang1 != lang1 || newLang2 != lang2 || newRgbEnabled != rgbChaseEnabled
         if (needsFullRebuild) {
