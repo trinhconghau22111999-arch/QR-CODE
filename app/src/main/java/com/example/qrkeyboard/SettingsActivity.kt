@@ -188,6 +188,8 @@ class SettingsActivity : AppCompatActivity() {
         content.addView(sectionTitle("C\u00e0i \u0111\u1eb7t QR Keyboard", big = true))
         content.addView(spacer(20))
 
+        content.addView(buildEnableKeyboardSection())
+        content.addView(spacer(24))
         content.addView(buildLanguageSection())
         content.addView(spacer(24))
         content.addView(buildBatteryOptimizationSection())
@@ -267,6 +269,38 @@ class SettingsActivity : AppCompatActivity() {
         }
         setPadding(dp(18), dp(10), dp(18), dp(10))
         setOnClickListener { onClick() }
+    }
+
+    // ───────────── THEM (theo yeu cau nguoi dung): "Cai dat phai vao tu ─────────────
+    // icon app... phai bam vao do de vao trang bat/cai dat ban phim" - TRUOC
+    // DAY chi co redirect TU DONG 1 LAN duy nhat luc ban phim CHUA duoc bat
+    // (xem runKeyboardCheckAndRedirectIfNeeded() o tren), sau khi da bat roi
+    // thi KHONG con cach nao trong app de quay lai trang he thong do nua (vd
+    // muon doi ban phim DANG DUNG sang QR Keyboard, hoac kiem tra lai trang
+    // thai bat/tat). GIO DAY THEM 1 nut RIENG, LUON hien o DAU man Cai dat
+    // (mo tu icon app) - bam vao la mo THANG trang "Ngon ngu & nhap lieu >
+    // Ban phim tren man hinh" cua he thong, noi nguoi dung bat/chon QR
+    // Keyboard lam ban phim dang dung. Day cung la LOI DUY NHAT de vao trang
+    // do tu trong app (nut "Cai dat" o BEN TRONG ban phim - trang Ky hieu -
+    // da bi BO theo yeu cau nguoi dung, xem buildSymbolsPage()/
+    // buildLettersBottomRow() trong QrKeyboardService.kt).
+    private fun buildEnableKeyboardSection(): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        background = cardBackground(accentNow)
+        setPadding(dp(16), dp(14), dp(16), dp(14))
+
+        addView(sectionTitle("B\u1eadt / ch\u1ecdn l\u00e0m b\u00e0n ph\u00edm"))
+        addView(sectionSubtitle(
+            "M\u1edf trang \u0111i\u1ec1u ch\u1EC9nh b\u00e0n ph\u00edm c\u1EE7a h\u1EC7 th\u1ED1ng \u0111\u1EC3 " +
+                "b\u1EADt QR Keyboard v\u00e0/ho\u1EB7c ch\u1ECdn n\u00f3 l\u00e0m b\u00e0n ph\u00edm \u0111ang d\u00f9ng."
+        ))
+        addView(neonButton("\u2328\ufe0f  S\u1eed d\u1EE5ng l\u00e0m b\u00e0n ph\u00edm", accentNow) {
+            try {
+                startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
+            } catch (e: Exception) {
+                Toast.makeText(this@SettingsActivity, "Kh\u00f4ng m\u1edf \u0111\u01b0\u1EE3c trang C\u00e0i \u0111\u1eb7t b\u00e0n ph\u00edm h\u1EC7 th\u1ED1ng", Toast.LENGTH_SHORT).show()
+            }
+        })
     }
 
     // ───────────────────────── 1. Mau sac ─────────────────────────

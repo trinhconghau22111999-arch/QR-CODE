@@ -1521,19 +1521,19 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
     }
 
-    /** Build trang ky hieu (SYMBOLS) - CHI duoc goi khi nguoi dung THAT SU
+    /** Trang Ky hieu (SYMBOLS) - CHi duoc goi khi nguoi dung THAT SU
      *  chuyen toi trang nay, ket qua duoc cache lai qua [cachedSymbolsView].
-     *  Dong tren cung la nut "Cai dat" (xem [buildKeyboardSettingsBar]) mo
-     *  SettingsActivity - noi gio day gom ca phan chon mau sac (truoc day
-     *  la 1 thanh chon mau ngay tai day, da chuyen han sang man Cai dat
-     *  rieng theo yeu cau nguoi dung). */
+     *  SUA (theo yeu cau nguoi dung "\u1EA9n c\u00e0i \u0111\u1EB7t v\u00e0
+     *  mic \u1EDF trang 3 \u0111i"): BO han dong "Cai dat" + Mic truoc day o
+     *  dau trang nay (xem [buildKeyboardSettingsBar] CU - da XOA, thay bang
+     *  [buildMicKeyForLettersPage] o trang 1). Cai dat gio CHi con vao duoc
+     *  tu icon app (xem SettingsActivity.buildEnableKeyboardSection()). */
     private fun buildSymbolsPage(): View {
         clearChaseRegistryForPage(KeyboardMode.SYMBOLS)
         val verticalPaddingDp = if (keyHeightDp < 48) 2 else 6
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(4), dp(verticalPaddingDp), dp(4), 0)
-            addView(buildKeyboardSettingsBar())
             extendedSymbolRows.forEachIndexed { i, row -> addView(buildCharRow(row, rowPhase = i.toFloat() / (extendedSymbolRows.size))) }
             addView(buildExtendedSymbolsRow3())
             addView(buildExtendedSymbolsBottomRow())
@@ -2344,6 +2344,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
 
         val k1 = buildKey("?123", weight = 1.4f, fillRowHeight = true) { switchMode(KeyboardMode.NUMBERS) }
+        row.addView(buildMicKeyForLettersPage(weight = 1f))
         row.addView(k1)
         registerChaseKey(KeyboardMode.LETTERS, k1, 0.078f, 1f)
         val k2 = buildKey(",", weight = 1f, fillRowHeight = true) {
@@ -2537,95 +2538,23 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  rieng (xem SettingsActivity.kt, muc "Mau sac") - ham nay chi con ve 1
      *  NUT DUY NHAT de mo man do len (dung Intent + FLAG_ACTIVITY_NEW_TASK vi
      *  goi tu Context cua 1 Service, khong phai Activity). */
-    private fun buildKeyboardSettingsBar(): View {
-        val btn = Button(this).apply {
-            text = "\u2699\ufe0f  C\u00e0i \u0111\u1eb7t"
-            isAllCaps = false
-            textSize = 14f
-            // SUA (theo phan anh nguoi dung: "Cai dat ro rang thap hon Mic, con
-            // bi tuot xuong khuat mat 1 ti"): nguyen nhan THAT SU khong phai o
-            // margin (da dong bo dung) ma o CACH TINH NOI DUNG khac nhau giua 2
-            // nut - xem giai thich chi tiet o nut Mic ben duoi. Khai bao TUONG
-            // MINH gravity=CENTER + includeFontPadding=false o CA 2 nut de dam
-            // bao cach can giua giong het nhau, khong con phu thuoc vao gia tri
-            // MAC DINH (co the khac nhau ngam giua 2 kieu noi dung text-thuong
-            // vs icon-compound-drawable).
-            gravity = Gravity.CENTER
-            includeFontPadding = false
-            setTextColor(if (isDarkTheme) Color.WHITE else Color.BLACK)
-            stateListAnimator = null
-            elevation = 0f
-            outlineProvider = null
-            // SUA (theo yeu cau nguoi dung: "sua phim cai dat cho can doi, ngang
-            // bang phim micro"): ep minWidth/minHeight ve 0 - Material Button
-            // theo mac dinh co 1 KICH THUOC TOI THIEU rieng cua theme (thuong
-            // ~48dp), co the AM THAM lam nut nay TO/CAO hon dung ban dinh du
-            // layoutParams/padding da khai bao chinh xac ben duoi, gay lech
-            // ro rang so voi nut Mic ben canh (xem giai thich chi tiet o nut
-            // Mic phia duoi).
-            minWidth = 0
-            minHeight = 0
-            minimumWidth = 0
-            minimumHeight = 0
-            background = buildGlowKeyBackground(cornerDp = 10, borderColor = glowColor, borderWidthDp = 2)
-            setPadding(dp(16), dp(10), dp(16), dp(10))
-            // SUA (theo yeu cau nguoi dung: "do khoang cach phia tren cua mic,
-            // roi dung no cho nut cai dat"): margin TREN dung dung 3dp - LAY
-            // TU nut Mic ben canh (gia tri GOC cua no truoc khi sua, xem
-            // giai thich o nut Mic phia duoi) lam CHUAN, thay vi 1dp truoc day.
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, dp(keyHeightDp)
-            ).apply { setMargins(dp(4), dp(3), dp(4), dp(6)) }
-            isHapticFeedbackEnabled = true
-            setOnClickListener {
-                vibrateKeyPress()
-                playKeyClickTone()
-                try {
-                    startActivity(Intent(this@QrKeyboardService, SettingsActivity::class.java).apply {
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        // THEM (theo yeu cau nguoi dung): bao cho SettingsActivity
-                        // biet la dang mo TU BEN TRONG ban phim (nut "Cai dat")
-                        // - KHONG duoc tu dong mo "trang chon ban phim he thong"
-                        // trong truong hop nay (khac voi mo tu icon app tren man
-                        // hinh chinh). Neu nguoi dung dang go duoc bang CHINH ban
-                        // phim nay de bam vao nut do, ro rang no DA duoc bat/dang
-                        // active roi - kiem tra lai la thua va gay phien.
-                        putExtra(SettingsActivity.EXTRA_SKIP_KEYBOARD_CHECK, true)
-                    })
-                } catch (e: Exception) {
-                    android.util.Log.w("QrKeyboardService", "Khong mo duoc SettingsActivity: ${e.message}")
-                }
-            }
-        }
-        // THEM (theo yeu cau nguoi dung, tinh nang nhap lieu bang giong noi):
-        // nut hinh micro, DUNG HANG voi nut "Cai dat" o tren, canh SAT BEN
-        // PHAI CUNG cua hang (dung 1 View "dem" co trong so (weight) = 1f de
-        // day no ra sat le phai, xem [addView] ben duoi).
+    /** SUA (theo yeu cau nguoi dung: "nut micro nho lai bang 1 nut so o
+     *  trang 1, hay lam cho no xuat hien o trang 1 thoi. An cai dat va mic o
+     *  trang 3 di"): TRUOC DAY day la [buildKeyboardSettingsBar] - ve CA nut
+     *  "Cai dat" (mo SettingsActivity) LAN nut Mic, dat o DAU trang Ky hieu
+     *  (trang 3). GIO DAY: BO HAN nut "Cai dat" (Cai dat chi con vao duoc tu
+     *  icon app - xem SettingsActivity.buildEnableKeyboardSection()), va nut
+     *  Mic duoc CHUYEN sang trang Chu cai (trang 1, xem loi goi trong
+     *  [buildLettersBottomRow]), thu NHO lai dung BANG 1 phim so binh
+     *  thuong (weight=1f, cao/rong nhu cac phim khac trong hang - khac han
+     *  kich thuoc WRAP_CONTENT + padding lon truoc day). */
+    private fun buildMicKeyForLettersPage(weight: Float = 1f): Button {
         val micBtn = Button(this).apply {
-            // SUA (nguyen nhan CHINH gay lech vi tri so voi nut "Cai dat", theo
-            // phan anh nguoi dung): setCompoundDrawables(null, icon, null, null)
-            // dat icon o VI TRI "TOP" cua compound drawable, dung cho truong hop
-            // TEXT o BEN DUOI icon do (kieu "icon tren, chu duoi") - dù text="",
-            // Android VAN tinh 1 KHOANG TRONG cho dong chu "ao" do theo font-
-            // metrics MAC DINH (line height khong tu bien mat chi vi chuoi
-            // rong), lam KHOI NOI DUNG "icon + dong chu ao" CAO HON han khoi chi
-            // co 1 dong chu that su cua nut "Cai dat" ben canh - khi ca 2 cung
-            // canh giua trong khung CAO BANG NHAU, icon Mic bi day LEN CAO hon
-            // vi tri that su, con chu "Cai dat" (kem dau tieng Viet nhu "ặ" can
-            // nhieu khoang trong hon) lai bi lech xuong duoi/gan bi cat mat.
-            //
-            // Khai bao TUONG MINH textSize=14f (BANG nut "Cai dat", truoc day
-            // KHONG he set gi ca cho nut nay) + includeFontPadding=false (bo
-            // phan dem font them vao tren/duoi dong chu, thuong la nguyen nhan
-            // chinh khien "dong chu ao" chiem nhieu khong gian hon can thiet) +
-            // gravity=CENTER (tuong minh, khong phu thuoc mac dinh) - giam toi
-            // da chenh lech chieu cao giua 2 khoi noi dung, dam bao canh giua
-            // giong nhu nut "Cai dat".
             text = ""
             textSize = 14f
             gravity = Gravity.CENTER
             includeFontPadding = false
-            val iconSize = dp(20)
+            val iconSize = dp(18)
             val micIcon = MicIconDrawable(if (isDarkTheme) Color.WHITE else Color.BLACK, listening = false, sizePx = iconSize)
             micIcon.setBounds(0, 0, iconSize, iconSize)
             setCompoundDrawables(null, micIcon, null, null)
@@ -2633,22 +2562,18 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             stateListAnimator = null
             elevation = 0f
             outlineProvider = null
-            // SUA (theo yeu cau nguoi dung: "do khoang cach phia tren cua mic,
-            // roi dung no cho nut cai dat"): GIU NGUYEN margin tren GOC cua nut
-            // Mic (3dp) - day la CHUAN duoc chon, khong doi gi ca o day. Padding
-            // (16/10/16/10) va minWidth/minHeight = 0 van duoc dong bo voi nut
-            // "Cai dat" o tren (nguyen nhan chinh gay lech kich thuoc, xem giai
-            // thich chi tiet o nut do) - chi khac margin TREN la CO Y, dung dung
-            // 3dp lay tu nut nay lam chuan.
             minWidth = 0
             minHeight = 0
             minimumWidth = 0
             minimumHeight = 0
             background = buildGlowKeyBackground(cornerDp = 10, borderColor = glowColor, borderWidthDp = 2)
-            setPadding(dp(16), dp(10), dp(16), dp(10))
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, dp(keyHeightDp)
-            ).apply { setMargins(dp(4), dp(3), dp(4), dp(6)) }
+            // SUA: kich thuoc/margin GIONG HET cac phim thuong khac trong
+            // cung hang (xem [buildKey]) - MATCH_PARENT chieu cao (fill dung
+            // chieu cao hang, khong con dp(keyHeightDp) rieng + padding lon
+            // nhu truoc), margin dp(1) deu 4 canh thay vi 4/3/4/6 truoc day.
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, weight).apply {
+                setMargins(dp(1), dp(1), dp(1), dp(1))
+            }
             isHapticFeedbackEnabled = true
             contentDescription = "Nh\u1eadp li\u1ec7u b\u1eb1ng gi\u1ecdng n\u00f3i"
             setOnClickListener {
@@ -2659,23 +2584,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
         // THEM: giu tham chieu nut Mic de co the tu cap nhat icon/mau ngay
         // luc dang nghe (dang "listening") ma KHONG can ve lai (redraw) ca
-        // trang - trang Ky hieu (noi chua nut nay) duoc CACHE, hiem khi ve
-        // lai, nen cap nhat truc tiep field nay la cach nhanh + on dinh
-        // nhat (xem [updateMicButtonUi]).
+        // trang (xem [updateMicButtonUi]).
         micButtonRef = micBtn
-        registerChaseKey(KeyboardMode.SYMBOLS, btn, 0.1f, 1f)
-        registerChaseKey(KeyboardMode.SYMBOLS, micBtn, 0.9f, 1f)
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-            addView(btn)
-            addView(View(this@QrKeyboardService).apply {
-                layoutParams = LinearLayout.LayoutParams(0, 0, 1f)
-            })
-            addView(micBtn)
-        }
+        registerChaseKey(KeyboardMode.LETTERS, micBtn, 0.03f, 1f)
+        return micBtn
     }
 
     /** THEM (theo yeu cau nguoi dung "mic phải dùng mic riêng"): bam nut Mic.
@@ -2773,7 +2685,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     private fun updateMicButtonUi() {
         val btn = micButtonRef ?: return
         try {
-            val iconSize = dp(20)
+            val iconSize = dp(18)
             if (isListeningForVoice) {
                 // SUA (CHi doi PHAN ICON, dong background/vien mau do PHIA
                 // DUOI giu NGUYEN nhu truoc, khong dung toi):
