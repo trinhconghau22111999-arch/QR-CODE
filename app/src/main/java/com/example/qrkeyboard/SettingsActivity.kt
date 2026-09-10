@@ -190,6 +190,8 @@ class SettingsActivity : AppCompatActivity() {
 
         content.addView(buildLanguageSection())
         content.addView(spacer(24))
+        content.addView(buildBatteryOptimizationSection())
+        content.addView(spacer(24))
         content.addView(buildColorSection())
         content.addView(spacer(24))
         content.addView(buildRgbEffectSection())
@@ -762,6 +764,58 @@ class SettingsActivity : AppCompatActivity() {
     private fun refreshLimitText() {
         if (!::limitValueText.isInitialized) return
         limitValueText.text = ScanLimitPrefs.getConsecutiveLimit(this).toString()
+    }
+
+    // ─────────────────── 3b. Chong bi he thong "giet" ban phim ───────────────────
+
+    /** THEM (dieu tra "ban phim tu dong tat/mo lai giua luc dang go" - xem log
+     *  "onDestroy - service bi kill" nguoi dung ghi nhan duoc): DA co
+     *  onTrimMemory()/onLowMemory() trong QrKeyboardService de TU NGUYEN nha
+     *  bot bo nho khi he thong bao hieu - nhung tren nhieu ROM tuy bien (MIUI,
+     *  ColorOS, FuntouchOS, One UI...), nguyen nhan CHINH khien IME bi giet
+     *  KHONG PHAI thieu RAM ma la co che "toi uu pin" RIENG cua hang, tu dong
+     *  giet han cac tien trinh nen "it dung gan day" - HOAN TOAN nam NGOAI
+     *  tam kiem soat cua code app, chi nguoi dung tu tay loai tru trong Cai
+     *  dat he thong moi het.
+     *
+     *  KHONG dung Intent.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS (mo
+     *  thang hop thoai xin loai tru) vi no doi hoi khai bao quyen
+     *  REQUEST_IGNORE_BATTERY_OPTIMIZATIONS trong Manifest - quyen nay bi
+     *  Google Play HAN CHE RAT CHAT (phai khai bao ly do dac biet, ung dung
+     *  ban phim thong thuong KHONG du dieu kien), co the khien ban Google
+     *  Play (xem flavor GOOGLE_PLAY trong app/build.gradle) BI TU CHOI DUYET.
+     *  Dung Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS thay the -
+     *  chi MO man hinh danh sach ung dung de nguoi dung TU TIM va tat toi uu
+     *  pin cho dung app nay, KHONG can quyen dac biet nao ca, an toan Play. */
+    private fun buildBatteryOptimizationSection(): View {
+        val wrap = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = cardBackground()
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+        }
+        wrap.addView(sectionTitle("Ch\u1ed1ng b\u1ecb h\u1ec7 th\u1ed1ng \u201cgi\u1ebft\u201d b\u00e0n ph\u00edm"))
+        wrap.addView(sectionSubtitle(
+            "N\u1ebfu b\u00e0n ph\u00edm hay t\u1ef1 t\u1eaft/m\u1edf l\u1ea1i gi\u1eefa l\u00fac \u0111ang g\u00f5, nguy\u00ean nh\u00e2n th\u01b0\u1eddng KH\u00d4NG ph\u1ea3i l\u1ed7i \u1ee9ng d\u1ee5ng m\u00e0 do \u0111i\u1ec7n tho\u1ea1i (\u0111\u1eb7c bi\u1ec7t Xiaomi/Oppo/Vivo/Samsung) t\u1ef1 \u0111\u1ed9ng \u201ct\u1ed1i \u01b0u pin\u201d r\u1ed3i \u0111\u00f3ng b\u1edbt \u1ee9ng d\u1ee5ng \u00edt d\u00f9ng g\u1ea7n \u0111\u00e2y. B\u1ea5m n\u00fat d\u01b0\u1edbi \u0111\u00e2y, t\u00ecm \u201cQR Keyboard\u201d trong danh s\u00e1ch v\u00e0 ch\u1ecdn \u201cKh\u00f4ng t\u1ed1i \u01b0u\u201d / \u201cKh\u00f4ng gi\u1edbi h\u1ea1n\u201d \u0111\u1ec3 gi\u1ea3m h\u1eb3n t\u00ecnh tr\u1ea1ng n\u00e0y."
+        ))
+        wrap.addView(spacer(10))
+        wrap.addView(neonButton("M\u1edf c\u00e0i \u0111\u1eb7t t\u1ed1i \u01b0u pin", accentNow) { openBatteryOptimizationSettings() })
+        return wrap
+    }
+
+    private fun openBatteryOptimizationSettings() {
+        try {
+            startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
+        } catch (e: Exception) {
+            // May khong co man hinh nay (hiem, tuy ROM) - mo trang chi tiet
+            // ung dung lam phuong an du phong, nguoi dung tu vao muc Pin.
+            try {
+                startActivity(
+                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+                )
+            } catch (e2: Exception) {
+                Toast.makeText(this, "Kh\u00f4ng m\u1edf \u0111\u01b0\u1ee3c c\u00e0i \u0111\u1eb7t pin tr\u00ean m\u00e1y n\u00e0y.", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     // ─────────────────── 3. Du lieu quet hom nay (Excel) ───────────────────

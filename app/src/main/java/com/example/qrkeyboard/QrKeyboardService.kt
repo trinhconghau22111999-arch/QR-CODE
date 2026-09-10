@@ -4363,6 +4363,20 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         cachedShiftKey = null
         cachedLetterKeys.clear()
     }
+
+    /** THEM (dieu tra tiep "onDestroy - service bi kill" van con xay ra du da co
+     *  [onTrimMemory]): mot so thiet bi/phien ban Android (dac biet cac ROM tuy
+     *  bien nhu MIUI/ColorOS/FuntouchOS) KHONG goi [onTrimMemory] deu dan truoc
+     *  khi giet tien trinh nen (chi goi rieng [onLowMemory] cua Service - callback
+     *  CU HON, "tat ca hoac khong" - hoac THAM CHI khong goi callback nao ca ma
+     *  giet thang qua co che rieng cua hang, xem ghi chu cuoi file nay). De phong
+     *  ho cho truong hop [onLowMemory] duoc goi ma [onTrimMemory] thi khong, xu
+     *  ly y het nhu muc nghiem trong nhat (TRIM_MEMORY_COMPLETE) - giai phong
+     *  toan bo cache trang KHONG dang hien, giu nguyen trang hien tai. */
+    override fun onLowMemory() {
+        super.onLowMemory()
+        onTrimMemory(android.content.ComponentCallbacks2.TRIM_MEMORY_COMPLETE)
+    }
 }
 
 /**
