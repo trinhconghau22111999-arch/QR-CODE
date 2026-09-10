@@ -1418,7 +1418,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val verticalPaddingDp = if (keyHeightDp < 48) 2 else 6
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(4), dp(verticalPaddingDp), dp(4), dp(verticalPaddingDp + EXTRA_BOTTOM_LIFT_DP))
+            setPadding(dp(4), dp(verticalPaddingDp), dp(4), 0)
         }
 
         when (mode) {
@@ -1513,7 +1513,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val verticalPaddingDp = if (keyHeightDp < 48) 2 else 6
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(4), dp(verticalPaddingDp), dp(4), dp(verticalPaddingDp + EXTRA_BOTTOM_LIFT_DP))
+            setPadding(dp(4), dp(verticalPaddingDp), dp(4), 0)
             addView(buildEmojiRow())
             numberRows.forEachIndexed { i, row -> addView(buildCharRow(row, rowPhase = i.toFloat() / (numberRows.size))) }
             addView(buildNumbersRow3())
@@ -1532,7 +1532,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val verticalPaddingDp = if (keyHeightDp < 48) 2 else 6
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(4), dp(verticalPaddingDp), dp(4), dp(verticalPaddingDp + EXTRA_BOTTOM_LIFT_DP))
+            setPadding(dp(4), dp(verticalPaddingDp), dp(4), 0)
             addView(buildKeyboardSettingsBar())
             extendedSymbolRows.forEachIndexed { i, row -> addView(buildCharRow(row, rowPhase = i.toFloat() / (extendedSymbolRows.size))) }
             addView(buildExtendedSymbolsRow3())
@@ -1564,7 +1564,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val verticalPaddingDp = if (keyHeightDp < 48) 2 else 6
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(4), dp(verticalPaddingDp), dp(4), dp(verticalPaddingDp + EXTRA_BOTTOM_LIFT_DP))
+            setPadding(dp(4), dp(verticalPaddingDp), dp(4), 0)
         }
 
         // Dong 1: 1, 2, 3, Xoa
@@ -1619,7 +1619,13 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // gop lai), nen nhin no "to gap doi" so voi 1 nut thuong va lap kin
         // khoang trong phia duoi truoc day.
         val subRow4HeightPx = dp(keyHeightDp + 2)
-        val subRow4BottomMarginPx = dp(6)
+        // SUA (theo yeu cau nguoi dung: "hang phim cuoi cung con du khoang
+        // cach voi vien duoi, chinh no ve 0"): bo hoan toan margin duoi cua
+        // dong con 3b (subRow4) - day la PHAN CUOI CUNG cua trang Numpad
+        // (khong con gi sau no trong [root]), margin nay truoc day chi tao
+        // khoang trong thua o day ban phim (xem giai thich chi tiet o
+        // [buildLettersBottomRow]).
+        val subRow4BottomMarginPx = 0
         val subRow3HeightPx = dp(keyHeightDp + 2) // WRAP_CONTENT thuc te cua 1 dong phim thuong (cao phim + 2*margin doc)
         val row34TotalHeightPx = subRow3HeightPx + subRow4HeightPx + subRow4BottomMarginPx
 
@@ -2325,9 +2331,16 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(keyHeightDp + 2)
-            ).apply {
-                bottomMargin = dp(6)
-            }
+            )
+            // SUA (theo yeu cau nguoi dung: "hang phim cuoi cung con du
+            // khoang cach voi vien duoi, chinh no ve 0"): BO bottomMargin =
+            // dp(6) TRUOC DAY o day - vi day la hang CUOI CUNG cua trang
+            // Chu cai (khong con hang nao khac sau no trong [root] cua
+            // [buildLettersPage]), margin duoi nay TRUOC GIO chi tao ra
+            // khoang trong THUA giua hang phim cuoi va canh duoi cua ban
+            // phim (KHONG phai do he dieu hanh/thanh dieu huong gay ra nhu
+            // nghi truoc do) - gio bang 0 de het hoan toan khoang du thua
+            // do.
         }
 
         val k1 = buildKey("?123", weight = 1.4f, fillRowHeight = true) { switchMode(KeyboardMode.NUMBERS) }
@@ -2417,7 +2430,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(keyHeightDp + 2)
-            ).apply { bottomMargin = dp(6) }
+            )
+            // SUA: bo bottomMargin = dp(6) - day la hang CUOI CUNG cua
+            // trang So, margin duoi truoc day chi tao khoang trong thua o
+            // day ban phim (xem giai thich chi tiet o [buildLettersBottomRow]).
         }
 
         val nb1 = buildKey("ABC", weight = 1.4f, fillRowHeight = true) { switchMode(KeyboardMode.LETTERS) }
@@ -2481,7 +2497,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, dp(keyHeightDp + 2)
-            ).apply { bottomMargin = dp(6) }
+            )
+            // SUA: bo bottomMargin = dp(6) - day la hang CUOI CUNG cua
+            // trang Ky hieu, margin duoi truoc day chi tao khoang trong
+            // thua o day ban phim (xem giai thich chi tiet o
+            // [buildLettersBottomRow]).
         }
 
         val sb1 = buildKey("ABC", weight = 1.4f, fillRowHeight = true) { switchMode(KeyboardMode.LETTERS) }
