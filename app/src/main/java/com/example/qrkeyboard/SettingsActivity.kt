@@ -331,7 +331,10 @@ class SettingsActivity : AppCompatActivity() {
     private fun renderLanguageRows() {
         languageStatusText.text = when (pendingSelectedLanguages.size) {
             2 -> {
-                val (a, b) = pendingSelectedLanguages.toList()
+                val list = pendingSelectedLanguages.toList()
+                // Hien thi DUNG thu tu se duoc luu (xem toggleLanguage): "vi"
+                // luon hien truoc neu co, khong phu thuoc thu tu bam tick.
+                val (a, b) = if (list.contains("vi")) "vi" to list.first { it != "vi" } else list[0] to list[1]
                 "\u0110ang d\u00f9ng: ${LanguagePrefs.displayName(a)}  <->  ${LanguagePrefs.displayName(b)}"
             }
             // SUA (theo yeu cau nguoi dung "phải cho phép chỉ chọn 1 ngôn
@@ -424,7 +427,23 @@ class SettingsActivity : AppCompatActivity() {
         // (hoac bam nut "Xac nhan chi dung 1 ngon ngu" o che do 1 ngon ngu -
         // xem [renderLanguageRows]).
         if (pendingSelectedLanguages.size == 2) {
-            val (a, b) = pendingSelectedLanguages.toList()
+            // SUA (theo yeu cau nguoi dung "cần cố định là tiếng Việt trước
+            // ... hiện tại nó ưu tiên tiếng Anh hơn"): TRUOC DAY dung THANG
+            // thu tu trong [pendingSelectedLanguages] (mot LinkedHashSet) de
+            // gan lang1/lang2 - thu tu do la THU TU NGUOI DUNG BAM TICH, HOAN
+            // TOAN ngau nhien (vd bam "Tiếng Anh" TRUOC roi "Tiếng Việt" SAU
+            // se khien "en" thanh lang1, "vi" thanh lang2). GIO DAY: neu
+            // "vi" nam trong 2 ngon ngu vua chon, LUON co dinh no lam lang1
+            // (uu tien) bat ke bam tick theo thu tu nao - ket hop voi
+            // [QrKeyboardService.activeIsLang1] mac dinh true (uu tien lang1)
+            // dam bao Tieng Viet LUON la ngon ngu active mac dinh moi khi ban
+            // phim duoc mo/tao lai, dung yeu cau nguoi dung.
+            val list = pendingSelectedLanguages.toList()
+            val (a, b) = if (list.contains("vi")) {
+                "vi" to list.first { it != "vi" }
+            } else {
+                list[0] to list[1]
+            }
             LanguagePrefs.setSelectedLanguages(this, a, b)
         }
         renderLanguageRows()

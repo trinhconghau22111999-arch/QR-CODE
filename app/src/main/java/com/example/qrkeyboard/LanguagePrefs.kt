@@ -128,6 +128,15 @@ object LanguagePrefs {
         val l1 = p.getString(KEY_LANG_1, DEFAULT_LANG_1) ?: DEFAULT_LANG_1
         val l2Raw = p.getString(KEY_LANG_2, DEFAULT_LANG_2) ?: DEFAULT_LANG_2
         val l2 = if (l2Raw.isBlank()) null else l2Raw
+        // SUA (theo yeu cau nguoi dung "cần cố định là tiếng Việt trước ...
+        // hiện tại nó ưu tiên tiếng Anh hơn"): AP DUNG NGAY tai day (khong
+        // chi luc luu moi trong SettingsActivity) de sua LUON cho ca nguoi
+        // dung DA TUNG luu nguoc ("en" thanh lang1) tu ban cu truoc day, ma
+        // KHONG can ho phai tu tay vao Cai dat bo tick + tick lai. Neu "vi"
+        // dang nam o lang2, hoan doi vi tri de "vi" LUON la lang1 (uu tien) -
+        // ket hop voi [QrKeyboardService.activeIsLang1] mac dinh true dam
+        // bao Tieng Viet LUON la ngon ngu active mac dinh.
+        if (l1 != "vi" && l2 == "vi") return "vi" to l1
         return l1 to l2
     }
 

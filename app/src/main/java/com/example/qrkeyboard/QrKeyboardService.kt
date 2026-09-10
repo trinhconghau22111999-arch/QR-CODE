@@ -419,11 +419,21 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     // ngon ngu thu 2 de vuot phim cach doi qua lai.
     private var lang2: String? = LanguagePrefs.DEFAULT_LANG_2
 
-    /** True = dang dung [lang1], false = dang dung [lang2]. GIU NGUYEN gia
-     *  tri mac dinh CU (false) de KHONG doi hanh vi nguoi dung dang quen -
-     *  truoc day "isVietnameseMode = false" nghia la mac dinh mo len dang o
-     *  che do go thuong/Anh, tuong duong voi active = lang2 ("en") o day. */
-    private var activeIsLang1 = false
+    /** True = dang dung [lang1], false = dang dung [lang2].
+     *  SUA (theo yeu cau nguoi dung "cần cố định là tiếng Việt trước ... hiện
+     *  tại nó ưu tiên tiếng Anh hơn, tôi không muốn"): TRUOC DAY mac dinh la
+     *  false (tuc mac dinh MO LEN o [lang2], vd "en" trong cap vi/en mac
+     *  dinh) - MOI lan tien trinh ban phim duoc tao moi (rat thuong xuyen,
+     *  xem dieu tra "onDestroy - service bi kill"), bien nay lai bi RESET VE
+     *  false, khien ban phim LUON mo len bang tieng Anh thay vi tieng Viet du
+     *  nguoi dung dang dung che do 2 ngon ngu Viet+Anh - dung y het trieu
+     *  chung nguoi dung mo ta. GIO DAY mac dinh true (uu tien [lang1]) - kem
+     *  voi fix o [LanguagePrefs]/[SettingsActivity.toggleLanguage] dam bao
+     *  "vi" LUON duoc luu vao đúng [lang1] (bat ke thu tu tich chon trong man
+     *  Cai dat) - ket qua: bat ky luc nao ban phim moi duoc tao (mo lan dau,
+     *  doi o nhap, hoac tien trinh bi tao lai), tieng Viet LUON la ngon ngu
+     *  active mac dinh khi dang dung che do 2 ngon ngu co Tieng Viet. */
+    private var activeIsLang1 = true
 
     // SUA: neu [lang2] la null (che do 1 ngon ngu), LUON dung [lang1] bat ke
     // [activeIsLang1] dang la gi (khong the "active" vao 1 ngon ngu khong
