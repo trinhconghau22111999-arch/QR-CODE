@@ -3704,6 +3704,30 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 currentWordCased.deleteCharAt(currentWordCased.length - 1)
             }
         }
+        // SUA LOI THUC SU (dieu tra "phim tu in hoa khi go ra chu thuong,
+        // ngau nhien, khong ro quy luat, o moi o nhap"): TRUOC DAY o day
+        // KHONG bao gio reset [capitalizeAppliedAtPrefixLen] khi XOA MOT
+        // PHAN cua tu (chi reset khi o nhap TRO THANH RONG HOAN TOAN, xem
+        // [shouldRearmCapitalize] ben duoi). [capitalizeAppliedAtPrefixLen]
+        // von chi la 1 MOC VI TRI TAM THOI (danh dau vi tri VUA duoc viet
+        // hoa, de [insertVietnameseChar] con nhan ra VA GIU hoa dung khi
+        // cac phim TIEP THEO gop dau/dau thanh vao dung ky tu do, vd
+        // "a"+"a"->"â") - CHI con y nghia trong VAI nhip go NGAY SAU do,
+        // KHONG con dung khi nguoi dung da XOA (cau truc tu thay doi hoan
+        // toan). Neu KHONG reset, moc vi tri CU (vd = 0, tu lan viet hoa
+        // dau cau/dau dong TRUOC do) co the TINH CO trung voi do dai tu
+        // MOI dang go (commonPrefixLen) o 1 THOI DIEM HOAN TOAN KHONG LIEN
+        // QUAN sau nay (vd nguoi dung xoa lui roi go lai 1 tu KHAC) -
+        // dieu kien trong [insertVietnameseChar] (commonPrefixLen ==
+        // capitalizeAppliedAtPrefixLen && !capitalizeNextLetter) se VO
+        // TINH kich hoat lai viet hoa cho 1 chu KHONG he lien quan gi den
+        // dau cau/dau dong ca - dung khop trieu chung nguoi dung mo ta:
+        // "ngau nhien, khong ro quy luat, o moi o nhap binh thuong" (vi no
+        // phu thuoc VI TRI TRUNG HOP NGAU NHIEN sau khi xoa, khong phu
+        // thuoc hanh dong ro rang nao ca). SUA: reset ve null MOI LAN bam
+        // Xoa (⌫) - moc vi tri cu KHONG CON GIA TRI SU DUNG nua ngay khi
+        // nguoi dung da thao tac xoa, bat ke xoa het hay xoa 1 phan.
+        capitalizeAppliedAtPrefixLen = null
 
         // THEM (theo yeu cau nguoi dung): "xoa het viet lai thi van [tu dong
         // viet hoa chu dau]" - neu SAU khi xoa, O NHAP TRO THANH RONG HOAN
