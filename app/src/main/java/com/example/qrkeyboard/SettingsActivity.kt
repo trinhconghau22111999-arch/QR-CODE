@@ -147,33 +147,17 @@ class SettingsActivity : AppCompatActivity() {
         // [EXTRA_SKIP_KEYBOARD_CHECK] = true), vi ro rang ban phim DANG
         // duoc dung/da bat roi, kiem tra lai la thua va gay phien luc dang
         // go do.
-        val skipKeyboardCheck = intent?.getBooleanExtra(EXTRA_SKIP_KEYBOARD_CHECK, false) ?: false
-        // LƯU Ý: không cần tự kiểm tra lại "có log lỗi đang chờ xem hay không" ở đây nữa - hàm
-        // này giờ CHỈ được gọi (làm callback của showLastCrashIfAny() ở onCreate()) SAU KHI log
-        // lỗi (nếu có) đã được người dùng xem xong + CrashReporter.clearLastCrash() đã chạy, hoặc
-        // NGAY LẬP TỨC nếu vốn không có log nào - cả 2 trường hợp đều đã an toàn để kiểm tra bàn
-        // phím bên dưới, không còn nguy cơ đè lên hộp thoại lỗi đang hiện nữa.
-        if (!skipKeyboardCheck && !isKeyboardEnabled()) {
-            try {
-                startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
-            } catch (e: Exception) {
-                // Bo qua - khong de loi hiem gap o day chan nguoi dung.
-            }
-            // SUA LOI nguoi dung phan anh ("cai dat xong bam thoat ra bi
-            // lap lai trang 1 cai roi moi thoat"): TRUOC DAY Activity nay
-            // KHONG finish() o day - van con "song" duoi trang he thong vua
-            // mo. Nguoi dung bat ban phim xong bam Back se QUAY LAI man Cai
-            // dat nay (hien ra 1 lan nua), phai bam Back THEM 1 LAN NUA moi
-            // thuc su thoat khoi app - "lap lai trang" dung nhu mo ta. SUA:
-            // finish() NGAY va return - KHONG build giao dien Cai dat trong
-            // truong hop nay - bam Back tu trang he thong se ra thang MAN
-            // HINH CHINH/app truoc do, khong con quay lai day nua. Lan sau
-            // mo lai app (da bat ban phim roi) se vao thang man Cai dat binh
-            // thuong, khong con bi chuyen huong nua.
-            finish()
-            return
-        }
-
+        // SUA (theo phan anh nguoi dung: "bam icon app khong mo trang Cai
+        // dat ma chi mo bang loi, roi vao thang trang bat ban phim...Cai
+        // dat dau?"): TRUOC DAY neu ban phim CHUA duoc bat trong danh sach
+        // he thong (isKeyboardEnabled() = false), code o day se TU DONG mo
+        // thang trang he thong ("Ban phim tren man hinh") RIO finish() Activity
+        // NGAY - khong bao gio hien man Cai dat cua APP ca, gay nham lan
+        // "Cai dat dau roi?" dung nhu nguoi dung mo ta. BO HAN buoc tu dong
+        // chuyen huong nay - gio LUON xay dung + hien man Cai dat cua app
+        // (co san nut "Su dung lam ban phim" ngay o dau, xem
+        // [buildEnableKeyboardSection]) cho nguoi dung TU bam khi can, thay
+        // vi ep buoc chuyen huong ho.
         val root = ScrollView(this).apply {
             setBackgroundColor(bgColor)
             layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)

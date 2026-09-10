@@ -1423,7 +1423,16 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
         when (mode) {
             KeyboardMode.LETTERS -> {
-                root.addView(buildCharRow(numberRows[0], rowPhase = 0f, heightDp = topNumberRowHeightDp))
+                // SUA (theo yeu cau nguoi dung: "nut mic xuong goc trai duoi
+                // roi...doi len tren cung, nam tren hang so luon, ben phai
+                // cung"): mic KHONG con o hang duoi cung nua (xem
+                // [buildLettersBottomRow]) - gio duoc THEM truc tiep vao
+                // CUOI (ben phai cung) cua CHINH hang so tren cung nay,
+                // cung kich thuoc 75% ([topNumberRowHeightDp]) nhu 10 phim
+                // so ben canh.
+                val topNumberRow = buildCharRow(numberRows[0], rowPhase = 0f, heightDp = topNumberRowHeightDp)
+                topNumberRow.addView(buildMicKeyForLettersPage(weight = 1f))
+                root.addView(topNumberRow)
                 letterRows.forEachIndexed { index, row ->
                     // SUA LOI (theo yeu cau nguoi dung): hang chu THU 2 tu
                     // tren xuong ("asdfghjkl", 9 ky tu) TRUOC DAY bi kiem
@@ -2344,7 +2353,6 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
 
         val k1 = buildKey("?123", weight = 1.4f, fillRowHeight = true) { switchMode(KeyboardMode.NUMBERS) }
-        row.addView(buildMicKeyForLettersPage(weight = 1f))
         row.addView(k1)
         registerChaseKey(KeyboardMode.LETTERS, k1, 0.078f, 1f)
         val k2 = buildKey(",", weight = 1f, fillRowHeight = true) {
@@ -2586,7 +2594,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // luc dang nghe (dang "listening") ma KHONG can ve lai (redraw) ca
         // trang (xem [updateMicButtonUi]).
         micButtonRef = micBtn
-        registerChaseKey(KeyboardMode.LETTERS, micBtn, 0.03f, 1f)
+        // SUA: vi tri chay den RGB cap nhat theo vi tri MOI cua mic (cot
+        // NGOAI CUNG BEN PHAI, HANG TREN CUNG - truoc day la 1f/0.03 tuc
+        // cot trai/hang duoi).
+        registerChaseKey(KeyboardMode.LETTERS, micBtn, 1f, 0f)
         return micBtn
     }
 
