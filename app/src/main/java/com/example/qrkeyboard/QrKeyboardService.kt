@@ -1443,6 +1443,15 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 // so ben canh.
                 val topNumberRow = buildCharRow(numberRows[0], rowPhase = 0f, heightDp = topNumberRowHeightDp)
                 topNumberRow.addView(buildMicKeyForLettersPage(weight = 1f))
+                // SUA (theo yeu cau nguoi dung: "tang khoang cach cua hang
+                // so tren cung va hang chu ke ngay duoi no thanh gap 3 lan
+                // hien tai"): khoang cach HIEN TAI giua 2 hang nay CHi den
+                // tu margin RIENG cua tung phim (buildKey tu dat margin
+                // dp(1) deu 4 canh) - tuc 1dp (le duoi cua hang so) + 1dp
+                // (le tren cua hang chu ben duoi) = 2dp TONG CONG. De thanh
+                // GAP 3 LAN (2dp -> 6dp), THEM bottomMargin = dp(4) rieng
+                // cho CHINH hang so nay (2dp co san + 4dp them vao = 6dp).
+                (topNumberRow.layoutParams as LinearLayout.LayoutParams).bottomMargin = dp(4)
                 root.addView(topNumberRow)
                 letterRows.forEachIndexed { index, row ->
                     // SUA LOI (theo yeu cau nguoi dung): hang chu THU 2 tu
