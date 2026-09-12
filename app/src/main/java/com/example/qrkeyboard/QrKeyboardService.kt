@@ -1550,7 +1550,25 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(verticalPaddingDp), 0, 0)
             addView(buildEmojiRow())
-            numberRows.forEachIndexed { i, row -> addView(buildCharRow(row, rowPhase = i.toFloat() / (numberRows.size))) }
+            // SUA LOI (theo phan anh nguoi dung: "chay nhieu mau thi trang 2
+            // va ca trang 3 deu bi: 2 hang tren khong chay mau ma co dinh 1
+            // mau"): buildCharRow() mac dinh dang ky hieu ung RGB cho phim
+            // theo [chasePage = mode] (gia tri BIEN "mode" hien tai) - NHUNG
+            // ham nay duoc goi tu [prewarmOtherPagesIfIdle()] (dung TRUOC,
+            // luc nguoi dung con dang o trang Chu cai, "mode" luc do VAN LA
+            // KeyboardMode.LETTERS) chu KHONG PHAI luc nguoi dung THAT SU
+            // chuyen sang trang So - khien 2 hang so (numberRows[0]/[1]) bi
+            // dang ky NHAM vao nhom LETTERS thay vi NUMBERS, nen vong lap
+            // hoat hinh RGB (chi duyet dung nhom KeyboardMode.NUMBERS) BO
+            // QUA hoan toan 2 hang nay -> dung yen 1 mau co dinh. Hang 3
+            // ([buildNumbersRow3]) va hang duoi cung KHONG bi loi nay vi
+            // chung tu goi registerChaseKey() VOI KeyboardMode.NUMBERS
+            // "cung" tuong minh, khong phu thuoc "mode" hien tai. SUA: truyen
+            // THANG chasePage = KeyboardMode.NUMBERS o day, khong con dua
+            // vao gia tri mac dinh (theo "mode") nua.
+            numberRows.forEachIndexed { i, row ->
+                addView(buildCharRow(row, rowPhase = i.toFloat() / (numberRows.size), chasePage = KeyboardMode.NUMBERS))
+            }
             addView(buildNumbersRow3())
             addView(buildNumbersBottomRow())
         }
@@ -1569,7 +1587,13 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(verticalPaddingDp), 0, 0)
-            extendedSymbolRows.forEachIndexed { i, row -> addView(buildCharRow(row, rowPhase = i.toFloat() / (extendedSymbolRows.size))) }
+            // SUA LOI (giai thich chi tiet o [buildNumbersPage] - loi tuong
+            // tu, cung do prewarm goi ham nay luc "mode" con la LETTERS):
+            // truyen THANG chasePage = KeyboardMode.SYMBOLS, khong dua vao
+            // gia tri mac dinh (theo "mode") cua [buildCharRow] nua.
+            extendedSymbolRows.forEachIndexed { i, row ->
+                addView(buildCharRow(row, rowPhase = i.toFloat() / (extendedSymbolRows.size), chasePage = KeyboardMode.SYMBOLS))
+            }
             addView(buildExtendedSymbolsRow3())
             addView(buildExtendedSymbolsBottomRow())
         }
