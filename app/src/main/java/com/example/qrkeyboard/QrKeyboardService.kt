@@ -3808,46 +3808,30 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         if (shouldRearmCapitalize) updateShiftStateInPlace()
     }
 
+    /** SUA (theo yeu cau nguoi dung: "phim enter dang co luc khong phan biet
+     *  duoc la dang tim kiem hay xuong dong....hay doi lenh cua phim nay
+     *  thanh enter cung"): TRUOC DAY ham nay "thong minh" tuy theo ngu canh -
+     *  o nhap 1 dong CO action rieng (Tim kiem/Di/Gui/Xong...) thi GOI HANH
+     *  DONG do (ic.performEditorAction), chi xuong dong that su o o nhap
+     *  NHIEU DONG hoac o KHONG co action nao dac biet - gay ra dung trieu
+     *  chung nguoi dung mo ta: co luc bam Enter la tim kiem, co luc la
+     *  xuong dong, KHONG on dinh/du doan duoc. GIO DAY: "Enter CUNG" - LUON
+     *  LUON chi la 1 KY TU XUONG DONG don thuan ("\n"), BAT KE o nhap la 1
+     *  dong hay nhieu dong, BAT KE co dat action gi (Tim kiem/Di/Gui...) -
+     *  KHONG con goi performEditorAction() nua, hanh vi hoan toan CO DINH/
+     *  DU DOAN DUOC 100% moi luc. */
     private fun sendEnter() {
         val ic = currentInputConnection ?: return
         currentWord.clear()
         selfInitiatedChange = true
-        val inputType = currentInputEditorInfo?.inputType ?: InputType.TYPE_NULL
-        val isMultiLine = (inputType and InputType.TYPE_TEXT_FLAG_MULTI_LINE) != 0 ||
-            (inputType and InputType.TYPE_TEXT_FLAG_IME_MULTI_LINE) != 0
-        if (isMultiLine) {
-            ic.commitText("\n", 1)
-            // THEM (theo yeu cau nguoi dung): tu dong viet hoa chu cai DAU
-            // TIEN cua dong MOI - giong het co che tu dong viet hoa sau dau
-            // "." + dau cach (xem [insertVietnameseChar]/[insertChar] o
-            // tren). [capitalizeAppliedAtPrefixLen] = null de bao hieu "vi
-            // tri MOI, chua ap dung o dau ca" - dung y het cach cac diem
-            // dat co khac trong file nay lam.
-            capitalizeNextLetter = true
-            showCapitalPreview = true
-            capitalizeAppliedAtPrefixLen = null
-            // SUA (theo dieu tra "do muot khi go phim"): updateShiftStateInPlace()
-            // thay redrawKeyboard() - moi lan xuong dong (Enter) trong o nhap
-            // nhieu dong la kha thuong xuyen, chi can cap nhat hoa/thuong.
-            updateShiftStateInPlace()
-            return
-        }
-        val action = currentInputEditorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION)
-        if (action != null && action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
-            ic.performEditorAction(action)
-        } else {
-            ic.commitText("\n", 1)
-            // THEM: tuong tu nhanh multi-line o tren - o nhap 1 dong nhung
-            // KHONG co action rieng (Next/Done/Tim kiem...) van chi la chen
-            // ky tu xuong dong thuong, ap dung dung quy tac tu dong viet hoa
-            // giong het nhau.
-            capitalizeNextLetter = true
-            showCapitalPreview = true
-            capitalizeAppliedAtPrefixLen = null
-            // SUA (tuong tu nhanh multi-line tren): updateShiftStateInPlace()
-            // thay redrawKeyboard().
-            updateShiftStateInPlace()
-        }
+        ic.commitText("\n", 1)
+        // Tu dong viet hoa chu cai DAU TIEN cua dong MOI - giong het co che
+        // tu dong viet hoa sau dau "." + dau cach (xem [insertVietnameseChar]/
+        // [insertChar] o tren).
+        capitalizeNextLetter = true
+        showCapitalPreview = true
+        capitalizeAppliedAtPrefixLen = null
+        updateShiftStateInPlace()
     }
 
     override fun onUpdateSelection(
