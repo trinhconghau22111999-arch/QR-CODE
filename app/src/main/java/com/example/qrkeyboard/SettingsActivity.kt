@@ -318,15 +318,10 @@ class SettingsActivity : AppCompatActivity() {
             setPadding(dp(16), dp(16), dp(16), dp(16))
         }
         wrap.addView(sectionTitle("Ng\u00f4n ng\u1eef b\u00e0n ph\u00edm"))
-        wrap.addView(sectionSubtitle(
-            "M\u1eb7c \u0111\u1ecbnh Ti\u1ebfng Vi\u1ec7t + Ti\u1ebfng Anh nh\u01b0 c\u0169. C\u00f3 th\u1ec3 ch\u1ec9 ch\u1ecdn " +
-            "1 ng\u00f4n ng\u1eef duy nh\u1ea5t (kh\u00f4ng c\u1ea7n v\u01b0\u1ee3t \u0111\u1ed5i), ho\u1eb7c \u0111\u00e1nh d\u1ea5u " +
-            "2 ng\u00f4n ng\u1eef \u0111\u1ec3 v\u01b0\u1ee3t ngang tr\u00ean ph\u00edm c\u00e1ch chuy\u1ec3n \u0111\u1ed5i qua " +
-            "l\u1ea1i gi\u1eefa 2 ng\u00f4n ng\u1eef \u0111\u00f3. Mu\u1ed1n \u0111\u1ed5i ng\u00f4n ng\u1eef: b\u1ecf d\u1ea5u " +
-            "check ng\u00f4n ng\u1eef c\u0169 tr\u01b0\u1edbc r\u1ed3i ch\u1ecdn ng\u00f4n ng\u1eef m\u1edbi. Ch\u1ec9 ri\u00eang " +
-            "Ti\u1ebfng Vi\u1ec7t c\u00f3 b\u1ed9 g\u00f5 d\u1ea5u Telex, c\u00e1c ng\u00f4n ng\u1eef kh\u00e1c g\u00f5 nh\u01b0 " +
-            "b\u00ecnh th\u01b0\u1eddng."
-        ))
+        // SUA (theo yeu cau nguoi dung: "phan ngon ngu ban phim hay loai bo
+        // chu thich ben duoi"): BO han doan sectionSubtitle mo ta huong dan
+        // TRUOC DAY o day - chi con lai tieu de + trang thai dang dung +
+        // danh sach ngon ngu de chon.
         wrap.addView(spacer(10))
 
         languageStatusText = TextView(this).apply {
