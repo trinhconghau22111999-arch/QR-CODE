@@ -768,7 +768,22 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     private var isListeningForVoice: Boolean = false
     private var micButtonRef: Button? = null
 
-    private data class ChaseEntry(val drawable: GradientDrawable, val px: Float, val py: Float)
+    // SUA LOI (theo phan anh nguoi dung: "loi khi chay den thi vien phim nho
+    // hon khong chay"): TRUOC DAY chi luu (drawable, px, py) - KHONG luu lai
+    // do day vien (borderWidthDp) DA DUOC CAU HINH luc tao phim (xem
+    // [buildGlowKeyBackground]). Vong lap ve lai hoat hinh ([applyRgbChaseFrame])
+    // vi vay phai HARDCODE dp(1) cho MOI phim khi ve lai mau moi khung hinh -
+    // gia tri nay la "tan du" tu TRUOC KHI co yeu cau "tang do day vien len
+    // gap 3" (luc do mac dinh dung la 1dp, gia tri nay dung) - nhung SAU khi
+    // tang do day vien mac dinh len 3dp (va 6-9dp cho cac phim dac biet/nho
+    // hon nhu Mic), cho nay QUEN cap nhat theo, khien MOI khung hinh hoat
+    // hinh chay lai AM THAM ep vien VE LAI dung 1dp CU, xoa sach hieu qua
+    // tang do day - phim CANG NHO (mic, +/-, x// o Numpad...) thi chenh
+    // lech 1dp (rat mong) so voi kich thuoc phim CANG RO, nhin nhu "khong
+    // chay" (mau doi nhung vien qua mong de nhan ra). SUA: luu THEM do day
+    // vien THAT SU luc dang ky ([strokeWidthDp]), dung LAI dung gia tri nay
+    // moi khung hinh thay vi hardcode dp(1).
+    private data class ChaseEntry(val drawable: GradientDrawable, val px: Float, val py: Float, val strokeWidthDp: Int = 3)
 
     /** THEM (theo yeu cau nguoi dung: "sửa icon mic" - "thiết kế đơn giản
      *  đen trắng thôi", CHi sua PHAN ICON, KHONG dung vao vien/nen/kich
@@ -1023,7 +1038,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 val value = 0.55f + wave * 0.45f
                 val color = Color.HSVToColor(floatArrayOf(baseHsv[0], saturation, value))
                 try {
-                    entry.drawable.setStroke(dp(1), color)
+                    entry.drawable.setStroke(dp(entry.strokeWidthDp), color)
                 } catch (e: Exception) {
                     // Bo qua 1 phim loi (hiem gap) - khong lam hong ca khung hinh.
                 }
@@ -1052,7 +1067,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             hsv[0] = (rgbChasePhaseDeg + posFactor * 360f) % 360f
             val color = Color.HSVToColor(hsv)
             try {
-                entry.drawable.setStroke(dp(1), color)
+                entry.drawable.setStroke(dp(entry.strokeWidthDp), color)
             } catch (e: Exception) {
                 // Bo qua 1 phim loi (hiem gap) - khong lam hong ca khung hinh.
             }
@@ -2141,13 +2156,13 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  [buildGlowKeyBackground] - xem chi tiet o do) de sau nay chi can doi
      *  MAU cua chinh drawable nay moi khung hinh, KHONG can xay lai ca
      *  Drawable/View - re hon nhieu. */
-    private fun registerChaseKey(page: KeyboardMode, key: View, px: Float, py: Float) {
+    private fun registerChaseKey(page: KeyboardMode, key: View, px: Float, py: Float, strokeWidthDp: Int = 3) {
         if (!rgbChaseEnabled) return
         val layers = key.background as? LayerDrawable ?: return
         if (layers.numberOfLayers < 2) return
         val border = layers.getDrawable(1) as? GradientDrawable ?: return
         rgbChaseRegistryByPage.getOrPut(page) { mutableListOf() }
-            .add(ChaseEntry(border, px.coerceIn(0f, 1f), py.coerceIn(0f, 1f)))
+            .add(ChaseEntry(border, px.coerceIn(0f, 1f), py.coerceIn(0f, 1f), strokeWidthDp))
     }
 
     /** THEM: goi o DAU moi ham build*Page() - xoa SACH bucket cua DUNG trang
@@ -2518,18 +2533,17 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val nb1 = buildKey("ABC", weight = 1.4f, fillRowHeight = true) { switchMode(KeyboardMode.LETTERS) }
         row.addView(nb1)
         registerChaseKey(KeyboardMode.NUMBERS, nb1, 0.078f, 1f)
-        val nb2 = buildKey("QR", weight = 1f, highlight = true, fillRowHeight = true) {
-            openQrScanner(continuous = true)
-        }
-        // SUA (theo yeu cau nguoi dung "sua cho nut qr luon"): bo not vien
-        // day dac trung rieng cua nut QR - gio dung dung do day vien mac
-        // dinh (buildGlowKeyBackground(), 3dp) GIONG HET moi phim khac
-        // (Enter/Shift/phim thuong), khong con nut nao noi bat rieng ve do
-        // day vien tren toan bo ban phim nua.
+        // SUA (theo yeu cau nguoi dung: "trang 2 va 3: doi vi tri cac phim
+        // 'QR' thanh '<'...va nguoc lai" + xac nhan "toan bo la 3" - tuc doi
+        // nhan THANH "<"/">" VA DOI LUON chuc nang thanh chuyen trang truoc/
+        // sau, KHONG con nut QR/123 (mo QR scanner/nhay Numpad) o day nua):
+        // "<" = ve trang TRUOC (Chu cai).
+        val nb2 = buildKey("<", weight = 1f, fillRowHeight = true) { switchMode(KeyboardMode.LETTERS) }
         row.addView(nb2)
         registerChaseKey(KeyboardMode.NUMBERS, nb2, 0.211f, 1f)
         row.addView(buildSpaceKey(weight = 4.2f))
-        val nb3 = buildKey("123", weight = 1f, fillRowHeight = true) { switchMode(KeyboardMode.NUMPAD) }
+        // ">" = sang trang SAU (Ky hieu).
+        val nb3 = buildKey(">", weight = 1f, fillRowHeight = true) { switchMode(KeyboardMode.SYMBOLS) }
         row.addView(nb3)
         registerChaseKey(KeyboardMode.NUMBERS, nb3, 0.789f, 1f)
         val nb4 = buildKey("\u23ce", weight = 1.4f, highlight = true, fillRowHeight = true) { sendEnter() }
@@ -2672,7 +2686,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // SUA: vi tri chay den RGB cap nhat theo vi tri MOI cua mic (cot
         // NGOAI CUNG BEN PHAI, HANG TREN CUNG - truoc day la 1f/0.03 tuc
         // cot trai/hang duoi).
-        registerChaseKey(KeyboardMode.LETTERS, micBtn, 1f, 0f)
+        registerChaseKey(KeyboardMode.LETTERS, micBtn, 1f, 0f, strokeWidthDp = 6)
         return micBtn
     }
 
