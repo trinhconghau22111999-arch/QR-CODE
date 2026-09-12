@@ -2613,17 +2613,17 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val sb1 = buildKey("ABC", weight = 1.4f, fillRowHeight = true) { switchMode(KeyboardMode.LETTERS) }
         row.addView(sb1)
         registerChaseKey(KeyboardMode.SYMBOLS, sb1, 0.078f, 1f)
-        // SUA (theo yeu cau nguoi dung - xem giai thich chi tiet o
-        // [buildNumbersBottomRow]): nhan "QR"/"123" (truoc day o trang So)
-        // GIO CHUYEN SANG day (trang Ky hieu), giu NGUYEN chuc nang cu (mo
-        // QR scanner / nhay sang Numpad).
-        val sb2 = buildKey("QR", weight = 1f, fillRowHeight = true) {
-            openQrScanner(continuous = true)
-        }
+        // SUA (theo yeu cau nguoi dung: "trang 3 doi vi tri 2 phim 'QR' va
+        // '123' cho nhau"): "123" gio nam TRUOC (ben trai, cham ABC), "QR"
+        // nam SAU (ben phai, gan phim cach) - dao vi tri cho nhau so voi
+        // truoc, van GIU NGUYEN chuc nang cua tung nut.
+        val sb2 = buildKey("123", weight = 1f, fillRowHeight = true) { switchMode(KeyboardMode.NUMPAD) }
         row.addView(sb2)
         registerChaseKey(KeyboardMode.SYMBOLS, sb2, 0.211f, 1f)
         row.addView(buildSpaceKey(weight = 4.2f))
-        val sb3 = buildKey("123", weight = 1f, fillRowHeight = true) { switchMode(KeyboardMode.NUMPAD) }
+        val sb3 = buildKey("QR", weight = 1f, fillRowHeight = true) {
+            openQrScanner(continuous = true)
+        }
         row.addView(sb3)
         registerChaseKey(KeyboardMode.SYMBOLS, sb3, 0.789f, 1f)
         val sb4 = buildKey("\u23ce", weight = 1.4f, highlight = true, fillRowHeight = true) { sendEnter() }
