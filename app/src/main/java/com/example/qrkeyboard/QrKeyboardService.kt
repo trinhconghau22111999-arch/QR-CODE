@@ -1031,6 +1031,18 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             return
         }
         val hsv = floatArrayOf(0f, 0.85f, 1f)
+        // SUA (theo yeu cau nguoi dung: "khi chon chay nhieu mau: neu dang o
+        // nen trang thi se khong dung mau trang. neu dang o nen mau den thi
+        // se khong dung mau den"): Saturation co dinh 0.85 (KHONG BAO GIO
+        // bang 0) nen ve mat ly thuyet mau tao ra o day KHONG BAO GIO la
+        // mau trang/xam that su (trang can Saturation = 0). Nhung THEM 1
+        // lop an toan tuong minh o day, ep gioi han do SANG (Value) theo
+        // DUNG nen dang dung de dam bao TUONG PHAN ro rang, khong chi dua
+        // vao mat toan hoc: nen TRANG (isDarkTheme=false) -> Value toi da
+        // 0.9 (khong bao gio qua sang/gan trang, luon con thay ro tren nen
+        // trang); nen DEN (isDarkTheme=true) -> Value toi thieu 0.55
+        // (khong bao gio qua toi/gan den, luon con thay ro tren nen den).
+        hsv[2] = if (isDarkTheme) hsv[2].coerceAtLeast(0.55f) else hsv[2].coerceAtMost(0.9f)
         for (entry in entries) {
             val posFactor = when (rgbChaseDirection) {
                 RgbEffectPrefs.DIRECTION_TOP_TO_BOTTOM -> entry.py
