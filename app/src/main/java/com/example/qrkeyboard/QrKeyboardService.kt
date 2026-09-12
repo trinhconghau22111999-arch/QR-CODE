@@ -1423,7 +1423,13 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val verticalPaddingDp = if (keyHeightDp < 48) 2 else 6
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(4), dp(verticalPaddingDp), dp(4), 0)
+            // SUA (theo yeu cau nguoi dung: "cho le trai le phai = 0"): le
+            // trai/phai TRUOC DAY la dp(4) o CA 4 trang ban phim - GIO ve 0,
+            // cac phim se sat het ra 2 canh man hinh, khong con khoang trong
+            // thua ben trai/phai nua (ap dung dong bo ca 4 trang: Chu cai/
+            // So/Ky hieu/Numpad - xem cac ham buildNumbersPage/
+            // buildSymbolsPage/buildNumpadPage).
+            setPadding(0, dp(verticalPaddingDp), 0, 0)
         }
 
         when (mode) {
@@ -1527,7 +1533,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val verticalPaddingDp = if (keyHeightDp < 48) 2 else 6
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(4), dp(verticalPaddingDp), dp(4), 0)
+            setPadding(0, dp(verticalPaddingDp), 0, 0)
             addView(buildEmojiRow())
             numberRows.forEachIndexed { i, row -> addView(buildCharRow(row, rowPhase = i.toFloat() / (numberRows.size))) }
             addView(buildNumbersRow3())
@@ -1547,7 +1553,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val verticalPaddingDp = if (keyHeightDp < 48) 2 else 6
         return LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(4), dp(verticalPaddingDp), dp(4), 0)
+            setPadding(0, dp(verticalPaddingDp), 0, 0)
             extendedSymbolRows.forEachIndexed { i, row -> addView(buildCharRow(row, rowPhase = i.toFloat() / (extendedSymbolRows.size))) }
             addView(buildExtendedSymbolsRow3())
             addView(buildExtendedSymbolsBottomRow())
@@ -1578,7 +1584,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val verticalPaddingDp = if (keyHeightDp < 48) 2 else 6
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(4), dp(verticalPaddingDp), dp(4), 0)
+            setPadding(0, dp(verticalPaddingDp), 0, 0)
         }
 
         // Dong 1: 1, 2, 3, Xoa
