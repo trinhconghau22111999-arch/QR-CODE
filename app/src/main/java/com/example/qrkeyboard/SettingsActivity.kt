@@ -544,6 +544,24 @@ class SettingsActivity : AppCompatActivity() {
                     // muc do ve lai, nen phai DOI qua lan mo Cai dat SAU moi
                     // thay dung mau moi, du mau THAT SU da luu dung ngay.
                     renderLanguageRows()
+                    // THEM (theo yeu cau nguoi dung: "khi bam chon lai mau
+                    // sac thi o phan hieu ung den chay tu dong chuyen ve 1
+                    // mau neu dang chon nhieu mau, cong tac dong mo phan nay
+                    // van giu nguyen" - CHi co 2 che do MAU trong hieu ung
+                    // RGB la "Nhieu mau" (rainbow, BO QUA mau vien da chon)
+                    // va "1 mau (mau vien)" (dung DUNG mau vien nguoi dung
+                    // vua chon o day), KHONG co che do "2 mau" nao ca - xem
+                    // [RgbEffectPrefs.COLOR_MODE_RAINBOW]/[COLOR_MODE_SINGLE]):
+                    // neu dang o che do "Nhieu mau" (mau vua chon se KHONG
+                    // hien ro vi bi mau cau vong che mat), TU DONG chuyen
+                    // sang "1 mau" de mau nguoi dung VUA chon THAT SU hien
+                    // ra tren vien phim ngay - CHi doi CHE DO MAU, KHONG dung
+                    // toi cong tac BAT/TAT ([RgbEffectPrefs.setEnabled]) cua
+                    // ca hieu ung, giu nguyen y het nhu yeu cau.
+                    if (RgbEffectPrefs.getColorMode(this@SettingsActivity) == RgbEffectPrefs.COLOR_MODE_RAINBOW) {
+                        RgbEffectPrefs.setColorMode(this@SettingsActivity, RgbEffectPrefs.COLOR_MODE_SINGLE)
+                        refreshRgbEffectUi()
+                    }
                 }
             }
             colorSwatchContainer.addView(swatch)
