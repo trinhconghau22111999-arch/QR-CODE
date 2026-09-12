@@ -871,7 +871,14 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  gian doan binh thuong giua cac lan go (nguoi dung luc do dang doc/
      *  nghi, khong nhin ban phim), nhung du dai de KHONG lam gian doan
      *  hieu ung ngay giua luc dang go binh thuong. */
-    private val RGB_CHASE_IDLE_PAUSE_MS = 8000L
+    /** SUA (theo yeu cau nguoi dung: "thoi gian tu dong tat hieu ung khi
+     *  khong dung...cho no nang len gap doi, de no lau tat hon"): TRUOC DAY
+     *  8000L (8 giay) - GIO DAY 16000L (16 giay, gap doi), theo dung yeu
+     *  cau. Van la khoang thoi gian TAM DUNG vong lap ve lai hieu ung RGB
+     *  neu KHONG co lan cham phim nao (van con "song" - se chay lai NGAY
+     *  LAP TUC o khung hinh dau tien sau lan cham phim tiep theo, khong co
+     *  do tre nao ca) - chi keo dai THEM thoi gian truoc khi tam dung. */
+    private val RGB_CHASE_IDLE_PAUSE_MS = 16000L
 
     /** Bat dau vong lap hoat hinh (goi khi ban phim hien len, CHi that su
      *  chay neu [rgbChaseEnabled]). An toan khi goi nhieu lan lien tiep (tu

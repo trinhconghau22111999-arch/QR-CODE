@@ -12,11 +12,15 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 import android.provider.Settings
+import android.text.Editable
+import android.text.InputType
+import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.InputMethodManager
 import android.widget.Button
+import android.widget.EditText
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -179,6 +183,8 @@ class SettingsActivity : AppCompatActivity() {
         content.addView(buildColorSection())
         content.addView(spacer(24))
         content.addView(buildRgbEffectSection())
+        content.addView(spacer(24))
+        content.addView(buildKeyboardPreviewSection())
         content.addView(spacer(24))
         content.addView(buildVibrationSection())
         content.addView(spacer(24))
@@ -683,6 +689,89 @@ class SettingsActivity : AppCompatActivity() {
     private fun setRgbDirection(direction: String) {
         RgbEffectPrefs.setDirection(this, direction)
         refreshRgbEffectUi()
+    }
+
+    /** THEM (theo yeu cau nguoi dung: "them vao cai dat 1 nut: 'xem truoc
+     *  ban phim hien tai' ben duoi phan cai dat hieu ung: no khong nhu 1 o
+     *  nhap de khi minh bam vao no thi con tro bat len ban phim cung bat
+     *  theo...nhung o nay khong nhan du lieu nen du go phim cung khong co
+     *  chu nha...kieu ngoai no la 1 cai nut thoi"):
+     *
+     *  Day THUC CHAT la 1 [EditText] (KHONG phai Button that su) - vi CHi
+     *  co o nhap (View co the nhan focus ban phim) moi khien he thong TU
+     *  DONG hien ban phim len khi bam vao (Button thuong KHONG lam duoc
+     *  dieu nay). Nhung:
+     *  - LUON hien dung 1 nhan CO DINH ("Xem tr\u01b0\u1edbc b\u00e0n ph\u00edm
+     *    hi\u1EC7n t\u1EA1i") bat ke go gi vao - moi lan noi dung thay doi (do
+     *    ban phim go vao), [TextWatcher] LAP TUC dat lai ve dung nhan do,
+     *    nen du go phim cung KHONG co chu nao THAT SU xuat hien/duoc luu ca.
+     *  - Vien/nen duoc ve GIONG HET [neonButton] khac trong Cai dat (khong
+     *    co underline mac dinh cua EditText) - nhin BE NGOAI y het 1 cai
+     *    nut binh thuong, khong ai nhan ra day la o nhap.
+     *  - Con tro (dau nhay) VAN hien binh thuong khi duoc focus - dung y
+     *    nguoi dung mo ta "con tro bat len", xac nhan ban phim dang thuc su
+     *    active/nhan focus tu o nay. */
+    private fun buildKeyboardPreviewSection(): View {
+        val wrap = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = cardBackground()
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+        }
+        wrap.addView(sectionTitle("Xem th\u1eed b\u00e0n ph\u00edm"))
+        wrap.addView(sectionSubtitle(
+            "B\u1EA5m v\u00e0o \u00f4 b\u00ean d\u01b0\u1edbi \u0111\u1EC3 b\u1EADt b\u00e0n ph\u00edm l\u00ean xem th\u1eed " +
+                "m\u00e0u s\u1EAFc/hi\u1EC7u \u1EE9ng ngay - g\u00f5 th\u1eed tho\u1ea3i m\u00e1i, kh\u00f4ng c\u00f3 " +
+                "ch\u1eef n\u00e0o \u0111\u01b0\u1EE3c l\u01B0u l\u1ea1i c\u1EA3."
+        ))
+        wrap.addView(spacer(10))
+
+        val previewLabel = "\ud83d\udd0e  Xem tr\u01b0\u1edbc b\u00e0n ph\u00edm hi\u1EC7n t\u1EA1i"
+        val previewField = EditText(this).apply {
+            setText(previewLabel)
+            isSingleLine = true
+            gravity = Gravity.CENTER
+            isAllCaps = false
+            textSize = 14f
+            setTextColor(textPrimary)
+            setHintTextColor(textPrimary)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            imeOptions = android.view.inputmethod.EditorInfo.IME_ACTION_NONE
+            background = GradientDrawable().apply {
+                cornerRadius = dp(10).toFloat()
+                setColor(Color.TRANSPARENT)
+                setStroke(dp(1), accentNow)
+            }
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            // Ngan menu "Cat/Sao chep/Dan" hien len khi cham giu - cang cung
+            // co cam giac day la 1 cai NUT chu khong phai o nhap that su.
+            isLongClickable = false
+            setTextIsSelectable(false)
+            customSelectionActionModeCallback = object : android.view.ActionMode.Callback {
+                override fun onCreateActionMode(mode: android.view.ActionMode?, menu: android.view.Menu?) = false
+                override fun onPrepareActionMode(mode: android.view.ActionMode?, menu: android.view.Menu?) = false
+                override fun onActionItemClicked(mode: android.view.ActionMode?, item: android.view.MenuItem?) = false
+                override fun onDestroyActionMode(mode: android.view.ActionMode?) {}
+            }
+            var isResetting = false
+            addTextChangedListener(object : TextWatcher {
+                override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+                override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
+                override fun afterTextChanged(s: Editable?) {
+                    if (isResetting) return
+                    if (s?.toString() != previewLabel) {
+                        isResetting = true
+                        setText(previewLabel)
+                        setSelection(previewLabel.length)
+                        isResetting = false
+                    }
+                }
+            })
+        }
+        wrap.addView(previewField)
+        return wrap
     }
 
     private fun refreshRgbEffectUi() {

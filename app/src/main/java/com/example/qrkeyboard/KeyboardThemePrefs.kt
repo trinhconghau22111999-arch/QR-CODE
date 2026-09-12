@@ -21,7 +21,9 @@ object KeyboardThemePrefs {
     val DEFAULT_ACCENT_COLOR: Int = Color.parseColor("#B388FF")
 
     /** Bang mau co san de nguoi dung chon - giu NGUYEN VEN thu tu + gia tri
-     *  cu tu QrKeyboardService (khong doi gi ca khi chuyen vi tri hien thi). */
+     *  cu tu QrKeyboardService (khong doi gi ca khi chuyen vi tri hien thi).
+     *  THEM (theo yeu cau nguoi dung: "them mau trang va den vao cai dat mau
+     *  sac"): them Trang (#FFFFFF) va Den (#000000) vao CUOI danh sach. */
     val ACCENT_COLORS: List<Int> = listOf(
         Color.parseColor("#FF3B30"), // Do
         Color.parseColor("#3B82F6"), // Xanh duong
@@ -30,7 +32,9 @@ object KeyboardThemePrefs {
         Color.parseColor("#FF2D8A"), // Hong
         Color.parseColor("#FF9500"), // Cam
         DEFAULT_ACCENT_COLOR,        // Tim neon (mac dinh)
-        Color.parseColor("#8B5E3C")  // Nau
+        Color.parseColor("#8B5E3C"), // Nau
+        Color.parseColor("#FFFFFF"), // Trang
+        Color.parseColor("#000000")  // Den
     )
 
     private fun prefs(ctx: Context) = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -42,8 +46,12 @@ object KeyboardThemePrefs {
         prefs(ctx).edit().putInt(PREF_ACCENT_COLOR, color).apply()
     }
 
+    // SUA (theo yeu cau nguoi dung: "mac dinh sau khi cai app: chon san nen
+    // trang vien tim"): mac dinh TRUOC DAY la true (nen TOI/dark) - GIO la
+    // false (nen SANG/trang). Vien tim ([DEFAULT_ACCENT_COLOR] o tren,
+    // #B388FF) VON DA la mac dinh san tu truoc, khong doi gi them.
     fun isDarkTheme(ctx: Context): Boolean =
-        prefs(ctx).getBoolean(PREF_IS_DARK_THEME, true)
+        prefs(ctx).getBoolean(PREF_IS_DARK_THEME, false)
 
     fun setDarkTheme(ctx: Context, dark: Boolean) {
         prefs(ctx).edit().putBoolean(PREF_IS_DARK_THEME, dark).apply()

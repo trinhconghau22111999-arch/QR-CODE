@@ -17,7 +17,11 @@ import android.content.Context
 object VibrationPrefs {
     private const val PREFS_NAME = "qr_keyboard_vibration_prefs"
     private const val KEY_LEVEL_PERCENT = "level_percent"
-    const val DEFAULT_LEVEL_PERCENT = 100
+    // SUA (theo yeu cau nguoi dung: "mac dinh sau khi cai app... Cuong do
+    // rung phim 80%"): TRUOC DAY mac dinh 100% (~amplitude 200/255, y het
+    // hanh vi CU truoc khi co tinh nang nay) - GIO DAY 80% theo dung yeu
+    // cau moi nhat.
+    const val DEFAULT_LEVEL_PERCENT = 80
 
     private fun prefs(ctx: Context) =
         ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
