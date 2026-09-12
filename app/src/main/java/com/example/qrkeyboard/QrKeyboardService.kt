@@ -2332,13 +2332,14 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             // Cập nhật nút Shift: highlight hay không
             val shiftBtn = cachedShiftKey
             if (shiftBtn == null) { redrawKeyboard(); return }
-            val shouldHighlight = isShiftOn || showCapitalPreview
-            // Chỉ rebuild background nút Shift nếu trạng thái highlight thực sự thay đổi
-            val wasHighlight = shiftBtn.tag as? Boolean ?: false
-            if (wasHighlight != shouldHighlight) {
-                shiftBtn.background = buildGlowKeyBackground(borderWidthDp = if (shouldHighlight) 9 else 3)
-                shiftBtn.tag = shouldHighlight
-            }
+            // SUA (theo yeu cau nguoi dung: "nut go chu in va nut enter deu
+            // dung co vien voi do day tuong tu cac phim khac"): TRUOC DAY o
+            // day tu VE LAI vien nut Shift DAY HON (9dp) khi dang BAT (dang
+            // go chu in) so voi luc TAT (3dp) - GIO DAY bo han doan ve lai
+            // nay, nut Shift LUON dung dung 1 do day vien mac dinh
+            // ([buildGlowKeyBackground] tra ve luc tao phim, xem [buildKey])
+            // bat ke dang BAT hay TAT, khong con phan biet duoc bang do day
+            // vien nua.
             // Cập nhật label các phím chữ cái (hoa/thường)
             val toUpper = isShiftOn || showCapitalPreview
             for ((ch, btn) in cachedLetterKeys) {
@@ -2477,6 +2478,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val nb2 = buildKey("QR", weight = 1f, highlight = true, fillRowHeight = true) {
             openQrScanner(continuous = true)
         }
+        // THEM: nut QR van giu VIEN DAY HON dac trung rieng (khong con
+        // dung chung co che "highlight" cua buildKey nua, xem giai thich
+        // chi tiet o do - Enter/Shift gio dung vien BINH THUONG nhu moi
+        // phim khac).
+        nb2.background = buildGlowKeyBackground(borderWidthDp = 9)
         row.addView(nb2)
         registerChaseKey(KeyboardMode.NUMBERS, nb2, 0.211f, 1f)
         row.addView(buildSpaceKey(weight = 4.2f))
@@ -2963,20 +2969,18 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         onRepeat: (() -> Unit)? = null,
         onClick: () -> Unit
     ): Button {
-        // SUA (theo yeu cau nguoi dung "dong nhat mau sac"): TRUOC DAY phim
-        // highlight (Enter, Shift dang bat, nut QR) LUON dung mau VIEN CO
-        // DINH rieng (#4FC3F7, xanh cyan) - KHONG doi theo mau vien nguoi
-        // dung chon o [buildKeyboardSettingsBar], khien cac phim nay bi
-        // "lac mau" so voi phan con lai cua ban phim moi khi doi mau. GIO
-        // DAY: dung CHUNG [glowColor] (mau vien HIEN TAI, giong moi phim
-        // khac) - CHI con giu VIEN DAY HON (borderWidthDp = 3 thay vi 1) de
-        // van con phan biet duoc day la phim "dac biet/dang bat", nhung mau
-        // sac thi HOAN TOAN dong bo voi ca ban phim.
-        val bg: Drawable = if (highlight) {
-            buildGlowKeyBackground(borderWidthDp = 9)
-        } else {
-            buildGlowKeyBackground()
-        }
+        // SUA (theo yeu cau nguoi dung: "nut go chu in va nut enter deu
+        // dung co vien voi do day tuong tu cac phim khac"): TRUOC DAY co
+        // "highlight" (Enter, Shift dang bat, nut QR) LUON dung VIEN DAY
+        // HON (borderWidthDp = 9) de de phan biet - GIO DAY: bo han su
+        // khac biet nay, MOI phim (ke ca Enter/Shift dang bat) DUNG CHUNG 1
+        // do day vien mac dinh (buildGlowKeyBackground(), hien la 3dp) -
+        // hoan toan dong nhat, khong con phim nao "noi bat" hon ve do day
+        // vien nua. Rieng nut "QR" (khong nam trong yeu cau nay) van GIU
+        // VIEN DAY HON dac trung rieng - duoc gan LAI tuong minh NGAY SAU
+        // khi tao (xem [buildNumbersRow2]), khong con phu thuoc vao tham so
+        // "highlight" chung nay nua.
+        val bg: Drawable = buildGlowKeyBackground()
         val button = Button(this).apply {
             text = label
             isAllCaps = false
