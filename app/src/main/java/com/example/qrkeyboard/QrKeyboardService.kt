@@ -1517,7 +1517,21 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                     // do, tong do rong se TANG THEM (13 thay vi 10), lam
                     // hang do RONG HON han cac hang khac, pha vo su can
                     // bang da co san tu truoc.
-                    val rowPhase = (index + 1).toFloat() / letterRows.size
+                    // SUA LOI (theo phan anh nguoi dung: "trang 1 co 2 hang
+                    // duoi cung bi dong mau"): TRUOC DAY cong thuc nay chi
+                    // tinh ty le rieng trong pham vi 3 hang chu (letterRows),
+                    // cho ra 0.333/0.667/1.0 - hang CUOI ("zxcvbnm" + Shift/
+                    // Xoa) vi vay bi gan py = 1.0, TRUNG HOAN TOAN voi py
+                    // CUNG = 1.0 da gan CUNG (hardcode) cho hang duoi cung
+                    // that su (?123/,/Cach/./Enter, xem [buildLettersBottomRow])
+                    // - vi CUNG mot gia tri py => CUNG mot mau tai bat ky
+                    // thoi diem nao, khien 2 hang nay luon "dinh" mau giong
+                    // het nhau. SUA: tinh py tren TOAN BO 5 hang thuc te cua
+                    // ca trang (hang so tren cung = 0/4, 3 hang chu =
+                    // 1/4,2/4,3/4, hang duoi cung = 4/4=1.0) - moi hang gio
+                    // co 1 gia tri py RIENG BIET, khong con hang nao trung
+                    // nhau nua.
+                    val rowPhase = (index + 1).toFloat() / 4f
                     val rowView = if (index == 1 && row.length < numberRows[0].length)
                         buildStaggeredCharRow(row, numberRows[0].length, applyShiftCase = true, rowPhase = rowPhase)
                     else
@@ -1601,7 +1615,18 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             // THANG chasePage = KeyboardMode.NUMBERS o day, khong con dua
             // vao gia tri mac dinh (theo "mode") nua.
             numberRows.forEachIndexed { i, row ->
-                addView(buildCharRow(row, rowPhase = i.toFloat() / (numberRows.size), chasePage = KeyboardMode.NUMBERS))
+                // SUA LOI (theo phan anh nguoi dung ve tinh lien mach cua
+                // hieu ung doi mau theo hang - cung loai loi voi truong hop
+                // da sua o trang Chu cai): TRUOC DAY cong thuc "i / numberRows.size"
+                // cho ra py = 0 cho hang so dau tien (i=0) - TRUNG HOAN TOAN
+                // voi py = 0 da gan CUNG cho hang Emoji o TREN no (xem
+                // [buildEmojiRow]) - khien 2 hang nay LUON cung 1 mau tai
+                // moi thoi diem thay vi la 2 buoc mau khac nhau trong dai
+                // gradient. SUA: tinh py tren TOAN BO 5 hang thuc te cua ca
+                // trang (Emoji=0/4, 2 hang So=1/4 va 2/4, hang 3=3/4 (khop
+                // dung gia tri co san 0.75f), hang duoi cung=4/4=1.0 (khop
+                // dung gia tri co san 1f)) - khong con hang nao trung nhau.
+                addView(buildCharRow(row, rowPhase = (i + 1).toFloat() / 4f, chasePage = KeyboardMode.NUMBERS))
             }
             addView(buildNumbersRow3())
             addView(buildNumbersBottomRow())
@@ -2446,7 +2471,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
         row.addView(k2)
         registerChaseKey(KeyboardMode.LETTERS, k2, 0.211f, 1f)
-        row.addView(buildSpaceKey(weight = 4.2f))
+        row.addView(buildSpaceKey(weight = 4.2f, chasePage = KeyboardMode.LETTERS, rowPhase = 1f))
         val k3 = buildKey(".", weight = 1f, fillRowHeight = true) {
             // SUA (theo yeu cau nguoi dung): TRUOC DAY tu dong bat viet hoa
             // NGAY KHI go dau "." don (chua go dau cach) - nghia la go "."
@@ -2547,7 +2572,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         }
         row.addView(nb2)
         registerChaseKey(KeyboardMode.NUMBERS, nb2, 0.211f, 1f)
-        row.addView(buildSpaceKey(weight = 4.2f))
+        row.addView(buildSpaceKey(weight = 4.2f, chasePage = KeyboardMode.NUMBERS, rowPhase = 1f))
         val nb3 = buildKey(">", weight = 1f, fillRowHeight = true) {
             insertText(">")
             finishWordTracking()
@@ -2620,7 +2645,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         val sb2 = buildKey("123", weight = 1f, fillRowHeight = true) { switchMode(KeyboardMode.NUMPAD) }
         row.addView(sb2)
         registerChaseKey(KeyboardMode.SYMBOLS, sb2, 0.211f, 1f)
-        row.addView(buildSpaceKey(weight = 4.2f))
+        row.addView(buildSpaceKey(weight = 4.2f, chasePage = KeyboardMode.SYMBOLS, rowPhase = 1f))
         val sb3 = buildKey("QR", weight = 1f, fillRowHeight = true) {
             openQrScanner(continuous = true)
         }
@@ -2910,7 +2935,18 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     /** Phim cach: chuc nang chinh la chen dau cach khi CHAM binh thuong.
      *  Neu ngon tay VUOT ngang qua nguong [SPACE_SWIPE_THRESHOLD_DP] truoc
      *  khi tha ra, xem la mot cu vuot doi ngon ngu thay vi mot cai cham. */
-    private fun buildSpaceKey(weight: Float, chasePage: KeyboardMode = mode): View {
+    /** SUA LOI (theo phan anh nguoi dung: "trang 2 va 3 thi dau cach bi mac
+     *  dinh lam mau tim"): tham so [chasePage] va [rowPhase] VON DA CO SAN
+     *  trong function nay TU TRUOC (chasePage) - NHUNG KHONG HE co dong goi
+     *  [registerChaseKey] nao ca ben trong! Vien phim Cach vi vay KHONG BAO
+     *  GIO duoc dang ky vao vong lap hoat hinh RGB, luon dung CO DINH mau
+     *  [glowColor] (mau vien nguoi dung dang chon trong Cai dat giao dien -
+     *  MAC DINH la tim) bat ke dang bat hieu ung RGB gi. SUA: THEM dong goi
+     *  [registerChaseKey] con thieu, dung dung vi tri (px=0.5 - phim Cach
+     *  nam GIUA hang; py = [rowPhase] - truyen vao TUONG MINH tu noi goi,
+     *  KHONG con dua vao [chasePage]=mode MAC DINH de tranh dung lai dung
+     *  loi "prewarm dang ky nham trang" da gap truoc do). */
+    private fun buildSpaceKey(weight: Float, chasePage: KeyboardMode, rowPhase: Float): View {
         val bg = buildGlowKeyBackground()
         val container = FrameLayout(this).apply {
             background = bg
@@ -2922,6 +2958,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             }
             isHapticFeedbackEnabled = true
         }
+        registerChaseKey(chasePage, container, 0.5f, rowPhase)
 
         fun edgeColor(active: Boolean) =
             if (active) Color.parseColor("#8AB4F8") else Color.parseColor("#80868B")

@@ -62,9 +62,20 @@ object RgbEffectPrefs {
         prefs(ctx).edit().putString(KEY_COLOR_MODE, mode).apply()
     }
 
+    // SUA (theo phan anh nguoi dung: "de chay tu trai sang phai nhung that
+    // ra no chay tu phai sang trai, vay doi ten trong phan cai dat lai cho
+    // dung"): CONG THUC mau thuc te (hsv[0] = (pha_thoi_gian_TANG_DAN +
+    // vi_tri*360) % 360) khien 1 "mau" cu the LUON di chuyen ve phia VI TRI
+    // NHO HON theo thoi gian (de giu nguyen mau, khi pha tang len thi vi
+    // tri phai giam xuong) - nghia la voi DIRECTION_LEFT_TO_RIGHT (dung
+    // px), dai mau THAT SU "chay" tu PHAI (px=1) VE TRAI (px=0); tuong tu,
+    // DIRECTION_TOP_TO_BOTTOM (dung py) THAT SU "chay" tu DUOI (py=1) LEN
+    // TREN (py=0). SUA: doi ten hien thi cho DUNG voi HANH VI THAT, khong
+    // dung sua logic tinh mau (de tranh anh huong nhung phan khac dang
+    // hoat dong on dinh dua tren cong thuc nay).
     fun directionDisplayName(direction: String): String = when (direction) {
-        DIRECTION_LEFT_TO_RIGHT -> "Tr\u00e1i -> Ph\u1ea3i"
-        DIRECTION_TOP_TO_BOTTOM -> "Tr\u00ean -> D\u01b0\u1edbi"
+        DIRECTION_LEFT_TO_RIGHT -> "Ph\u1ea3i -> Tr\u00e1i"
+        DIRECTION_TOP_TO_BOTTOM -> "D\u01b0\u1edbi -> Tr\u00ean"
         DIRECTION_DIAGONAL -> "Ch\u00e9o g\u00f3c"
         else -> direction
     }
