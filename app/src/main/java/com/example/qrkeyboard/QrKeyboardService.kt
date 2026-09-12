@@ -1081,10 +1081,16 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     private fun buildGlowKeyBackground(
         cornerDp: Int = 6,
         borderColor: Int = glowColor,
-        // Do day (dp) cua VIEN TRONG - dp(1) mac dinh nhu truoc. Chi cac O
-        // MAU trong [buildKeyboardSettingsBar] truyen gia tri lon hon cho o
-        // DANG DUOC CHON, de nguoi dung nhan biet ngay minh dang chon mau nao.
-        borderWidthDp: Int = 1
+        // SUA (theo yeu cau nguoi dung: "tang do day cua vien mau moi phim
+        // khi chay led len gap 3"): mac dinh TRUOC DAY la dp(1) - GIO la
+        // dp(3) (gap 3 lan) - ap dung cho MOI phim thuong dung gia tri mac
+        // dinh nay (hau het cac phim tren ban phim, xem [buildKey]). Cac
+        // phim "dac biet/dang bat" (Enter, Shift bat, mic, mau canh bao...)
+        // TRUOC DAY tu truyen gia tri RIENG (2 hoac 3, day hon muc mac dinh
+        // 1 luc do de con phan biet duoc) - CUNG duoc nhan len GAP 3 o TUNG
+        // noi goi tuong ung, giu dung ty le tuong doi giua phim thuong va
+        // phim dac biet nhu truoc.
+        borderWidthDp: Int = 3
     ): Drawable {
         val outerGlow = GradientDrawable().apply {
             cornerRadius = dp(cornerDp + 2).toFloat()
@@ -2330,7 +2336,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             // Chỉ rebuild background nút Shift nếu trạng thái highlight thực sự thay đổi
             val wasHighlight = shiftBtn.tag as? Boolean ?: false
             if (wasHighlight != shouldHighlight) {
-                shiftBtn.background = buildGlowKeyBackground(borderWidthDp = if (shouldHighlight) 3 else 1)
+                shiftBtn.background = buildGlowKeyBackground(borderWidthDp = if (shouldHighlight) 9 else 3)
                 shiftBtn.tag = shouldHighlight
             }
             // Cập nhật label các phím chữ cái (hoa/thường)
@@ -2594,7 +2600,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             minHeight = 0
             minimumWidth = 0
             minimumHeight = 0
-            background = buildGlowKeyBackground(cornerDp = 10, borderColor = glowColor, borderWidthDp = 2)
+            background = buildGlowKeyBackground(cornerDp = 10, borderColor = glowColor, borderWidthDp = 6)
             // SUA: kich thuoc/margin GIONG HET cac phim thuong khac trong
             // cung hang (xem [buildKey]) - MATCH_PARENT chieu cao (fill dung
             // chieu cao hang, khong con dp(keyHeightDp) rieng + padding lon
@@ -2724,13 +2730,13 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 stopIcon.setBounds(0, 0, iconSize, iconSize)
                 btn.setCompoundDrawables(null, stopIcon, null, null)
                 btn.contentDescription = "D\u1eebng nghe (\u0111ang ghi \u00e2m)"
-                btn.background = buildGlowKeyBackground(cornerDp = 10, borderColor = Color.parseColor("#FF4B4B"), borderWidthDp = 2)
+                btn.background = buildGlowKeyBackground(cornerDp = 10, borderColor = Color.parseColor("#FF4B4B"), borderWidthDp = 6)
             } else {
                 val micIcon = MicIconDrawable(if (isDarkTheme) Color.WHITE else Color.BLACK, listening = false, sizePx = iconSize)
                 micIcon.setBounds(0, 0, iconSize, iconSize)
                 btn.setCompoundDrawables(null, micIcon, null, null)
                 btn.contentDescription = "Nh\u1eadp li\u1ec7u b\u1eb1ng gi\u1ecdng n\u00f3i"
-                btn.background = buildGlowKeyBackground(cornerDp = 10, borderColor = glowColor, borderWidthDp = 2)
+                btn.background = buildGlowKeyBackground(cornerDp = 10, borderColor = glowColor, borderWidthDp = 6)
             }
         } catch (e: Exception) {
             // Bo qua - hiem gap (vd View da bi thao khoi cay dung luc nay).
@@ -2967,7 +2973,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // van con phan biet duoc day la phim "dac biet/dang bat", nhung mau
         // sac thi HOAN TOAN dong bo voi ca ban phim.
         val bg: Drawable = if (highlight) {
-            buildGlowKeyBackground(borderWidthDp = 3)
+            buildGlowKeyBackground(borderWidthDp = 9)
         } else {
             buildGlowKeyBackground()
         }
