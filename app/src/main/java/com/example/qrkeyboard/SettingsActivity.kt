@@ -272,15 +272,44 @@ class SettingsActivity : AppCompatActivity() {
         setPadding(dp(16), dp(14), dp(16), dp(14))
 
         addView(sectionTitle("B\u1eadt / ch\u1ecdn l\u00e0m b\u00e0n ph\u00edm"))
+        // SUA (theo phan anh nguoi dung: "hien tai chi co nut su dung lam
+        // ban phim (chon lam ban phim) thieu ve 2 'bat mo ban phim'"): day
+        // THAT RA la 2 BUOC RIENG BIET cua Android, KHONG the gop chung 1
+        // nut duy nhat: (1) BAT trong danh sach ban phim CAI DAT tren may
+        // (Settings.ACTION_INPUT_METHOD_SETTINGS - vao trang he thong, gat
+        // cong tac BAT cho "QR Keyboard"), CAN LAM TRUOC TIEN; (2) sau khi
+        // da BAT o buoc (1) roi, CHON no lam ban phim DANG DUNG (thay the
+        // ban phim hien tai) - dung ham rieng
+        // InputMethodManager.showInputMethodPicker() (hien popup danh sach
+        // CAC ban phim DA BAT de chon), KHONG DUNG lai Settings.
+        // ACTION_INPUT_METHOD_SETTINGS cho buoc nay duoc. THEM nut (1) RIENG
+        // o day - truoc day CHi co nut (2) (goi nham la "Su dung lam ban
+        // phim" nhung thuc chat mo Settings.ACTION_INPUT_METHOD_SETTINGS,
+        // dung hon la buoc BAT).
         addView(sectionSubtitle(
-            "M\u1edf trang \u0111i\u1ec1u ch\u1EC9nh b\u00e0n ph\u00edm c\u1EE7a h\u1EC7 th\u1ED1ng \u0111\u1EC3 " +
-                "b\u1EADt QR Keyboard v\u00e0/ho\u1EB7c ch\u1ECdn n\u00f3 l\u00e0m b\u00e0n ph\u00edm \u0111ang d\u00f9ng."
+            "C\u1EA7n l\u00e0m theo \u0111\u00fang 2 b\u01b0\u1edbc: (1) B\u1EADT QR Keyboard trong danh " +
+                "s\u00e1ch b\u00e0n ph\u00edm c\u1EE7a h\u1EC7 th\u1ED1ng, r\u1ED3i (2) Ch\u1ECdn n\u00f3 l\u00e0m " +
+                "b\u00e0n ph\u00edm \u0111ang d\u00f9ng."
         ))
-        addView(neonButton("\u2328\ufe0f  S\u1eed d\u1EE5ng l\u00e0m b\u00e0n ph\u00edm", accentNow) {
+        addView(spacer(10))
+        addView(neonButton("\u2699\ufe0f  B\u01b0\u1edbc 1: B\u1EADt b\u00e0n ph\u00edm", accentNow) {
             try {
                 startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS))
             } catch (e: Exception) {
                 Toast.makeText(this@SettingsActivity, "Kh\u00f4ng m\u1edf \u0111\u01b0\u1EE3c trang C\u00e0i \u0111\u1eb7t b\u00e0n ph\u00edm h\u1EC7 th\u1ED1ng", Toast.LENGTH_SHORT).show()
+            }
+        })
+        addView(spacer(10))
+        addView(neonButton("\u2328\ufe0f  B\u01b0\u1edbc 2: Ch\u1ECdn l\u00e0m b\u00e0n ph\u00edm \u0111ang d\u00f9ng", accentNow) {
+            try {
+                val imm = getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager
+                if (imm != null) {
+                    imm.showInputMethodPicker()
+                } else {
+                    Toast.makeText(this@SettingsActivity, "Kh\u00f4ng m\u1edf \u0111\u01b0\u1EE3c danh s\u00e1ch ch\u1ECdn b\u00e0n ph\u00edm", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                Toast.makeText(this@SettingsActivity, "Kh\u00f4ng m\u1edf \u0111\u01b0\u1EE3c danh s\u00e1ch ch\u1ECdn b\u00e0n ph\u00edm", Toast.LENGTH_SHORT).show()
             }
         })
     }
