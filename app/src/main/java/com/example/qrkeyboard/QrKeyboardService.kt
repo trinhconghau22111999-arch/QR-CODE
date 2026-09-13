@@ -1025,6 +1025,16 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             for (entry in entries) {
                 val posFactor = when (rgbChaseDirection) {
                     RgbEffectPrefs.DIRECTION_TOP_TO_BOTTOM -> entry.py
+                    // THEM (theo yeu cau nguoi dung: "lam luon 2 cai thieu
+                    // di: trai sang phai va tren xuong duoi"): DAO DAU
+                    // posFactor (am thay vi duong) - vi cong thuc goc luon
+                    // khien "vet sang" di chuyen ve phia posFactor NHO HON
+                    // theo thoi gian (xem giai thich chi tiet o duoi, phan
+                    // rainbow), dao dau se lam no di chuyen ve phia LON
+                    // HON thay vi, tao ra dung chieu THAT (Trai->Phai/
+                    // Tren->Duoi) nhu ten goi.
+                    RgbEffectPrefs.DIRECTION_TOP_TO_BOTTOM_TRUE -> -entry.py
+                    RgbEffectPrefs.DIRECTION_LEFT_TO_RIGHT_TRUE -> -entry.px
                     RgbEffectPrefs.DIRECTION_DIAGONAL -> (entry.px + entry.py) / 2f
                     else -> entry.px // DIRECTION_LEFT_TO_RIGHT (mac dinh)
                 }
@@ -1061,10 +1071,28 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         for (entry in entries) {
             val posFactor = when (rgbChaseDirection) {
                 RgbEffectPrefs.DIRECTION_TOP_TO_BOTTOM -> entry.py
+                // SUA (theo yeu cau nguoi dung: "lam luon 2 cai thieu di:
+                // trai sang phai va tren xuong duoi"): cong thuc mau
+                // hsv[0] = (pha_thoi_gian_TANG_DAN + posFactor*360) % 360
+                // luon khien 1 "mau" cu the (hue co dinh) di chuyen ve
+                // phia posFactor NHO HON theo thoi gian - de giu nguyen
+                // mau (hue) khi pha tang len, posFactor PHAI GIAM xuong
+                // tuong ung. Vi vay DIRECTION_LEFT_TO_RIGHT/TOP_TO_BOTTOM
+                // (dung +posFactor) THAT SU chay tu LON -> NHO (Phai->Trai/
+                // Duoi->Tren). DAO DAU posFactor (dung -posFactor) o day se
+                // dao NGUOC lai huong di chuyen, tao ra DUNG chieu THAT
+                // (Trai->Phai/Tren->Duoi) nhu ten goi cua 2 huong MOI nay.
+                RgbEffectPrefs.DIRECTION_TOP_TO_BOTTOM_TRUE -> -entry.py
+                RgbEffectPrefs.DIRECTION_LEFT_TO_RIGHT_TRUE -> -entry.px
                 RgbEffectPrefs.DIRECTION_DIAGONAL -> (entry.px + entry.py) / 2f
                 else -> entry.px // DIRECTION_LEFT_TO_RIGHT (mac dinh)
             }
-            hsv[0] = (rgbChasePhaseDeg + posFactor * 360f) % 360f
+            // SUA: dam bao hue LUON KHONG AM (Color.HSVToColor doi hoi hue
+            // trong khoang [0, 360)) - vi posFactor GIO co the AM (2 huong
+            // MOI "_TRUE" dung -entry.px/-entry.py), phep "%" cua Kotlin co
+            // the tra ve gia tri AM neu tong la so am. Cong them 360f roi
+            // "%" lai lan nua de LUON ep ve dung khoang duong.
+            hsv[0] = ((rgbChasePhaseDeg + posFactor * 360f) % 360f + 360f) % 360f
             val color = Color.HSVToColor(hsv)
             try {
                 entry.drawable.setStroke(dp(entry.strokeWidthDp), color)

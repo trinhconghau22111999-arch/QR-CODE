@@ -17,16 +17,42 @@ object RgbEffectPrefs {
     private const val KEY_COLOR_MODE = "color_mode"
     private const val KEY_SPEED_PERCENT = "speed_percent"
 
-    /** Trai -> Phai (mau "quet" ngang qua ban phim). */
+    /** Phai -> Trai (mau "quet" ngang qua ban phim). TEN HANG SO giu
+     *  NGUYEN "ltr" de KHONG lam hong gia tri da luu san cua nguoi dung tu
+     *  truoc (chi doi TEN HIEN THI, xem [directionDisplayName]) - du gia
+     *  tri hang so "ltr" nghe co ve mau thuan la "trai sang phai" nhung
+     *  hanh vi THAT SU cua no la Phai -> Trai (xem giai thich chi tiet o
+     *  [directionDisplayName]). */
     const val DIRECTION_LEFT_TO_RIGHT = "ltr"
 
-    /** Tren -> Duoi (mau "quet" theo tung hang). */
+    /** Duoi -> Tren (mau "quet" theo tung hang). Tuong tu tren, ten hang so
+     *  "ttb" giu nguyen vi ly do tuong thich nguoc, hanh vi THAT SU la
+     *  Duoi -> Tren. */
     const val DIRECTION_TOP_TO_BOTTOM = "ttb"
 
     /** Cheo goc trai-tren -> phai-duoi. */
     const val DIRECTION_DIAGONAL = "diag"
 
+    /** THEM (theo yeu cau nguoi dung: "vay lam luon 2 cai thieu di: trai
+     *  sang phai va tren xuong duoi"): 2 huong MOI, THAT SU chay dung
+     *  chieu Trai->Phai va Tren->Duoi (dung cong thuc TRU thay vi CONG
+     *  trong [QrKeyboardService.applyRgbChaseFrame], xem giai thich chi
+     *  tiet o do) - KHAC voi [DIRECTION_LEFT_TO_RIGHT]/[DIRECTION_TOP_TO_BOTTOM]
+     *  o tren (2 huong CU, hanh vi THAT SU la Phai->Trai/Duoi->Tren du ten
+     *  hang so nghe co ve nguoc lai). */
+    const val DIRECTION_LEFT_TO_RIGHT_TRUE = "ltr2"
+    const val DIRECTION_TOP_TO_BOTTOM_TRUE = "ttb2"
+
     const val DEFAULT_DIRECTION = DIRECTION_LEFT_TO_RIGHT
+
+    /** Danh sach TAT CA huong, theo dung THU TU muon hien trong Cai dat. */
+    val ALL_DIRECTIONS: List<String> = listOf(
+        DIRECTION_LEFT_TO_RIGHT_TRUE,
+        DIRECTION_LEFT_TO_RIGHT,
+        DIRECTION_TOP_TO_BOTTOM_TRUE,
+        DIRECTION_TOP_TO_BOTTOM,
+        DIRECTION_DIAGONAL
+    )
 
     /** THEM (theo yeu cau nguoi dung: "có chạy led nhiều màu nhưng lại
      *  không có chạy 1 màu"): "Nhieu mau" (RAINBOW, MAC DINH/hanh vi CU giu
@@ -76,6 +102,8 @@ object RgbEffectPrefs {
     fun directionDisplayName(direction: String): String = when (direction) {
         DIRECTION_LEFT_TO_RIGHT -> "Ph\u1ea3i -> Tr\u00e1i"
         DIRECTION_TOP_TO_BOTTOM -> "D\u01b0\u1edbi -> Tr\u00ean"
+        DIRECTION_LEFT_TO_RIGHT_TRUE -> "Tr\u00e1i -> Ph\u1ea3i"
+        DIRECTION_TOP_TO_BOTTOM_TRUE -> "Tr\u00ean -> D\u01b0\u1edbi"
         DIRECTION_DIAGONAL -> "Ch\u00e9o g\u00f3c"
         else -> direction
     }

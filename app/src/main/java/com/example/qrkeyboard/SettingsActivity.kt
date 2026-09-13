@@ -628,8 +628,15 @@ class SettingsActivity : AppCompatActivity() {
         wrap.addView(rgbColorModeRow)
         wrap.addView(spacer(10))
 
+        // SUA (theo yeu cau nguoi dung: "lam luon 2 cai thieu di: trai sang
+        // phai va tren xuong duoi"): tu 3 len 5 huong - boc trong
+        // [HorizontalScrollView] de tranh cac nut bi ep qua chat/kho bam
+        // tren man hinh nho khi co toi 5 lua chon thay vi 3 nhu truoc.
         rgbDirectionRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        wrap.addView(rgbDirectionRow)
+        wrap.addView(HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(rgbDirectionRow)
+        })
         wrap.addView(spacer(14))
 
         // THEM (theo yeu cau nguoi dung: "1 cai dat thanh truot cho toc do
@@ -817,11 +824,10 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         val currentDir = RgbEffectPrefs.getDirection(this)
-        val directions = listOf(
-            RgbEffectPrefs.DIRECTION_LEFT_TO_RIGHT,
-            RgbEffectPrefs.DIRECTION_TOP_TO_BOTTOM,
-            RgbEffectPrefs.DIRECTION_DIAGONAL
-        )
+        // SUA (theo yeu cau nguoi dung: "lam luon 2 cai thieu di: trai sang
+        // phai va tren xuong duoi"): dung [RgbEffectPrefs.ALL_DIRECTIONS]
+        // (5 huong) thay vi liet ke cung 3 huong cu.
+        val directions = RgbEffectPrefs.ALL_DIRECTIONS
         directions.forEachIndexed { i, dir ->
             val selected = dir == currentDir
             val btn = TextView(this).apply {
@@ -829,7 +835,7 @@ class SettingsActivity : AppCompatActivity() {
                 textSize = 13f
                 gravity = Gravity.CENTER
                 setTextColor(if (selected) accentNow else textSecondary)
-                setPadding(dp(8), dp(10), dp(8), dp(10))
+                setPadding(dp(10), dp(10), dp(10), dp(10))
                 background = GradientDrawable().apply {
                     cornerRadius = dp(8).toFloat()
                     setColor(if (selected) Color.parseColor("#221533") else Color.TRANSPARENT)
@@ -837,9 +843,14 @@ class SettingsActivity : AppCompatActivity() {
                 }
                 isClickable = true
                 isFocusable = true
-                layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                // SUA: doi tu "width=0 + weight=1f" (chi hop ly khi cha la
+                // LinearLayout co chieu rong CO HAN) sang WRAP_CONTENT + minWidth
+                // - vi hang nay GIO nam trong [HorizontalScrollView] (chieu
+                // rong cha KHONG GIOI HAN), "weight" se lam nut bi co ve 0.
+                layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
                     if (i > 0) marginStart = dp(6)
                 }
+                minWidth = dp(84)
                 setOnClickListener { setRgbDirection(dir) }
             }
             rgbDirectionRow.addView(btn)
