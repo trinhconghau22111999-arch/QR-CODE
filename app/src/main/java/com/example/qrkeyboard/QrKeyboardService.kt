@@ -1056,25 +1056,32 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                     else -> entry.px // DIRECTION_LEFT_TO_RIGHT (mac dinh)
                 }
                 // Song hinh sin theo vi tri + pha thoi gian hien tai -> tao
-                // cam giac 1 "vet sang" dang di chuyen doc theo [rgbChaseDirection],
-                // Song hinh sin theo vi tri + pha thoi gian hien tai -> tao
                 // cam giac 1 "vet sang" dang di chuyen doc theo [rgbChaseDirection].
-                // Mau CO Hue ro rang: dao dong do sang (Value) tu 55% (mo)
-                // len 100% (sang ro) - GIONG HET cam giac "chay" cua che do
-                // nhieu mau, chi khac la KHONG doi Hue (mau goc). Mau XAM/
-                // TRANG/DEN (isAchromatic): dao dong NHE (bien do +-20%)
-                // QUANH DUNG do sang GOC da chon - vi du Trang (do sang
-                // goc=1.0) dao dong trong khoang [0.8, 1.0] (luon SANG,
-                // ro rang la "Trang"), Den (do sang goc=0.0) dao dong trong
-                // khoang [0.0, 0.2] (luon TOI, ro rang la "Den") - 2 mau
-                // nay gio LUON PHAN BIET duoc ro rang voi nhau, khong con
-                // "troi ve giua" thanh cung 1 gia tri nhu cong thuc cu.
+                // Mau CO Hue ro rang: dao dong do sang (Value). Mau XAM/
+                // TRANG/DEN (isAchromatic): dao dong QUANH DUNG do sang GOC
+                // da chon - vi du Trang (do sang goc=1.0), Den (do sang
+                // goc=0.0) - 2 mau nay LUON PHAN BIET duoc ro rang voi
+                // nhau, khong con "troi ve giua" thanh cung 1 gia tri nhu
+                // cong thuc cu.
                 val phaseRad = Math.toRadians((rgbChasePhaseDeg + posFactor * 360f).toDouble())
                 val wave = ((Math.sin(phaseRad).toFloat() + 1f) / 2f)
+                // SUA (theo yeu cau nguoi dung: "khi chay '1 mau' thi phan
+                // 'sang' giu nguyen...con phan toi phai toi hon hien tai"):
+                // GIU NGUYEN dung muc SANG NHAT (wave=1) nhu truoc - CHI ha
+                // THAP xuong muc TOI NHAT (wave=0), tao tuong phan sang/toi
+                // ro ret hon khi "chay".
                 val value = if (isAchromatic) {
-                    (baseHsv[2] + (wave - 0.5f) * 0.4f).coerceIn(0f, 1f)
+                    // Sang nhat: giu nguyen cong thuc CU (goc + 0.2, cap 1).
+                    val brightVal = (baseHsv[2] + 0.2f).coerceAtMost(1f)
+                    // Toi nhat: TRUOC DAY la (goc - 0.2) - GIO ha xuong
+                    // (goc - 0.5), toi hon han so voi truoc, cap 0.
+                    val darkVal = (baseHsv[2] - 0.5f).coerceAtLeast(0f)
+                    darkVal + wave * (brightVal - darkVal)
                 } else {
-                    0.55f + wave * 0.45f
+                    // Sang nhat: giu nguyen 1.0 (100%) nhu truoc. Toi nhat:
+                    // TRUOC DAY la 0.55 (55%) - GIO ha xuong 0.2 (20%), toi
+                    // hon han so voi truoc.
+                    0.2f + wave * 0.8f
                 }
                 val color = Color.HSVToColor(floatArrayOf(baseHsv[0], saturation, value))
                 try {
