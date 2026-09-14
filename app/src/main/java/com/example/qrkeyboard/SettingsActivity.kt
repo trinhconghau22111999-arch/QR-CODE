@@ -600,12 +600,29 @@ class SettingsActivity : AppCompatActivity() {
     // an/mo lai.
     private fun restartPreviewKeyboardIfShowing() {
         val field = previewField ?: return
-        if (!field.hasFocus()) return
         val imm = getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager ?: return
-        imm.hideSoftInputFromWindow(field.windowToken, 0)
-        field.postDelayed({
-            if (field.hasFocus()) imm.showSoftInput(field, InputMethodManager.SHOW_FORCED)
-        }, 150)
+        // SUA (theo yeu cau nguoi dung: "khi co thay doi mau sac hoac hieu
+        // ung...lien tat ban phim roi bat lai (neu dang bat) HOAC bat len
+        // neu chua bat...de xem ngay thay doi"): TRUOC DAY neu o "Xem thu"
+        // CHUA duoc focus (ban phim CHUA hien), ham nay chi return NGAY,
+        // KHONG lam gi ca - nguoi dung phai tu bam vao o do TRUOC thi thay
+        // doi moi duoc "xem ngay" duoc. GIO DAY: THEM nhanh con "CHUA BAT" -
+        // tu dong focus vao o "Xem thu" VA mo ban phim len LUON, khong can
+        // nguoi dung tu bam truoc nua.
+        if (field.hasFocus()) {
+            // DA dang hien - AN roi MO LAI (restart) de ep cap nhat giao
+            // dien moi nhat.
+            imm.hideSoftInputFromWindow(field.windowToken, 0)
+            field.postDelayed({
+                if (field.hasFocus()) imm.showSoftInput(field, InputMethodManager.SHOW_FORCED)
+            }, 150)
+        } else {
+            // CHUA hien - xin focus va mo ban phim len NGAY.
+            field.requestFocus()
+            field.postDelayed({
+                imm.showSoftInput(field, InputMethodManager.SHOW_FORCED)
+            }, 100)
+        }
     }
 
     private fun toggleTheme() {
