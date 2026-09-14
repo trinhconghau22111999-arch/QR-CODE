@@ -511,7 +511,15 @@ class SettingsActivity : AppCompatActivity() {
 
         colorSwatchContainer = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val scroller = HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
+            // SUA (theo yeu cau nguoi dung: "thanh ben duoi luot qua luot
+            // lai nhung khong de y se khong biet...ben tao cho no 1 cai
+            // thanh keo ben duoi de hinh dung"): BAT lai thanh cuon ngang
+            // (truoc day TAT han) + [scrollBarFadeDuration]=0 (KHONG tu
+            // dong mo dan/bien mat NGAY - giu HIEN RO LIEN TUC) - de nguoi
+            // dung NHIN LA BIET NGAY co the luot ngang qua trai/phai, thay
+            // vi phai vo tinh cham thu moi phat hien ra.
+            isHorizontalScrollBarEnabled = true
+            scrollBarFadeDuration = 0
             addView(colorSwatchContainer)
         }
         wrap.addView(scroller)
@@ -670,7 +678,12 @@ class SettingsActivity : AppCompatActivity() {
         // tren man hinh nho khi co toi 5 lua chon thay vi 3 nhu truoc.
         rgbDirectionRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         wrap.addView(HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
+            // SUA (theo yeu cau nguoi dung - xem giai thich chi tiet o
+            // [buildColorSection]): BAT lai thanh cuon ngang, giu hien LIEN
+            // TUC (khong tu an) de nguoi dung biet co the luot xem het 5
+            // huong.
+            isHorizontalScrollBarEnabled = true
+            scrollBarFadeDuration = 0
             addView(rgbDirectionRow)
         })
         wrap.addView(spacer(14))
@@ -850,14 +863,21 @@ class SettingsActivity : AppCompatActivity() {
             val selected = modeValue == currentColorMode
             val btn = TextView(this).apply {
                 text = label
-                textSize = 13f
+                // SUA (theo yeu cau nguoi dung: "2 cai o nhieu mau va 1
+                // mau...phai to dam len de phan biet voi 5 o ben duoi"):
+                // TANG co chu (13f -> 15f) + IN DAM (Typeface.BOLD) + LUON
+                // co vien ro (khac voi 5 nut Huong chay ben duoi, chi co
+                // vien khi DUOC CHON) - de 2 lua chon nay "noi bat" ro rang
+                // hon, khong bi lan voi day nut Huong chay phia duoi.
+                textSize = 15f
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
                 gravity = Gravity.CENTER
-                setTextColor(if (selected) accentNow else textSecondary)
-                setPadding(dp(8), dp(10), dp(8), dp(10))
+                setTextColor(if (selected) accentNow else textPrimary)
+                setPadding(dp(8), dp(12), dp(8), dp(12))
                 background = GradientDrawable().apply {
                     cornerRadius = dp(8).toFloat()
                     setColor(if (selected) Color.parseColor("#221533") else Color.TRANSPARENT)
-                    if (selected) setStroke(dp(1), accentNow)
+                    setStroke(dp(if (selected) 2 else 1), if (selected) accentNow else textSecondary)
                 }
                 isClickable = true
                 isFocusable = true

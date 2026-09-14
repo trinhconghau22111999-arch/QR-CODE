@@ -1018,10 +1018,27 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         if (rgbChaseColorMode == RgbEffectPrefs.COLOR_MODE_SINGLE) {
             val baseHsv = FloatArray(3)
             Color.colorToHSV(glowColor, baseHsv)
-            // Neu mau nen dang chon co do bao hoa (saturation) qua thap (vd
-            // gan trang/xam), ep len toi thieu de "song chay" van con nhin
-            // ra duoc ro rang, khong bi "chim" thanh mot mau xam nhat deu.
-            val saturation = baseHsv[1].coerceAtLeast(0.45f)
+            // SUA LOI THUC SU (theo phan anh nguoi dung: "2 mau sac vien:
+            // den va trang dang bi sai...no ra cung 1 cai mau"): TRUOC DAY
+            // saturation LUON bi ep len toi thieu 0.45 - VOI CA mau Trang
+            // (S=0, do sang goc=1.0) LAN mau Den (S=0, do sang goc=0.0),
+            // Android tra ve HUE=0 nhu nhau cho ca 2 (S=0 thi Hue KHONG XAC
+            // DINH, mac dinh la 0) - nen SAU KHI ep saturation len 0.45, CA
+            // 2 deu thanh "Hue=0, S=0.45" - Y HET NHAU (mot mau do/hong nhat
+            // nhap nhay), MAT HOAN TOAN y nghia "trang" hay "den" nguoi
+            // dung da chon, dung nhu trieu chung "ra cung 1 mau" duoc mo ta.
+            //
+            // SUA: phat hien mau GOC la mau XAM/TRANG/DEN thuc su (isAchromatic,
+            // saturation goc GAN 0) - neu dung, GIU NGUYEN saturation = 0
+            // (khong ep len, tranh bi "nhuom" thanh mau do/hong), va tinh
+            // do sang (value) dao dong QUANH DUNG do sang GOC cua mau da
+            // chon (bien do nho +-20%, ke ca luc dao dong VAN con GAN dung
+            // "trang" hoac "den" ban dau, khong bi troi ve giua) thay vi
+            // dung chung 1 cong thuc gia tri co dinh (0.55->1.0) nhu truoc
+            // (cong thuc do MAC DINH gia su mau nen la 1 mau THAT SU co Hue
+            // ro rang, khong phu hop cho truong hop xam/trang/den).
+            val isAchromatic = baseHsv[1] < 0.08f
+            val saturation = if (isAchromatic) 0f else baseHsv[1].coerceAtLeast(0.45f)
             for (entry in entries) {
                 val posFactor = when (rgbChaseDirection) {
                     RgbEffectPrefs.DIRECTION_TOP_TO_BOTTOM -> entry.py
@@ -1040,12 +1057,25 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 }
                 // Song hinh sin theo vi tri + pha thoi gian hien tai -> tao
                 // cam giac 1 "vet sang" dang di chuyen doc theo [rgbChaseDirection],
-                // dao dong do sang (Value) tu 55% (mo) len 100% (sang ro) -
-                // GIONG HET cam giac "chay" cua che do nhieu mau, chi khac
-                // la KHONG doi Hue (mau goc).
+                // Song hinh sin theo vi tri + pha thoi gian hien tai -> tao
+                // cam giac 1 "vet sang" dang di chuyen doc theo [rgbChaseDirection].
+                // Mau CO Hue ro rang: dao dong do sang (Value) tu 55% (mo)
+                // len 100% (sang ro) - GIONG HET cam giac "chay" cua che do
+                // nhieu mau, chi khac la KHONG doi Hue (mau goc). Mau XAM/
+                // TRANG/DEN (isAchromatic): dao dong NHE (bien do +-20%)
+                // QUANH DUNG do sang GOC da chon - vi du Trang (do sang
+                // goc=1.0) dao dong trong khoang [0.8, 1.0] (luon SANG,
+                // ro rang la "Trang"), Den (do sang goc=0.0) dao dong trong
+                // khoang [0.0, 0.2] (luon TOI, ro rang la "Den") - 2 mau
+                // nay gio LUON PHAN BIET duoc ro rang voi nhau, khong con
+                // "troi ve giua" thanh cung 1 gia tri nhu cong thuc cu.
                 val phaseRad = Math.toRadians((rgbChasePhaseDeg + posFactor * 360f).toDouble())
                 val wave = ((Math.sin(phaseRad).toFloat() + 1f) / 2f)
-                val value = 0.55f + wave * 0.45f
+                val value = if (isAchromatic) {
+                    (baseHsv[2] + (wave - 0.5f) * 0.4f).coerceIn(0f, 1f)
+                } else {
+                    0.55f + wave * 0.45f
+                }
                 val color = Color.HSVToColor(floatArrayOf(baseHsv[0], saturation, value))
                 try {
                     entry.drawable.setStroke(dp(entry.strokeWidthDp), color)
@@ -1724,10 +1754,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             setPadding(0, dp(verticalPaddingDp), 0, 0)
         }
 
-        // Dong 1: 1, 2, 3, [x / /] (theo yeu cau nguoi dung: "doi vi tri
-        // phim xoa voi 2 phim 'x' va '/'") - cap [x/ /] chuyen LEN DAY (vi
-        // tri CU cua phim Xoa), phim Xoa chuyen XUONG duoi cot "9" (xem
-        // subRow4 - vi tri CU cua cap [x/ /]).
+        // Dong 1: 1, 2, 3, [+ / -] (theo yeu cau nguoi dung MOI NHAT: "doi 2
+        // phim '+' va '-' voi 2 phim 'x' va '/' de 2 phim cong tru len tren
+        // 2 phim nhan chia xuong duoi") - cap [+/-] chuyen LEN dong nay
+        // (truoc day o dong 2), cap [x/ /] chuyen XUONG dong 2 (xem ben
+        // duoi).
         val row1 = LinearLayout(this).apply {
             isBaselineAligned = false
             layoutParams = LinearLayout.LayoutParams(
@@ -1739,24 +1770,22 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             row1.addView(key)
             registerChaseKey(KeyboardMode.NUMPAD, key, idx / 3f, 0f)
         }
-        val mulDivSlotRow1 = LinearLayout(this).apply {
+        val plusMinusSlotRow1 = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             isBaselineAligned = false
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
         }
-        val mulKeyRow1 = buildKey("\u00d7", weight = 0.5f, fillRowHeight = true) { insertChar('x') }
-        val divKeyRow1 = buildKey("/", weight = 0.5f, fillRowHeight = true) { insertChar('/') }
-        mulDivSlotRow1.addView(mulKeyRow1)
-        mulDivSlotRow1.addView(divKeyRow1)
-        row1.addView(mulDivSlotRow1)
-        registerChaseKey(KeyboardMode.NUMPAD, mulKeyRow1, 0.83f, 0f)
-        registerChaseKey(KeyboardMode.NUMPAD, divKeyRow1, 1f, 0f)
+        val plusKeyRow1 = buildKey("+", weight = 0.5f, fillRowHeight = true) { insertChar('+') }
+        val minusKeyRow1 = buildKey("\u2212", weight = 0.5f, fillRowHeight = true) { insertChar('-') }
+        plusMinusSlotRow1.addView(plusKeyRow1)
+        plusMinusSlotRow1.addView(minusKeyRow1)
+        row1.addView(plusMinusSlotRow1)
+        registerChaseKey(KeyboardMode.NUMPAD, plusKeyRow1, 0.83f, 0f)
+        registerChaseKey(KeyboardMode.NUMPAD, minusKeyRow1, 1f, 0f)
         root.addView(row1)
 
-        // Dong 2: 4, 5, 6, [+ / -] (theo yeu cau nguoi dung: "doi vi tri
-        // phim 'ABC' voi 2 phim '+' va '-'") - cap [+/-] chuyen LEN DAY (vi
-        // tri CU cua phim ABC), phim ABC chuyen XUONG duoi cot "7" (xem
-        // subRow4 - vi tri CU cua cap [+/-]).
+        // Dong 2: 4, 5, 6, [x / /] - cap [x/ /] chuyen XUONG dong nay
+        // (truoc day o dong 1).
         val row2 = LinearLayout(this).apply {
             isBaselineAligned = false
             layoutParams = LinearLayout.LayoutParams(
@@ -1768,18 +1797,18 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             row2.addView(key)
             registerChaseKey(KeyboardMode.NUMPAD, key, idx / 3f, 0.33f)
         }
-        val plusMinusSlotRow2 = LinearLayout(this).apply {
+        val mulDivSlotRow2 = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             isBaselineAligned = false
             layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
         }
-        val plusKeyRow2 = buildKey("+", weight = 0.5f, fillRowHeight = true) { insertChar('+') }
-        val minusKeyRow2 = buildKey("\u2212", weight = 0.5f, fillRowHeight = true) { insertChar('-') }
-        plusMinusSlotRow2.addView(plusKeyRow2)
-        plusMinusSlotRow2.addView(minusKeyRow2)
-        row2.addView(plusMinusSlotRow2)
-        registerChaseKey(KeyboardMode.NUMPAD, plusKeyRow2, 0.83f, 0.33f)
-        registerChaseKey(KeyboardMode.NUMPAD, minusKeyRow2, 1f, 0.33f)
+        val mulKeyRow2 = buildKey("\u00d7", weight = 0.5f, fillRowHeight = true) { insertChar('x') }
+        val divKeyRow2 = buildKey("/", weight = 0.5f, fillRowHeight = true) { insertChar('/') }
+        mulDivSlotRow2.addView(mulKeyRow2)
+        mulDivSlotRow2.addView(divKeyRow2)
+        row2.addView(mulDivSlotRow2)
+        registerChaseKey(KeyboardMode.NUMPAD, mulKeyRow2, 0.83f, 0.33f)
+        registerChaseKey(KeyboardMode.NUMPAD, divKeyRow2, 1f, 0.33f)
         root.addView(row2)
 
         // Dong 3+4 (gop chung mot khoi ngang): theo yeu cau nguoi dung -
