@@ -1502,14 +1502,14 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
         when (mode) {
             KeyboardMode.LETTERS -> {
-                // SUA (theo yeu cau nguoi dung: "nut mic xuong goc trai duoi
-                // roi...doi len tren cung, nam tren hang so luon, ben phai
-                // cung"): mic KHONG con o hang duoi cung nua (xem
-                // [buildLettersBottomRow]) - gio duoc THEM truc tiep vao
-                // CUOI (ben phai cung) cua CHINH hang so tren cung nay,
-                // cung kich thuoc 75% ([topNumberRowHeightDp]) nhu 10 phim
-                // so ben canh.
-                val topNumberRow = buildCharRow(numberRows[0], rowPhase = 0f, heightDp = topNumberRowHeightDp)
+                // SUA (theo yeu cau nguoi dung: "sua hang phim so + phim
+                // mic lai cho no cao bang hang phim khac"): TRUOC DAY hang
+                // nay dung 75% chieu cao ([topNumberRowHeightDp]) - GIO DAY
+                // tra ve dung [keyHeightDp] BINH THUONG (bang cac hang khac)
+                // cho ca 10 phim so LAN phim Mic (phim Mic dung fillRowHeight
+                // = MATCH_PARENT, tu dong khop theo chieu cao MOI cua hang
+                // nay, khong can sua rieng).
+                val topNumberRow = buildCharRow(numberRows[0], rowPhase = 0f, heightDp = keyHeightDp)
                 topNumberRow.addView(buildMicKeyForLettersPage(weight = 1f))
                 // SUA (theo yeu cau nguoi dung: "tang khoang cach cua hang
                 // so tren cung va hang chu ke ngay duoi no thanh gap 3 lan
@@ -1724,7 +1724,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             setPadding(0, dp(verticalPaddingDp), 0, 0)
         }
 
-        // Dong 1: 1, 2, 3, Xoa
+        // Dong 1: 1, 2, 3, [x / /] (theo yeu cau nguoi dung: "doi vi tri
+        // phim xoa voi 2 phim 'x' va '/'") - cap [x/ /] chuyen LEN DAY (vi
+        // tri CU cua phim Xoa), phim Xoa chuyen XUONG duoi cot "9" (xem
+        // subRow4 - vi tri CU cua cap [x/ /]).
         val row1 = LinearLayout(this).apply {
             isBaselineAligned = false
             layoutParams = LinearLayout.LayoutParams(
@@ -1736,15 +1739,24 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             row1.addView(key)
             registerChaseKey(KeyboardMode.NUMPAD, key, idx / 3f, 0f)
         }
-        val delKey = buildKey("\u232b", onRepeat = { deleteChar(isAutoRepeat = true) }) { deleteChar() }
-        row1.addView(delKey)
-        registerChaseKey(KeyboardMode.NUMPAD, delKey, 1f, 0f)
+        val mulDivSlotRow1 = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            isBaselineAligned = false
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
+        }
+        val mulKeyRow1 = buildKey("\u00d7", weight = 0.5f, fillRowHeight = true) { insertChar('x') }
+        val divKeyRow1 = buildKey("/", weight = 0.5f, fillRowHeight = true) { insertChar('/') }
+        mulDivSlotRow1.addView(mulKeyRow1)
+        mulDivSlotRow1.addView(divKeyRow1)
+        row1.addView(mulDivSlotRow1)
+        registerChaseKey(KeyboardMode.NUMPAD, mulKeyRow1, 0.83f, 0f)
+        registerChaseKey(KeyboardMode.NUMPAD, divKeyRow1, 1f, 0f)
         root.addView(row1)
 
-        // Dong 2: 4, 5, 6, ABC (kich thuoc = 1 nut, dung ngay duoi nut Xoa o
-        // dong 1 - theo yeu cau nguoi dung: chuyen nut "ABC" (truoc day o
-        // dong 4) len day, nam cung dong va ben phai so 6). ABC gio chiem
-        // dung vi tri khoang trong (spacer) truoc day cua dong nay.
+        // Dong 2: 4, 5, 6, [+ / -] (theo yeu cau nguoi dung: "doi vi tri
+        // phim 'ABC' voi 2 phim '+' va '-'") - cap [+/-] chuyen LEN DAY (vi
+        // tri CU cua phim ABC), phim ABC chuyen XUONG duoi cot "7" (xem
+        // subRow4 - vi tri CU cua cap [+/-]).
         val row2 = LinearLayout(this).apply {
             isBaselineAligned = false
             layoutParams = LinearLayout.LayoutParams(
@@ -1756,9 +1768,18 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             row2.addView(key)
             registerChaseKey(KeyboardMode.NUMPAD, key, idx / 3f, 0.33f)
         }
-        val abcKeyRow2 = buildKey("ABC") { switchMode(KeyboardMode.LETTERS) }
-        row2.addView(abcKeyRow2)
-        registerChaseKey(KeyboardMode.NUMPAD, abcKeyRow2, 1f, 0.33f)
+        val plusMinusSlotRow2 = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            isBaselineAligned = false
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
+        }
+        val plusKeyRow2 = buildKey("+", weight = 0.5f, fillRowHeight = true) { insertChar('+') }
+        val minusKeyRow2 = buildKey("\u2212", weight = 0.5f, fillRowHeight = true) { insertChar('-') }
+        plusMinusSlotRow2.addView(plusKeyRow2)
+        plusMinusSlotRow2.addView(minusKeyRow2)
+        row2.addView(plusMinusSlotRow2)
+        registerChaseKey(KeyboardMode.NUMPAD, plusKeyRow2, 0.83f, 0.33f)
+        registerChaseKey(KeyboardMode.NUMPAD, minusKeyRow2, 1f, 0.33f)
         root.addView(row2)
 
         // Dong 3+4 (gop chung mot khoi ngang): theo yeu cau nguoi dung -
@@ -1828,38 +1849,22 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             ).apply { bottomMargin = subRow4BottomMarginPx }
         }
 
-        // Cap [+ / -] - duoi so 7.
-        val plusMinusSlot = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            isBaselineAligned = false
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
-        }
-        val plusKey = buildKey("+", weight = 0.5f, fillRowHeight = true) { insertChar('+') }
-        val minusKey = buildKey("\u2212", weight = 0.5f, fillRowHeight = true) { insertChar('-') }
-        plusMinusSlot.addView(plusKey)
-        plusMinusSlot.addView(minusKey)
-        registerChaseKey(KeyboardMode.NUMPAD, plusKey, 0f, 1f)
-        registerChaseKey(KeyboardMode.NUMPAD, minusKey, 0.17f, 1f)
-        subRow4.addView(plusMinusSlot)
+        // Cot 1 (duoi so 7): phim "ABC" (theo yeu cau nguoi dung - doi cho
+        // voi cap [+/-] vua chuyen len dong 2).
+        val abcKeySubRow4 = buildKey("ABC", weight = 1f, fillRowHeight = true) { switchMode(KeyboardMode.LETTERS) }
+        subRow4.addView(abcKeySubRow4)
+        registerChaseKey(KeyboardMode.NUMPAD, abcKeySubRow4, 0f, 1f)
 
         // "0" - giu nguyen vi tri cot giua nhu truoc.
         val nk2 = buildKey("0", weight = 1f, fillRowHeight = true) { insertChar('0') }
         subRow4.addView(nk2)
         registerChaseKey(KeyboardMode.NUMPAD, nk2, 0.375f, 1f)
 
-        // Cap [x / /] - duoi so 9.
-        val mulDivSlot = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            isBaselineAligned = false
-            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f)
-        }
-        val mulKey = buildKey("\u00d7", weight = 0.5f, fillRowHeight = true) { insertChar('x') }
-        val divKey = buildKey("/", weight = 0.5f, fillRowHeight = true) { insertChar('/') }
-        mulDivSlot.addView(mulKey)
-        mulDivSlot.addView(divKey)
-        registerChaseKey(KeyboardMode.NUMPAD, mulKey, 0.67f, 1f)
-        registerChaseKey(KeyboardMode.NUMPAD, divKey, 0.84f, 1f)
-        subRow4.addView(mulDivSlot)
+        // Cot 3 (duoi so 9): phim "Xoa" (theo yeu cau nguoi dung - doi cho
+        // voi cap [x/ /] vua chuyen len dong 1).
+        val delKeySubRow4 = buildKey("\u232b", weight = 1f, fillRowHeight = true, onRepeat = { deleteChar(isAutoRepeat = true) }) { deleteChar() }
+        subRow4.addView(delKeySubRow4)
+        registerChaseKey(KeyboardMode.NUMPAD, delKeySubRow4, 0.75f, 1f)
 
         leftCol.addView(subRow4)
         row34.addView(leftCol)
@@ -2237,19 +2242,11 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         rgbChaseRegistryByPage[page]?.clear()
     }
 
-    /** SUA (theo yeu cau nguoi dung: "giam chieu cao hang phim so tren cung
-     *  o trang 1 xuong con 75% so voi hien tai, giu nguyen kich thuoc ky tu
-     *  ben trong phim"): chieu cao rieng (75% [keyHeightDp]) danh CHI cho
-     *  hang so "1234567890" (numberRows[0]) o trang Chu cai (trang 1 - hang
-     *  tren cung cua QWERTY). SUA LAI (theo yeu cau nguoi dung ngay sau do:
-     *  "thoi khong doi kich thuoc o trang 2 nua"): KHONG con ap dung cho
-     *  trang So/Ky hieu (trang 2) nua - hang so dau tien o trang do da
-     *  duoc TRA VE dung [keyHeightDp] binh thuong nhu truoc. Chi anh huong
-     *  CHIEU CAO khung phim (buildKey van tu tinh textSize theo do dai
-     *  nhan nhu cu, KHONG phu thuoc heightDp), nen ky tu ben trong khong
-     *  doi kich thuoc. */
-    private val topNumberRowHeightDp: Int
-        get() = (keyHeightDp * 3) / 4
+    // SUA (theo yeu cau nguoi dung: "sua hang phim so + phim mic lai cho no
+    // cao bang hang phim khac"): [topNumberRowHeightDp] (75% keyHeightDp
+    // rieng cho hang so tren cung trang Chu cai) da BI XOA - hang nay gio
+    // dung dung [keyHeightDp] binh thuong nhu moi hang khac (xem
+    // [buildLettersPage]).
 
     private fun buildCharRow(
         chars: String, applyShiftCase: Boolean = false, rowPhase: Float = 0.5f,
