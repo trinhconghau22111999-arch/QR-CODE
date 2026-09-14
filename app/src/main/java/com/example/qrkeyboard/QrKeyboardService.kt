@@ -1566,7 +1566,18 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                         buildCharRow(row, applyShiftCase = true, rowPhase = rowPhase)
                     if (index == letterRows.lastIndex) {
                         val shiftKey = buildKey(
-                            "\u2b06", weight = 1.5f,
+                            // SUA (theo phan anh nguoi dung: "sua nut in
+                            // hoa cho giong nut Enter - no nho hon va dac,
+                            // con Enter to hon va rong"): doi glyph tu
+                            // "\u2b06" (BLACK UP ARROW - net VE DAY/DAC,
+                            // gan nhu 1 khoi tam giac dac kin) sang "\u21e7"
+                            // (UPWARDS WHITE ARROW - net VE MO/RONG, dang
+                            // duong vien khong to dac giua, dung glyph kieu
+                            // "Shift" quen thuoc cua Gboard/SwiftKey) - cho
+                            // cam giac THOANG/RONG hon, gan voi kieu dang
+                            // "\u23ce" (Enter, cung la 1 net ve mo/mong) hon
+                            // la mot khoi dac nhu truoc.
+                            "\u21e7", weight = 1.5f,
                             highlight = isShiftOn || showCapitalPreview
                         ) {
                             val now = android.os.SystemClock.uptimeMillis()
@@ -3127,7 +3138,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 // nay duoc ve DAY VA CAN GIUA hon han trong khung chu cua
                 // hau het font he thong, khac phuc dung van de nguoi dung
                 // mo ta.
-                label == "\u23ce" || label == "\u2b06" -> 28f
+                label == "\u23ce" || label == "\u21e7" -> 28f
                 label.length > 3 -> 11f
                 label.length > 1 -> 13f
                 else -> 16f
@@ -3138,7 +3149,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             // o tren): TAT includeFontPadding cho CA 2 ky hieu mui ten don
             // le nay ("⏎" va "⬆") - deu bi khoang đệm font (danh cho
             // dau/moc cua chu co dau) day lech xuong duoi tam nut.
-            includeFontPadding = label != "\u23ce" && label != "\u2b06"
+            includeFontPadding = label != "\u23ce" && label != "\u21e7"
             setPadding(dp(1), 0, dp(1), 0)
             minWidth = 0
             minimumWidth = 0
