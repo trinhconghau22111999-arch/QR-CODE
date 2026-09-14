@@ -4125,6 +4125,13 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         rgbChaseColorMode = RgbEffectPrefs.getColorMode(this)
         rgbChaseSpeedPercent = RgbEffectPrefs.getSpeedPercent(this)
         vibrationLevelPercent = VibrationPrefs.getLevelPercent(this)
+        // THEM (theo yeu cau nguoi dung: "boc no lai khong cho no tat"):
+        // dam bao [KeepAliveService] dang chay - GIU tien trinh cua CA ban
+        // phim o muc do quan trong cao hon trong mat He Dieu Hanh, giam
+        // kha nang bi giet khi thieu RAM (LMK) - xem gioi han THAT SU cua
+        // ky thuat nay trong KeepAliveService.kt (khong giup duoc truoc
+        // cac trinh "toi uu pin" rieng cua tung hang may).
+        KeepAliveService.ensureRunning(this)
     }
 
     /** THEM: man Cai dat (SettingsActivity) gio la noi DUY NHAT nguoi dung

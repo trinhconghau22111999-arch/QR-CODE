@@ -90,6 +90,18 @@ class SettingsActivity : AppCompatActivity() {
         pendingExportAction = null
     }
 
+    // THEM (theo yeu cau nguoi dung: "boc no lai khong cho no tat"): Android
+    // 13+ (API 33+) BAT BUOC nguoi dung phai TU Y CHO PHEP moi duoc hien
+    // thong bao - [KeepAliveService] can quyen nay de hien thong bao uu
+    // tien thap giu tien trinh ban phim. IME (QrKeyboardService) KHONG the
+    // tu hien hop thoai xin quyen (khong co Activity context phu hop) - nen
+    // xin O DAY (SettingsActivity, moi lan mo icon app) thay the. Neu
+    // nguoi dung TU CHOI, [KeepAliveService] van co the chay duoc (chi
+    // khong hien thong bao ra ngoai), khong anh huong chuc nang khac.
+    private val requestNotificationPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* Ket qua the nao cung khong sao - chi la 1 co gang, khong bat buoc. */ }
+
     // ── Bang mau nen/chu dung chung cho toan man hinh (tim neon tren nen den) ──
     private val bgColor = Color.parseColor("#0A0510")
     private val cardColor = Color.parseColor("#150A22")
@@ -114,6 +126,19 @@ class SettingsActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // THEM (theo yeu cau nguoi dung: "boc no lai khong cho no tat"): xin
+        // quyen hien thong bao (chi can tren Android 13+/API 33+, cac ban
+        // truoc KHONG can xin gi ca) roi dam bao [KeepAliveService] dang
+        // chay - moi lan mo icon app la 1 co hoi de "cham" lai Service nay
+        // neu vi ly do nao do da bi tat.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestNotificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+        KeepAliveService.ensureRunning(this)
 
         // THEM (theo yeu cau nguoi dung: "them code neu bi vang thi lan sau
         // mo len se hien trang loi"): kiem tra + hien NGAY hop thoai loi

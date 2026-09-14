@@ -3,6 +3,16 @@
 
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- THEM (theo yeu cau nguoi dung: "boc no lai khong cho no tat" - chong
+         he thong "giet" tien trinh ban phim nen bang CODE thay vi chi dua
+         vao nguoi dung tu tay tat toi uu pin): can 3 quyen nay de chay
+         [KeepAliveService] (Foreground Service uu tien thap) giu TIEN
+         TRINH cua ca ban phim o muc do quan trong cao hon, giam kha nang
+         bi He Dieu Hanh tu dong giet khi thieu RAM (LMK - Low Memory
+         Killer) - xem giai thich chi tiet trong KeepAliveService.kt. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- THEM (theo yeu cau nguoi dung: "mic phải dùng mic riêng" - tu nghe/
          nhan dien NGAY trong chinh app, khong con uy quyen hoan toan cho app
          tro ly ao/Google qua Intent popup rieng nhu truoc - vi chat luong
@@ -116,6 +126,25 @@
             <meta-data
                 android:name="android.view.im"
                 android:resource="@xml/method" />
+        </service>
+
+        <!-- THEM (theo yeu cau nguoi dung: "boc no lai khong cho no tat"):
+             Foreground Service uu tien THAP, chi de GIU tien trinh cua ca
+             ban phim o muc do quan trong CAO HON trong mat He Dieu Hanh
+             (giam kha nang bi Low Memory Killer tu dong giet khi thieu
+             RAM) - xem giai thich chi tiet + gioi han THAT SU cua ky thuat
+             nay trong KeepAliveService.kt. foregroundServiceType="specialUse"
+             la loai BAT BUOC phai khai bao tu Android 14 (API 34) cho cac
+             Foreground Service KHONG khop loai chuan nao (nhac/vi tri/dong
+             bo...) - property canh no giai thich LY DO su dung, theo dung
+             yeu cau cua Google Play. -->
+        <service
+            android:name=".KeepAliveService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Giu tien trinh ban phim khong bi he thong tu dong giet nen, dam bao go duoc lien tuc khong bi gian doan giua chung" />
         </service>
 
         <!-- SUA LOI (crash "app tu tat khi chuyen man" - FileUriExposedException):
