@@ -765,6 +765,12 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     // rieng cua app khac, tat ca dien ra ngay ben trong app nay.
 
     private var speechRecognizer: android.speech.SpeechRecognizer? = null
+    // THEM (theo yeu cau nguoi dung: "thu am toi dau viet ra toi do"): ghi
+    // nho 1 LAN DUY NHAT luc BAT DAU nghe - co can chen 1 dau cach dan dau
+    // hay khong, dung LAI cho MOI LAN cap nhat van ban (ca tam thoi lan
+    // cuoi cung) trong suot phien nghe do (xem [beginListeningForVoice]/
+    // [applyVoiceRecognitionText]).
+    private var voiceInputNeedsLeadingSpace: Boolean = false
     private var isListeningForVoice: Boolean = false
     private var micButtonRef: Button? = null
 
@@ -2855,7 +2861,29 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 putExtra(android.speech.RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1200L)
                 putExtra(android.speech.RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 1200L)
                 putExtra(android.speech.RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 500L)
-                putExtra(android.speech.RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+                // SUA (theo yeu cau nguoi dung: "nut mic: thu am toi dau viet
+                // ra toi do"): BAT lai ket qua TAM THOI (partial results) -
+                // TRUOC DAY tat han (false), nen van ban CHi xuat hien 1 LAN
+                // DUY NHAT sau khi dung noi hoan toan. GIO DAY: BAT (true) -
+                // ket hop voi [onPartialResults] (xem duoi, hien da CO XU LY
+                // thay vi de trong nhu truoc) de VIET RA MAN HINH NGAY LAP
+                // TUC moi khi co ket qua nhan dien tam thoi moi, "thu am toi
+                // dau viet toi do" dung nhu yeu cau, khong con phai cho den
+                // luc noi xong het moi thay chu.
+                putExtra(android.speech.RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+            }
+            // THEM: ghi lai NGAY canh (co can 1 dau cach dan dau truoc khi
+            // chen van ban nhan dien hay khong) MOT LAN DUY NHAT khi BAT DAU
+            // nghe - dung LAI gia tri nay CHO MOI LAN cap nhat ket qua TAM
+            // THOI/CUOI CUNG ve sau (xem [applyVoiceRecognitionText]), thay
+            // vi tinh lai moi lan (vi khi da co van ban composing dang hien
+            // truoc do, "ky tu ngay truoc con tro" luc do CHINH LA van ban
+            // composing do, se tinh SAI ra ket qua "khong can dau cach nua"
+            // ngay ca khi that ra van CAN).
+            run {
+                val ic = currentInputConnection
+                val before = ic?.getTextBeforeCursor(1, 0)?.toString()
+                voiceInputNeedsLeadingSpace = !before.isNullOrEmpty() && !before.last().isWhitespace()
             }
             isListeningForVoice = true
             updateMicButtonUi()
@@ -2878,6 +2906,19 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
             if (cancel) speechRecognizer?.cancel() else speechRecognizer?.stopListening()
         } catch (e: Exception) {
             // Bo qua - hiem gap (vd recognizer da o trang thai loi san).
+        }
+        // THEM (theo yeu cau nguoi dung: "thu am toi dau viet ra toi do"):
+        // NEU la HUY (cancel=true) VA dang co van ban TAM THOI (composing)
+        // con "treo" tren man hinh tu [onPartialResults] truoc do - XOA HAN
+        // no di (khong con onResults nao duoc goi de "chot" lai nua vi HUY
+        // khong tra ket qua) - tranh de lai 1 doan chu gach chan/soan thao
+        // "mo côi" mai mai khong bao gio duoc chot hay xoa.
+        if (cancel && isListeningForVoice) {
+            try {
+                currentInputConnection?.commitText("", 1)
+            } catch (e: Exception) {
+                // Bo qua - o nhap co the da mat focus/dong.
+            }
         }
         isListeningForVoice = false
         updateMicButtonUi()
@@ -2930,12 +2971,39 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         override fun onRmsChanged(rmsdB: Float) {}
         override fun onBufferReceived(buffer: ByteArray?) {}
         override fun onEndOfSpeech() {}
-        override fun onPartialResults(partialResults: Bundle?) {}
+        override fun onPartialResults(partialResults: Bundle?) {
+            // SUA (theo yeu cau nguoi dung: "nut mic: thu am toi dau viet ra
+            // toi do"): TRUOC DAY bo trong hoan toan - moi ket qua tam thoi
+            // (goi lien tuc trong luc dang noi, TRUOC KHI dung han) deu bi
+            // BO QUA, van ban CHi xuat hien 1 LAN sau khi noi xong het. GIO
+            // DAY: hien NGAY len man hinh (dang van ban soan thao/gach
+            // chan) moi lan co ket qua tam thoi moi, tao cam giac "vua noi
+            // vua thay chu hien ra".
+            val text = partialResults
+                ?.getStringArrayList(android.speech.SpeechRecognizer.RESULTS_RECOGNITION)
+                ?.firstOrNull()
+                ?.takeIf { it.isNotBlank() }
+            if (text != null) applyVoiceRecognitionText(text, isFinal = false)
+        }
         override fun onEvent(eventType: Int, params: Bundle?) {}
 
         override fun onError(error: Int) {
             isListeningForVoice = false
             updateMicButtonUi()
+            // THEM (theo yeu cau nguoi dung: "thu am toi dau viet ra toi
+            // do"): "CHOT" lai (finishComposingText) bat ky doan van ban
+            // TAM THOI nao dang con hien (tu [onPartialResults] truoc do)
+            // thanh van ban BINH THUONG - vi loi xay ra GIUA CHUNG (vd mat
+            // mang) khong dong nghia nhung gi da nhan dien duoc TRUOC DO la
+            // sai/vo nghia, giu lai TOT HON la xoa mat cong nguoi dung da
+            // noi. (Neu KHONG co doan nao dang soan thao ca, day la 1 lenh
+            // khong lam gi ca, an toan goi luon khong can kiem tra dieu
+            // kien gi truoc.)
+            try {
+                currentInputConnection?.finishComposingText()
+            } catch (e: Exception) {
+                // Bo qua - o nhap co the da mat focus/dong.
+            }
             // SUA: bo qua rieng ERROR_NO_MATCH (khong nhan dien duoc gi -
             // thuong do nguoi dung im lang/noi qua nho) va ERROR_SPEECH_TIMEOUT
             // - KHONG hien Toast cho 2 loi nay, vi day la tinh huong BINH
@@ -2994,14 +3062,29 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  qua Telex tung ky tu se lam SAI/mat dau. Tu dong them 1 dau cach phia
      *  truoc neu ngay truoc con tro dang co san 1 ky tu KHONG PHAI khoang
      *  trang (tranh dinh lien vao tu truoc do). */
-    private fun insertRecognizedVoiceText(text: String) {
+    /** THEM (theo yeu cau nguoi dung: "thu am toi dau viet ra toi do"):
+     *  Chen VAN BAN NHAN DIEN len man hinh - dung [InputConnection.setComposingText]
+     *  cho ket qua TAM THOI (isFinal=false, van con dang "gach chan"/soan
+     *  thao, se TU DONG bi THAY THE hoan toan boi lan goi TIEP THEO - dung
+     *  y het co che "go tieng Trung/Nhat dang go dau cau" quen thuoc cua he
+     *  thong IME, KHONG can tu code xoa/chen lai thu cong) va
+     *  [InputConnection.commitText] cho ket qua CUOI CUNG (isFinal=true, chot
+     *  luon van ban, ket thuc vung soan thao). */
+    private fun applyVoiceRecognitionText(text: String, isFinal: Boolean) {
         val ic = currentInputConnection ?: return
-        currentWord.clear()
-        currentWordCased.clear()
-        val before = ic.getTextBeforeCursor(1, 0)?.toString()
-        val needsLeadingSpace = !before.isNullOrEmpty() && !before.last().isWhitespace()
+        val display = if (voiceInputNeedsLeadingSpace) " $text" else text
         selfInitiatedChange = true
-        ic.commitText(if (needsLeadingSpace) " $text" else text, 1)
+        if (isFinal) {
+            currentWord.clear()
+            currentWordCased.clear()
+            ic.commitText(display, 1)
+        } else {
+            ic.setComposingText(display, 1)
+        }
+    }
+
+    private fun insertRecognizedVoiceText(text: String) {
+        applyVoiceRecognitionText(text, isFinal = true)
     }
 
     /** Phim cach: chuc nang chinh la chen dau cach khi CHAM binh thuong.
