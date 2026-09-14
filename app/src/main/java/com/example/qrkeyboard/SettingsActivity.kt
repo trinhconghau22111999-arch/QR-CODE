@@ -180,11 +180,14 @@ class SettingsActivity : AppCompatActivity() {
         content.addView(spacer(24))
         content.addView(buildLanguageSection())
         content.addView(spacer(24))
+        // SUA (theo yeu cau nguoi dung: "di chuyen phan xem thu ban phim
+        // len phia tren phan mau sac"): [buildKeyboardPreviewSection] gio
+        // dat TRUOC [buildColorSection] (truoc day dat SAU ca [buildRgbEffectSection]).
+        content.addView(buildKeyboardPreviewSection())
+        content.addView(spacer(24))
         content.addView(buildColorSection())
         content.addView(spacer(24))
         content.addView(buildRgbEffectSection())
-        content.addView(spacer(24))
-        content.addView(buildKeyboardPreviewSection())
         content.addView(spacer(24))
         content.addView(buildVibrationSection())
         content.addView(spacer(24))
@@ -568,16 +571,40 @@ class SettingsActivity : AppCompatActivity() {
                         RgbEffectPrefs.setColorMode(this@SettingsActivity, RgbEffectPrefs.COLOR_MODE_SINGLE)
                         refreshRgbEffectUi()
                     }
+                    restartPreviewKeyboardIfShowing()
                 }
             }
             colorSwatchContainer.addView(swatch)
         }
     }
 
+    // THEM (theo yeu cau nguoi dung: "khi bam xem thu roi ma chon lai mau
+    // sac khac/bat hay tat/doi hieu ung chay den...he co thay doi la tu
+    // tat ban phim roi bat lai...de cap nhat cho nguoi xem dung kieu do"):
+    // goi ham nay o CUOI moi thao tac doi Cai dat lien quan toi GIAO DIEN
+    // ban phim (mau sac, nen sang/toi, bat/tat RGB, che do mau, huong
+    // chay, toc do) - NEU o "Xem thu ban phim" dang duoc focus (tuc ban
+    // phim dang thuc su hien tren man hinh de xem thu), CHU DONG an ban
+    // phim di roi mo lai NGAY SAU do 1 chut - IME se tu doc lai Cai dat
+    // MOI NHAT moi lan mo lai (xem onStartInputView/onWindowShown trong
+    // QrKeyboardService.kt), nen day la cach DON GIAN + CHAC CHAN nhat de
+    // "ep" ban phim cap nhat giao dien NGAY, khong can nguoi dung tu tay
+    // an/mo lai.
+    private fun restartPreviewKeyboardIfShowing() {
+        val field = previewField ?: return
+        if (!field.hasFocus()) return
+        val imm = getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager ?: return
+        imm.hideSoftInputFromWindow(field.windowToken, 0)
+        field.postDelayed({
+            if (field.hasFocus()) imm.showSoftInput(field, InputMethodManager.SHOW_FORCED)
+        }, 150)
+    }
+
     private fun toggleTheme() {
         val newDark = !KeyboardThemePrefs.isDarkTheme(this)
         KeyboardThemePrefs.setDarkTheme(this, newDark)
         refreshThemeToggleLabel()
+        restartPreviewKeyboardIfShowing()
     }
 
     private fun refreshThemeToggleLabel() {
@@ -602,6 +629,15 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var rgbSpeedSeekBar: SeekBar
     private lateinit var rgbSpeedValueText: TextView
     private lateinit var rgbSpeedSection: LinearLayout
+    // THEM (theo yeu cau nguoi dung: "khi bam xem thu roi ma chon lai mau
+    // sac khac/bat hay tat/doi hieu ung chay den...he co thay doi la tu tat
+    // ban phim roi bat lai...de cap nhat cho nguoi xem"): tham chieu toi o
+    // "Xem thu ban phim" ([buildKeyboardPreviewSection]) - de CAC HAM doi
+    // Cai dat (mau sac/RGB/toc do...) co the KIEM TRA no co dang duoc
+    // focus (dang mo ban phim de xem thu) hay khong, va NEU CO thi tu dong
+    // TAT roi BAT lai ban phim (xem [restartPreviewKeyboardIfShowing]) de
+    // nguoi dung thay NGAY thay doi vua chon, khong can tu tay lam gi ca.
+    private var previewField: EditText? = null
 
     /** THEM (theo yeu cau nguoi dung): hieu ung "den RGB chay" tren vien
      *  phim, giong ban phim co gaming that. MAC DINH TAT (khong doi hanh vi
@@ -671,7 +707,13 @@ class SettingsActivity : AppCompatActivity() {
                     if (fromUser) RgbEffectPrefs.setSpeedPercent(this@SettingsActivity, progress)
                 }
                 override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-                override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+                override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                    // THEM (theo yeu cau nguoi dung): dung [onStopTrackingTouch]
+                    // (luc THA tay) thay vi [onProgressChanged] (chay LIEN
+                    // TUC khi keo) - de tranh tat/bat ban phim lien tuc,
+                    // giat cuc kho chiu, trong luc dang KEO thanh truot.
+                    restartPreviewKeyboardIfShowing()
+                }
             })
         }
         speedRow.addView(rgbSpeedSeekBar)
@@ -686,16 +728,19 @@ class SettingsActivity : AppCompatActivity() {
     private fun toggleRgbEffect() {
         RgbEffectPrefs.setEnabled(this, !RgbEffectPrefs.isEnabled(this))
         refreshRgbEffectUi()
+        restartPreviewKeyboardIfShowing()
     }
 
     private fun setRgbColorMode(mode: String) {
         RgbEffectPrefs.setColorMode(this, mode)
         refreshRgbEffectUi()
+        restartPreviewKeyboardIfShowing()
     }
 
     private fun setRgbDirection(direction: String) {
         RgbEffectPrefs.setDirection(this, direction)
         refreshRgbEffectUi()
+        restartPreviewKeyboardIfShowing()
     }
 
     /** THEM (theo yeu cau nguoi dung: "them vao cai dat 1 nut: 'xem truoc
@@ -733,7 +778,7 @@ class SettingsActivity : AppCompatActivity() {
         wrap.addView(spacer(10))
 
         val previewLabel = "\ud83d\udd0e  Xem tr\u01b0\u1edbc b\u00e0n ph\u00edm hi\u1EC7n t\u1EA1i"
-        val previewField = EditText(this).apply {
+        val previewFieldLocal = EditText(this).apply {
             setText(previewLabel)
             isSingleLine = true
             gravity = Gravity.CENTER
@@ -777,7 +822,8 @@ class SettingsActivity : AppCompatActivity() {
                 }
             })
         }
-        wrap.addView(previewField)
+        previewField = previewFieldLocal
+        wrap.addView(previewFieldLocal)
         return wrap
     }
 
@@ -1020,6 +1066,24 @@ class SettingsActivity : AppCompatActivity() {
             if (historyPanelOpen) renderHistoryPanel()
         }
 
+        // SUA (theo yeu cau nguoi dung: "du lieu quet hom nay: ben duoi no
+        // phai co nut xuat file excel"): TRUOC DAY nut "Xuat Excel" chi
+        // xuat hien SAU KHI bam "Xem du lieu hom nay" DE MO panel, VA CHi
+        // khi co it nhat 1 muc da quet (ham [renderHistoryPanel] return
+        // SOM neu rong, khong ve nut nao ca) - de tim thay rat bat tien,
+        // co the KHONG THAY nut nao ca neu chua quet gi. GIO DAY: nut
+        // "Xuat Excel" (+ "Chia se Excel") LUON hien NGAY DUOI phan nay,
+        // KHONG phu thuoc panel dang mo/dong hay co du lieu hay khong -
+        // ham [runExportFlow] von da tu xu ly gon truong hop RONG (hien
+        // Toast "Chua co du lieu de xuat" thay vi crash), nen an toan de
+        // luon hien nut.
+        wrap.addView(spacer(10))
+        val btnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        btnRow.addView(neonButton("Xu\u1ea5t Excel", accentNow) { runExportFlow(share = false) })
+        btnRow.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(dp(10), 0) })
+        btnRow.addView(neonButton("Chia s\u1ebb Excel", accentNow) { runExportFlow(share = true) })
+        wrap.addView(btnRow)
+
         return wrap
     }
 
@@ -1072,13 +1136,6 @@ class SettingsActivity : AppCompatActivity() {
             setTextColor(textSecondary)
             textSize = 12f
         })
-        historyContainer.addView(spacer(12))
-
-        val btnRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        btnRow.addView(neonButton("Xu\u1ea5t Excel", accentNow) { runExportFlow(share = false) })
-        btnRow.addView(View(this).apply { layoutParams = LinearLayout.LayoutParams(dp(10), 0) })
-        btnRow.addView(neonButton("Chia s\u1ebb Excel", accentNow) { runExportFlow(share = true) })
-        historyContainer.addView(btnRow)
     }
 
     private fun runExportFlow(share: Boolean) {
