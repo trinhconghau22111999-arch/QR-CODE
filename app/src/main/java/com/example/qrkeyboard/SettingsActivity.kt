@@ -4,7 +4,10 @@ import android.Manifest
 import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Color
+import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
@@ -22,6 +25,7 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.Button
 import android.widget.EditText
 import android.widget.HorizontalScrollView
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
@@ -101,6 +105,33 @@ class SettingsActivity : AppCompatActivity() {
     private val requestNotificationPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { /* Ket qua the nao cung khong sao - chi la 1 co gang, khong bat buoc. */ }
+
+    // THEM (theo yeu cau nguoi dung: "thêm 1 lớp đặt nền bằng hình ảnh...
+    // bấm vào là mở thư mục chọn ảnh...chọn ảnh để đặt nền"): dung Photo
+    // Picker CUA HE THONG (PickVisualMedia) - KHONG can xin quyen doc bo
+    // nho/thu vien gi ca (day la thiet ke moi cua Android, tu dong an
+    // toan, hoat dong tu API 21 tro len qua thu vien tuong thich).
+    private val pickBackgroundImage = registerForActivityResult(
+        ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        if (uri != null) {
+            val intent = Intent(this, BackgroundCropActivity::class.java).apply {
+                putExtra(BackgroundCropActivity.EXTRA_IMAGE_URI, uri.toString())
+            }
+            startBackgroundCrop.launch(intent)
+        }
+    }
+
+    private val startBackgroundCrop = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == RESULT_OK) {
+            refreshBackgroundImageUi()
+            restartPreviewKeyboardIfShowing()
+        }
+    }
+
+    private lateinit var backgroundImageContainer: LinearLayout
 
     // ── Bang mau nen/chu dung chung cho toan man hinh (tim neon tren nen den) ──
     private val bgColor = Color.parseColor("#0A0510")
@@ -555,7 +586,74 @@ class SettingsActivity : AppCompatActivity() {
         refreshThemeToggleLabel()
         wrap.addView(themeToggleBtn)
 
+        // THEM (theo yeu cau nguoi dung, xem anh chup man hinh: "thêm 1 lớp
+        // đặt nền bằng hình ảnh...bấm vào là mở thư mục chọn ảnh...chọn ảnh
+        // để đặt nền...trong quá trình đặt nền phải cho chọn vùng ảnh...chọn
+        // xong là đặt nền luôn"): dat NGAY DUOI nut Sang/Toi o tren, dung
+        // [refreshBackgroundImageUi] de tu ve lai (nut chon anh, hoac
+        // thumbnail + Doi anh khac/Xoa hinh nen tuy theo da co anh nen hay
+        // chua).
+        wrap.addView(spacer(14))
+        backgroundImageContainer = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        wrap.addView(backgroundImageContainer)
+        refreshBackgroundImageUi()
+
         return wrap
+    }
+
+    /** Ve lai phan "Hinh nen bang anh" ben trong [backgroundImageContainer] -
+     *  goi lai MOI KHI trang thai anh nen thay doi (chon anh moi/xoa anh). */
+    private fun refreshBackgroundImageUi() {
+        backgroundImageContainer.removeAllViews()
+        val hasImage = KeyboardThemePrefs.hasBackgroundImage(this)
+
+        if (!hasImage) {
+            backgroundImageContainer.addView(neonButton("\ud83d\uddbc\ufe0f  Ch\u1ecdn \u1EA3nh l\u00e0m n\u1EC1n", accentNow) {
+                pickBackgroundImage.launch(androidx.activity.result.PickVisualMediaRequest(
+                    ActivityResultContracts.PickVisualMedia.ImageOnly
+                ))
+            })
+            return
+        }
+
+        val previewRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val thumb = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            layoutParams = LinearLayout.LayoutParams(dp(64), dp(64))
+            background = GradientDrawable().apply {
+                cornerRadius = dp(8).toFloat()
+                setStroke(dp(1), accentNow)
+            }
+            try {
+                setImageBitmap(BitmapFactory.decodeFile(KeyboardThemePrefs.backgroundImageFile(this@SettingsActivity).absolutePath))
+            } catch (e: Exception) {
+                // Bo qua - hiem gap (file bi hong/mat) - o van hien trong
+                // nhung khong lam crash man hinh Cai dat.
+            }
+            clipToOutline = true
+        }
+        previewRow.addView(thumb)
+
+        val buttonsCol = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                marginStart = dp(12)
+            }
+        }
+        buttonsCol.addView(neonButton("\ud83d\uddbc\ufe0f  \u0110\u1ed5i \u1EA3nh kh\u00e1c", accentNow) {
+            pickBackgroundImage.launch(androidx.activity.result.PickVisualMediaRequest(
+                ActivityResultContracts.PickVisualMedia.ImageOnly
+            ))
+        })
+        buttonsCol.addView(spacer(8))
+        buttonsCol.addView(neonButton("\u274c  Xo\u00e1 h\u00ecnh n\u1EC1n, d\u00f9ng l\u1EA1i m\u00e0u", accentNow) {
+            KeyboardThemePrefs.clearBackgroundImage(this)
+            refreshBackgroundImageUi()
+            restartPreviewKeyboardIfShowing()
+        })
+        previewRow.addView(buttonsCol)
+
+        backgroundImageContainer.addView(previewRow)
     }
 
     private fun renderColorSwatches() {

@@ -1148,6 +1148,33 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     private fun keyboardBackgroundColor(): Int =
         if (isDarkTheme) Color.parseColor("#050507") else Color.parseColor("#FAFAFA")
 
+    /** THEM (theo yeu cau nguoi dung, tinh nang dat hinh nen bang anh): tra
+     *  ve Drawable dung lam nen CHINH cua ban phim - anh da CAT (neu co,
+     *  doc tu [KeyboardThemePrefs.backgroundImageFile]) HOAC mau Sang/Toi
+     *  binh thuong (fallback neu chua chon anh nao, HOAC neu doc file anh
+     *  bi loi vi ly do gi do - KHONG duoc de ban phim "trang tron"/crash
+     *  chi vi 1 file anh hong). */
+    private fun buildKeyboardBackgroundDrawable(): Drawable {
+        if (KeyboardThemePrefs.hasBackgroundImage(this)) {
+            try {
+                val file = KeyboardThemePrefs.backgroundImageFile(this)
+                val bitmap = android.graphics.BitmapFactory.decodeFile(file.absolutePath)
+                if (bitmap != null) {
+                    // SUA: BitmapDrawable thuong KHONG tu KEO GIAN anh khop
+                    // dung kich thuoc khung (chi CAN GIUA/lap lai o kich
+                    // thuoc goc) - dung 1 Drawable tuy chinh, tu VE anh
+                    // TRAN DUNG kich thuoc thuc te cua ban phim moi lan ve
+                    // lai, du kich thuoc man hinh/mat do diem anh co the
+                    // khac 1 chut so voi luc cat.
+                    return StretchBitmapDrawable(bitmap)
+                }
+            } catch (e: Exception) {
+                // Bo qua - roi xuong dung mau Sang/Toi binh thuong ben duoi.
+            }
+        }
+        return android.graphics.drawable.ColorDrawable(keyboardBackgroundColor())
+    }
+
     private fun keyFillColor(): Int =
         if (isDarkTheme) Color.parseColor("#0A0A0F") else Color.parseColor("#F1F1F4")
 
@@ -1456,7 +1483,13 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  [switchMode] - xem giai thich day du ("TOI UU") o dau file. */
     private fun buildKeyboardContainer(): View {
         val container = FrameLayout(this).apply {
-            setBackgroundColor(keyboardBackgroundColor())
+            // SUA (theo yeu cau nguoi dung, tinh nang dat hinh nen bang
+            // anh): NEU nguoi dung da chon + cat xong 1 anh lam nen, VE
+            // ANH DO thay cho mau nen thuong (mau Sang/Toi van dung DUNG
+            // luc CHUA co anh nen). Doc file tu bo nho noi bo cua app
+            // ([KeyboardThemePrefs.backgroundImageFile]) - luon con
+            // nguyen, khong can xin quyen gi ca.
+            background = buildKeyboardBackgroundDrawable()
         }
         keyboardRootContainer = container
 
@@ -5177,5 +5210,33 @@ private object VietnameseTelex {
         return word.substring(0, target) + newChar + word.substring(target + 1)
     }
 }
+
+/** THEM (theo yeu cau nguoi dung, tinh nang dat hinh nen bang anh): 1
+ *  Drawable TOI GIAN, chi lam 1 viec DUY NHAT - ve [bitmap] TRAN DUNG
+ *  kich thuoc [bounds] hien tai cua no (khong can giua/lap lai kieu
+ *  [android.graphics.drawable.BitmapDrawable] mac dinh) - dung lam nen
+ *  ban phim tu 1 anh da duoc nguoi dung tu CAT san dung ti le mong muon
+ *  (xem [BackgroundCropActivity]), luon KEO GIAN khop dung khung ban phim
+ *  THAT SU tren may, du kich thuoc/mat do diem anh co chenh lech chut it
+ *  so voi luc cat. */
+private class StretchBitmapDrawable(private val bitmap: android.graphics.Bitmap) : Drawable() {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+
+    override fun draw(canvas: android.graphics.Canvas) {
+        canvas.drawBitmap(bitmap, null, bounds, paint)
+    }
+
+    override fun setAlpha(alpha: Int) {
+        paint.alpha = alpha
+    }
+
+    override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) {
+        paint.colorFilter = colorFilter
+    }
+
+    @Deprecated("Deprecated in Java", ReplaceWith("PixelFormat.TRANSLUCENT"))
+    override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
+}
+
 
 

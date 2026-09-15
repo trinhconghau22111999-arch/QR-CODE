@@ -114,6 +114,16 @@
             </intent-filter>
         </activity>
 
+        <!-- THEM (theo yeu cau nguoi dung: dat hinh nen bang anh cho ban
+             phim): man hinh cat anh - dung THEO KE THUA "Theme.QRKeyboard"
+             tu <application> (khong can khai bao rieng, giong SettingsActivity
+             o tren) vi day la 1 man hinh HIEN THI BINH THUONG, TOAN MAN
+             HINH (khac voi 3 Activity "trong suot" phia tren chi de xin
+             quyen he thong). Xem BackgroundCropActivity.kt. -->
+        <activity
+            android:name=".BackgroundCropActivity"
+            android:exported="false" />
+
         <!-- Dich vu ban phim (Input Method Service) -->
         <service
             android:name=".QrKeyboardService"

@@ -15,6 +15,16 @@ object KeyboardThemePrefs {
     private const val PREFS_NAME = "qr_keyboard_prefs"
     private const val PREF_ACCENT_COLOR = "accent_color"
     private const val PREF_IS_DARK_THEME = "is_dark_theme"
+    // THEM (theo yeu cau nguoi dung, xem anh chup man hinh: "them 1 lop dat
+    // nen bang hinh anh...bam vao la mo thu muc chon anh...chon anh de dat
+    // nen...phai cho chon vung anh...chon xong la dat nen luon"): luu
+    // DUONG DAN FILE (khong phai Uri goc tu thu vien anh - Uri content://
+    // co the MAT quyen doc SAU KHI app khoi dong lai/thu vien anh doi cau
+    // truc noi bo) - anh da CAT XONG duoc GHI RIENG 1 BAN thanh file JPEG
+    // trong bo nho NOI BO cua app (filesDir, luon con nguyen ven, KHONG can
+    // xin quyen gi them de doc lai ve sau).
+    private const val PREF_BACKGROUND_IMAGE_FILENAME = "background_image_filename"
+    const val BACKGROUND_IMAGE_FILENAME = "keyboard_bg.jpg"
 
     /** Mau tim neon MAC DINH - giu nguyen y het mau glowColor cu truoc khi
      *  co tinh nang doi mau. */
@@ -55,5 +65,34 @@ object KeyboardThemePrefs {
 
     fun setDarkTheme(ctx: Context, dark: Boolean) {
         prefs(ctx).edit().putBoolean(PREF_IS_DARK_THEME, dark).apply()
+    }
+
+    /** Duong dan file THAT SU (trong filesDir noi bo cua app) toi anh nen
+     *  DA CAT XONG - dung ham nay de LAY duong dan GHI/DOC file, khong
+     *  lien quan gi den SharedPreferences (chi 1 file duy nhat, luon ghi
+     *  DE LEN ban cu moi lan doi anh moi). */
+    fun backgroundImageFile(ctx: Context) =
+        java.io.File(ctx.filesDir, BACKGROUND_IMAGE_FILENAME)
+
+    /** Co dang su dung anh lam nen hay khong (bat/tat rieng voi viec FILE
+     *  anh co ton tai hay khong - "Xoa hinh nen, dung lai mau" chi TAT co
+     *  nay, KHONG can xoa han file, de "Doi anh khac" sau co the tai su
+     *  dung neu muon - nhung don gian hoa, "Xoa" SE xoa han file luon, xem
+     *  [clearBackgroundImage]). */
+    fun hasBackgroundImage(ctx: Context): Boolean =
+        prefs(ctx).getBoolean(PREF_BACKGROUND_IMAGE_FILENAME, false) && backgroundImageFile(ctx).exists()
+
+    fun setHasBackgroundImage(ctx: Context, has: Boolean) {
+        prefs(ctx).edit().putBoolean(PREF_BACKGROUND_IMAGE_FILENAME, has).apply()
+    }
+
+    fun clearBackgroundImage(ctx: Context) {
+        setHasBackgroundImage(ctx, false)
+        try {
+            backgroundImageFile(ctx).delete()
+        } catch (e: Exception) {
+            // Bo qua - hiem gap, khong quan trong (file se bi GHI DE lan
+            // sau nguoi dung chon anh moi, du chua xoa duoc ngay bay gio).
+        }
     }
 }
