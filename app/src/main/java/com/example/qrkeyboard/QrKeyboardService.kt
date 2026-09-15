@@ -3978,6 +3978,24 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         selfInitiatedChange = true
         currentInputConnection?.commitText(text, 1)
         currentWord.clear()
+        // SUA LOI THUC SU (theo log nguoi dung gui: "AUTO-CAP-ANOMALY...
+        // app=com.h.adblockbrowser2 | ... word=đo" - van con xay ra SAU khi
+        // da sua nhanh Xoa (backspace) truoc do): ham dung chung nay
+        // ([insertText] - dung cho dau phay/cham/ky hieu/</>/EMOJI...) VON
+        // LA 1 DIEM KET THUC TU (word boundary) giong het khi bam dau cach -
+        // NHUNG truoc day KHONG tu dong lam nhiem vu "chot" giong
+        // [finishWordTracking] (moi noi GOI RIENG ham do sau khi goi ham
+        // nay - TRU 1 CHO DUY NHAT bi SOT: phim EMOJI, xem [buildEmojiRow]).
+        // Neu 1 noi goi insertText() MA QUEN goi them finishWordTracking(),
+        // [capitalizeAppliedAtPrefixLen] CU se KHONG duoc don sach, gay
+        // dung loi "tu in hoa nham do trung vi tri cu" y het truong hop da
+        // sua o [deleteChar]. SUA TAN GOC: dua logic "chot tu" (finishWordTracking)
+        // vao THANG BEN TRONG ham dung chung nay - moi noi goi insertText()
+        // TU DONG duoc bao ve, KHONG con phu thuoc viec TUNG NOI goi co
+        // "nho" goi them finishWordTracking() rieng hay khong nua (goi
+        // finishWordTracking() them 1 lan nua o cac noi CU van an toan,
+        // khong lam gi ca vi da duoc xu ly o day roi).
+        finishWordTracking()
     }
 
     /** [isAutoRepeat]: true khi ham nay duoc goi TU DONG boi vong lap giu-de-
