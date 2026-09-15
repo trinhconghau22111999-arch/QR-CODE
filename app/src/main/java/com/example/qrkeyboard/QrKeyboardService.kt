@@ -4095,8 +4095,25 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  dong hay nhieu dong, BAT KE co dat action gi (Tim kiem/Di/Gui...) -
      *  KHONG con goi performEditorAction() nua, hanh vi hoan toan CO DINH/
      *  DU DOAN DUOC 100% moi luc. */
+    /** SUA (theo yeu cau nguoi dung: "lồng logic tìm kiếm vào nút Enter để
+     *  nó vừa Enter vừa là nút tìm kiếm"): sau lan "Enter cứng" TRUOC DAY
+     *  (luon chi la xuong dong, bo het viec tu doan hanh dong theo ngu
+     *  canh - vi qua rong, xu ly CA action Tim kiem/Di/Gui/Xong... gay
+     *  "luc thi tim kiem luc thi xuong dong" kho doan) - GIO DAY them lai
+     *  CHINH XAC 1 truong hop DUY NHAT, RO RANG KHONG MO HO: o nhap co
+     *  action THAT SU la "Tim kiem" (IME_ACTION_SEARCH, vd o tim kiem cua
+     *  trinh duyet/Google) thi Enter se THUC HIEN TIM KIEM (goi
+     *  performEditorAction) - CON LAI MOI TRUONG HOP KHAC (khong co action
+     *  gi, hoac cac action khac nhu Di/Gui/Xong/Tiep theo...) VAN LUON chi
+     *  la xuong dong don thuan NHU CU, khong doan mo ho nua. */
     private fun sendEnter() {
         val ic = currentInputConnection ?: return
+        val action = currentInputEditorInfo?.imeOptions?.and(EditorInfo.IME_MASK_ACTION)
+        if (action == EditorInfo.IME_ACTION_SEARCH) {
+            selfInitiatedChange = true
+            ic.performEditorAction(EditorInfo.IME_ACTION_SEARCH)
+            return
+        }
         currentWord.clear()
         selfInitiatedChange = true
         ic.commitText("\n", 1)
