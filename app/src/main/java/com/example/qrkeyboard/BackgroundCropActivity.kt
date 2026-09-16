@@ -44,10 +44,6 @@ import java.io.InputStream
  */
 class BackgroundCropActivity : ComponentActivity() {
 
-    companion object {
-        const val EXTRA_IMAGE_URI = "extra_image_uri"
-    }
-
     private lateinit var cropView: CropView
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -127,11 +123,34 @@ class BackgroundCropActivity : ComponentActivity() {
 
     /** Doc Bitmap tu Uri, tu dong XOAY LAI dung chieu theo du lieu EXIF cua
      *  anh goc (nhieu anh chup tu camera luu du lieu "xoay" trong EXIF thay
-     *  vi xoay pixel that su - khong xu ly se bi lech 90 do). */
+     *  vi xoay pixel that su - khong xu ly se bi lech 90 do). SUA LOI THUC
+     *  SU (rui ro OutOfMemoryError): anh chup tu camera dien thoai hien dai
+     *  thuong RAT LON (12-108MP) - TRUOC DAY doc thang o DO PHAN GIAI GOC
+     *  (khong giam kich thuoc gi ca) roi con TAO THEM 1 ban sao khi xoay,
+     *  co the lam CAN KIET RAM va crash tren nhieu may (dac biet may it
+     *  RAM). SUA: doc TRUOC kich thuoc that (khong tai anh vao bo nho, chi
+     *  "do" kich thuoc qua inJustDecodeBounds), tinh [inSampleSize] phu
+     *  hop de GIAM kich thuoc XUONG muc toi da hop ly ([MAX_DIMENSION_PX] -
+     *  vua du dep cho muc dich lam nen ban phim, khong can anh "goc" chi
+     *  tiet toi da) TRUOC KHI thuc su giai ma anh vao bo nho. */
     private fun loadBitmapRespectingExif(uri: Uri): Bitmap? {
         val resolver = contentResolver
+
+        val boundsOptions = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        resolver.openInputStream(uri)?.use { input ->
+            android.graphics.BitmapFactory.decodeStream(input, null, boundsOptions)
+        } ?: return null
+
+        var sampleSize = 1
+        while ((boundsOptions.outWidth / sampleSize) > MAX_DIMENSION_PX ||
+            (boundsOptions.outHeight / sampleSize) > MAX_DIMENSION_PX
+        ) {
+            sampleSize *= 2
+        }
+
+        val decodeOptions = android.graphics.BitmapFactory.Options().apply { inSampleSize = sampleSize }
         val original: Bitmap = resolver.openInputStream(uri)?.use { input: InputStream ->
-            android.graphics.BitmapFactory.decodeStream(input)
+            android.graphics.BitmapFactory.decodeStream(input, null, decodeOptions)
         } ?: return null
 
         val rotationDegrees = try {
@@ -150,10 +169,19 @@ class BackgroundCropActivity : ComponentActivity() {
         if (rotationDegrees == 0) return original
         val matrix = Matrix().apply { postRotate(rotationDegrees.toFloat()) }
         return try {
-            Bitmap.createBitmap(original, 0, 0, original.width, original.height, matrix, true)
+            val rotated = Bitmap.createBitmap(original, 0, 0, original.width, original.height, matrix, true)
+            // Giai phong ban GOC (chua xoay) ngay sau khi da co ban XOAY -
+            // tranh giu ca 2 ban trong bo nho cung luc lau hon can thiet.
+            if (rotated !== original) original.recycle()
+            rotated
         } catch (e: Exception) {
             original
         }
+    }
+
+    companion object {
+        const val EXTRA_IMAGE_URI = "extra_image_uri"
+        private const val MAX_DIMENSION_PX = 2048
     }
 
     private fun confirmCrop() {
@@ -318,13 +346,18 @@ private class CropView(context: Context, private val source: Bitmap) : View(cont
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         canvas.drawBitmap(source, matrix, bitmapPaint)
-        // Phu toi TOAN BO man hinh, roi "khoet" lai vung khung cat de vung
-        // do sang binh thuong - de nguoi dung thay ro dau la phan SE duoc
-        // dung lam nen, dau la phan bi cat bo.
-        canvas.save()
-        canvas.clipOutRect(frameRect)
-        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), dimPaint)
-        canvas.restore()
+        // SUA LOI THUC SU (rui ro crash tren Android 7.0/7.1): canvas.clipOutRect(RectF)
+        // CHi co tu API 26 tro len - app nay ho tro tu API 24 (minSdk), goi
+        // ham nay se nem NoSuchMethodError tren cac may API 24/25. SUA: ve
+        // lop toi bang 4 HINH CHU NHAT rieng biet (tren/duoi/trai/phai
+        // quanh khung cat) - hoat dong dung tren MOI phien ban Android,
+        // khong can clip gi ca.
+        val w = width.toFloat()
+        val h = height.toFloat()
+        canvas.drawRect(0f, 0f, w, frameRect.top, dimPaint)
+        canvas.drawRect(0f, frameRect.bottom, w, h, dimPaint)
+        canvas.drawRect(0f, frameRect.top, frameRect.left, frameRect.bottom, dimPaint)
+        canvas.drawRect(frameRect.right, frameRect.top, w, frameRect.bottom, dimPaint)
         canvas.drawRect(frameRect, framePaint)
     }
 
