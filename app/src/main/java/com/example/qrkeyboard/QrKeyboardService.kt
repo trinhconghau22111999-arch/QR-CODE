@@ -387,6 +387,94 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  [pendingFinishHide] la lenh dong dang cho - null nghia la khong co
      *  lenh nao dang cho ca (da bi huy hoac da chay xong). */
     private val finishInputHideHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    // THEM (theo yeu cau nguoi dung: "khi bị android giết tiến trình khiến
+    // bàn hím bị treo/đóng nữa...không tắt hẳn cũng không thể bật lại...thì
+    // khi đó hãy cho nó tự đóng hẳn rồi mở lại từ đầu luôn"):
+    //
+    // GIAI THICH THAT LONG ve GIOI HAN cua co che nay truoc khi doc code:
+    // 1 tien trinh THAT SU bi "dong bang" hoan toan (luong chinh khong con
+    // chay duoc lenh nao ca) thi KHONG CO CACH NAO tu no "canh gac" chinh
+    // no duoc, vi ban than viec CHAY DUOC vong "canh gac" da chung minh no
+    // KHONG bi dong bang theo nghia do. Co che duoi day nham vao 1 tinh
+    // huong THUC TE hon nhieu, hay gap hon nhieu so voi "dong bang tuyet
+    // doi": tien trinh VAN CON SONG (van chay duoc code) nhung roi vao
+    // trang thai "nua song nua chet" - vi du 1 cua so con (nhu khung xem
+    // truoc quet QR, dinh vao WindowManager RIENG biet voi vong doi IME
+    // binh thuong) bi "mo coi" tren man hinh sau 1 su co nao do, hoac
+    // [currentInputConnection] mat ket noi ma khong co su kien don dep nao
+    // duoc goi dung cach - khien ban phim nhin "co ve dang mo" nhung
+    // KHONG con phan hoi go phim, VA cung KHONG the tu dong "an" di binh
+    // thuong duoc. Voi NHUNG tinh huong nay (tien trinh van song, chi mot
+    // phan bi "ket"), 1 vong kiem tra dinh ky CHAY DUOC tren luong chinh
+    // (bang chung tien trinh chua "chet han") co the phat hien ra bat
+    // thuong va CHU DONG tu ket thuc tien trinh (Process.killProcess) -
+    // He Dieu Hanh se TU DONG tao lai 1 phien ban HOAN TOAN MOI, SACH SE
+    // ngay khi nguoi dung cham vao 1 o nhap bat ky lan tiep theo (dung co
+    // che "tu khoi dong lai" tieu chuan cua moi IME tren Android, giong
+    // het nhu lan dau cai dat/bat ban phim).
+    //
+    // VE DU LIEU: MOI cai dat cua nguoi dung (mau sac, hieu ung RGB, rung,
+    // ngon ngu, anh nen...) da duoc ghi qua SharedPreferences NGAY tu luc
+    // thay doi (khong doi den luc dong app moi ghi) - day la co che luu
+    // tru BEN VUNG, DUOC DAM BAO song sot qua moi lan Process.killProcess
+    // theo dung thiet ke cua Android, nen KHONG can lam gi them de "bao ve"
+    // du lieu truoc khi tu ket thuc tien trinh o day - phien ban MOI sau
+    // do se tu doc lai dung y het cac cai dat nay, hoat dong y het truoc,
+    // khong mat gi ca.
+    private val stuckWatchdogHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var stuckWatchdogRunnable: Runnable? = null
+    private var stuckWatchdogFailCount = 0
+    private val STUCK_WATCHDOG_INTERVAL_MS = 5000L
+    private val STUCK_WATCHDOG_MAX_CONSECUTIVE_FAILS = 3
+
+    private fun startStuckWatchdog() {
+        stopStuckWatchdog()
+        stuckWatchdogFailCount = 0
+        val runnable = object : Runnable {
+            override fun run() {
+                checkStuckStateAndRecoverIfNeeded()
+                stuckWatchdogHandler.postDelayed(this, STUCK_WATCHDOG_INTERVAL_MS)
+            }
+        }
+        stuckWatchdogRunnable = runnable
+        stuckWatchdogHandler.postDelayed(runnable, STUCK_WATCHDOG_INTERVAL_MS)
+    }
+
+    private fun stopStuckWatchdog() {
+        stuckWatchdogRunnable?.let { stuckWatchdogHandler.removeCallbacks(it) }
+        stuckWatchdogRunnable = null
+        stuckWatchdogFailCount = 0
+    }
+
+    /** Kiem tra "suc khoe" co ban cua ban phim trong luc no DUOC KY VONG
+     *  dang hien (giua onStartInputView va onFinishInputView) - neu bat
+     *  thuong xay ra LIEN TIEP nhieu lan (khong phai 1 lan don le, tranh
+     *  bao dong gia do 1 khoanh khac tam thoi khi dang xay lai giao dien),
+     *  coi la "ket nua chung" va tu ket thuc tien trinh de He Dieu Hanh
+     *  tao lai ban moi sach se. */
+    private fun checkStuckStateAndRecoverIfNeeded() {
+        val windowShown = isInputViewShown
+        val containerAttached = keyboardRootContainer?.isAttachedToWindow == true
+        val healthy = !windowShown || containerAttached
+        if (healthy) {
+            stuckWatchdogFailCount = 0
+            return
+        }
+        stuckWatchdogFailCount++
+        if (stuckWatchdogFailCount < STUCK_WATCHDOG_MAX_CONSECUTIVE_FAILS) return
+
+        logKeyboardHide(
+            "STUCK-WATCHDOG: phat hien ban phim ket nua chung " +
+                "(isInputViewShown=$windowShown, containerAttached=$containerAttached) - tu khoi dong lai"
+        )
+        try {
+            android.os.Process.killProcess(android.os.Process.myPid())
+        } catch (e: Exception) {
+            // Bo qua - hiem gap.
+        }
+    }
+
+
     private var pendingFinishHide: Runnable? = null
 
     /** Huy lenh dong khung quet dang "hoan" (neu co) - goi khi ban phim thuc
@@ -558,6 +646,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     private var qrOverlayView: View? = null
     private var qrPreviewView: PreviewView? = null
     private var qrCameraExecutor: ExecutorService? = null
+    // THEM (theo yeu cau nguoi dung: "cải thiện [bộ nhớ]"): tham chieu
+    // BarcodeScanner HIEN TAI - de [stopQrCamera] co the goi .close() giai
+    // phong tai nguyen native (ML Kit) dung dan khi ngung quet QR.
+    private var qrBarcodeScanner: BarcodeScanner? = null
     private var qrCamera: Camera? = null
     private var qrFlashOn = false
     private var qrFlashButton: Button? = null
@@ -2182,6 +2274,12 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // lau"). logKeyboardHide() tu dong kem san "app=..." (doc tu
         // currentInputEditorInfo) nen KHONG can tu ghep them o day.
         logKeyboardHide("onStartInputView(restarting=$restarting)")
+        // THEM (theo yeu cau nguoi dung: "khi bị android giết tiến trình
+        // khiến bàn phím bị treo/đóng nửa...không tắt hẳn cũng không thể
+        // bật lại...thì tự đóng hẳn rồi mở lại từ đầu"): bat dau "canh
+        // gac" suot thoi gian ban phim DUOC KY VONG dang hien - xem
+        // [startStuckWatchdog].
+        startStuckWatchdog()
 
         val sessionKey = editorSessionKey(info)
         val isSameFieldAsBefore = sessionKey == lastEditorSessionKey
@@ -4522,7 +4620,15 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 val previewUseCase = Preview.Builder().build().also {
                     it.setSurfaceProvider(preview.surfaceProvider)
                 }
+                // SUA (theo yeu cau nguoi dung: "cải thiện [bộ nhớ]"): giu
+                // THEM 1 tham chieu o cap CLASS ([qrBarcodeScanner]) - TRUOC
+                // DAY chi la bien CUC BO trong ham nay, KHONG BAO GIO duoc
+                // goi .close() de giai phong tai nguyen NATIVE (ML Kit) khi
+                // dong camera - moi lan quet QR lai tao 1 client MOI, ban
+                // CU co the ro ri tai nguyen native cho toi khi GC don (rat
+                // khong dang tin cay voi tai nguyen native). Xem [stopQrCamera].
                 val scanner = BarcodeScanning.getClient()
+                qrBarcodeScanner = scanner
                 val imageAnalysis = ImageAnalysis.Builder()
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                     .build()
@@ -4549,6 +4655,15 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         } catch (e: Exception) {
             // Bo qua neu camera provider chua kip khoi tao xong.
         }
+        // THEM (theo yeu cau nguoi dung: "cải thiện [bộ nhớ]"): dong
+        // BarcodeScanner (giai phong tai nguyen native cua ML Kit) - TRUOC
+        // DAY khong bao gio duoc goi, ro ri tai nguyen moi lan quet QR.
+        try {
+            qrBarcodeScanner?.close()
+        } catch (e: Exception) {
+            // Bo qua - hiem gap.
+        }
+        qrBarcodeScanner = null
         qrCameraExecutor?.shutdown()
         qrCameraExecutor = null
         qrCamera = null
@@ -4677,6 +4792,10 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     override fun onFinishInputView(finishingInput: Boolean) {
         logKeyboardHide("onFinishInputView(finishing=$finishingInput)")
         super.onFinishInputView(finishingInput)
+        // THEM: ban phim khong con duoc ky vong hien nua - dung "canh gac"
+        // (xem [startStuckWatchdog]/[stopStuckWatchdog]), tranh bao "treo"
+        // gia khi ban phim CHU DONG an binh thuong.
+        stopStuckWatchdog()
         // THEM: dep sach popup chon dau (neu dang hien) + huy timer nhan giu
         // dang cho (neu co) - ban phim sap an, khong de popup "mo coi" tren
         // man hinh hoac timer chay ngam vo ich.
@@ -4729,6 +4848,26 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
                 // ([onStartInputView]) tu dong quay ve trang Chu cai,
                 // bat ke la cung mot o nhap cu hay o nhap moi.
                 shouldResetModeToLettersOnNextStart = true
+                // THEM (theo yeu cau nguoi dung: "cải thiện [bộ nhớ]"):
+                // GIAI PHONG cache 3 trang KHONG dang xem (So/Ky hieu/
+                // Numpad) NGAY LUC NAY - ban phim THAT SU an roi (qua het
+                // debounce), khong con ly do gi de GIU nguyen 3 cay View
+                // nang (kem ca Drawable/Bitmap anh nen ben trong tung
+                // phim) trong RAM suốt luc nguoi dung dang lam viec KHAC,
+                // co the RAT LAU (vai phut den vai gio) truoc khi quay
+                // lai go tiep. [prewarmOtherPagesIfIdle()] (goi lai ngay
+                // trong [onWindowShown] moi lan ban phim MO LEN) se tu xay
+                // lai LAZY (khi ranh) y het co che von co - nguoi dung
+                // hau nhu KHONG thay khac biet ve do muot, nhung tien
+                // trinh gio "nhe" hon han moi luc ban phim dang AN, giam
+                // dang ke kha nang bi chon lam "muc tieu" khi He Dieu Hanh
+                // can giai phong RAM (LMK).
+                detachFromParentIfAny(cachedNumbersView)
+                detachFromParentIfAny(cachedSymbolsView)
+                detachFromParentIfAny(cachedNumpadView)
+                cachedNumbersView = null
+                cachedSymbolsView = null
+                cachedNumpadView = null
             }
             hideQrOverlay()
         }
@@ -4741,6 +4880,7 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
     override fun onDestroy() {
         logKeyboardHide("onDestroy - service bị kill")
         super.onDestroy()
+        stopStuckWatchdog()
         cancelPendingFinishHide()
         hideQrOverlay()
         qrToneGenerator.release()
