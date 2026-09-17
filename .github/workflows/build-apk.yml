@@ -18,9 +18,18 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
+      # SUA (loi build "Set up Android SDK" that bai lien tuc tu 15/09):
+      # TRUOC DAY co 1 buoc rieng "uses: android-actions/setup-android@v3"
+      # o day - action nay co gang cai goi "tools" DA BI GO KHOI Android SDK
+      # (sdkmanager bao "Failed to find package 'tools'", exit code 1),
+      # khien buoc nay LUON THAT BAI va CHAN dung toan bo job TRUOC KHI
+      # Gradle build kip chay (day la loi dang xay ra RONG RAI, khong rieng
+      # gi repo nay - nhieu du an khac cung gap dung loi nay cung thoi
+      # diem). SUA: BO HAN buoc do - may ao "ubuntu-latest" cua GitHub
+      # Actions da co san Android SDK duoc cau hinh day du (ANDROID_HOME,
+      # giay phep da chap nhan san), Gradle se tu tai them cac thanh phan
+      # SDK con thieu (neu co) trong luc build ma khong can action ngoai
+      # nay nua.
       - name: Grant execute permission for gradlew
         # SUA (nguyen nhan build that bai "khong cai dat duoc"): TRUOC DAY
         # gradlew KHONG duoc commit vao repo, moi lan CI phai tu chay
