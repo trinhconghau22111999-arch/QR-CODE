@@ -2103,33 +2103,23 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  TYPE_CLASS_NUMBER, hoac o nhap so dien thoai - TYPE_CLASS_PHONE).
      *  Dung de TU DONG chuyen sang [KeyboardMode.NUMPAD] - xem [onStartInputView].
      *
-     *  SUA (theo yeu cau nguoi dung: "bàn phím số phải tự động bật khi nhập
-     *  mã pin"): THEM 1 dau hieu NHAN BIET nua ngoai [InputType] - nhieu app
-     *  (dac biet man hinh OTP/xac thuc 2 lop) khai bao o nhap ma OTP qua
-     *  "autofill hint" chuan cua Android (AUTOFILL_HINT_SMS_OTP, tu API 26)
-     *  thay vi dat rieng inputType thanh so - IME truoc gio hoan toan bo qua
-     *  tin hieu nay nen KHONG tu chuyen sang NUMPAD duoc cho dung nhung man
-     *  hinh do. Kiem tra THEM autofillHints (neu co, tu API 26) truoc khi
-     *  ket luan "khong phai o nhap so". */
+     *  SUA (build tren GitHub Actions bao loi "Unresolved reference:
+     *  autofillHints"/"AUTOFILL_HINT_SMS_OTP" - xem chi tiet o commit truoc):
+     *  ban dau co du dinh THEM nhan biet qua "autofill hint" (nghi la
+     *  EditorInfo co san thuoc tinh nay tu API 26) de bat them cac man hinh
+     *  OTP khong dat inputType so - NHUNG [EditorInfo] (android.view.
+     *  inputmethod.EditorInfo) THUC RA KHONG CO thuoc tinh/ham nao ten
+     *  "autofillHints" ca (gia dinh SAI - autofill hint chi ganh tren chinh
+     *  View phia UNG DUNG, KHONG duoc Android truyen sang cho IME qua
+     *  EditorInfo), nen bien dich THAT BAI ngay o buoc bien dich Kotlin. BO
+     *  HAN nhanh nay, GIU LAI dung phan kiem tra [InputType] gian di, DA
+     *  TUNG hoat dong dung tu truoc - day la cach DUY NHAT dang tin cay ma
+     *  1 Input Method Service co the dung de biet 1 o nhap co "chi nhan so"
+     *  hay khong. */
     private fun isNumericOnlyField(info: EditorInfo?): Boolean {
         if (info == null) return false
         val inputClass = info.inputType and InputType.TYPE_MASK_CLASS
-        if (inputClass == InputType.TYPE_CLASS_NUMBER || inputClass == InputType.TYPE_CLASS_PHONE) {
-            return true
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val hints = try {
-                info.autofillHints
-            } catch (e: Exception) {
-                null
-            }
-            if (hints != null && hints.any {
-                    it.equals(android.view.View.AUTOFILL_HINT_SMS_OTP, ignoreCase = true)
-                }) {
-                return true
-            }
-        }
-        return false
+        return inputClass == InputType.TYPE_CLASS_NUMBER || inputClass == InputType.TYPE_CLASS_PHONE
     }
 
     /** True neu [info] khai bao o nhap la MAT KHAU (password) - ca lop TEXT
