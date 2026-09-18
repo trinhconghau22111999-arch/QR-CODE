@@ -60,6 +60,11 @@ class BackgroundCropActivity : ComponentActivity() {
         val bitmap = try {
             loadBitmapRespectingExif(uri)
         } catch (e: Exception) {
+            // THEM: ghi log chi tiet loi that su (vd SecurityException do
+            // mat quyen doc, hoac OutOfMemoryError...) - truoc day nuot
+            // hoan toan loi, chi bao chung chung "khong doc duoc", kho
+            // chan doan neu van con that bai sau khi da sua quyen URI.
+            android.util.Log.e("BackgroundCropActivity", "Loi doc anh: ${e.javaClass.simpleName} - ${e.message}", e)
             null
         }
         if (bitmap == null) {

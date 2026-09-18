@@ -122,8 +122,29 @@ class SettingsActivity : AppCompatActivity() {
         ActivityResultContracts.GetContent()
     ) { uri ->
         if (uri != null) {
+            // SUA LOI THUC SU (nguoi dung phan anh "khong doc duoc anh da
+            // chon"): 1 SO nha cung cap noi dung (dac biet Google Photos,
+            // "content://com.google.android.apps.photos.contentprovider/...")
+            // chi cap quyen DOC cho DUNG component da truc tiep xin (o day
+            // la SettingsActivity) - truyen Uri nay sang [BackgroundCropActivity]
+            // (1 Activity KHAC, du CUNG 1 app) qua Intent THUONG se bi MAT
+            // quyen doc, gay loi "khong doc duoc anh" khi Activity do co
+            // gang mo Uri. SUA: THEM co Intent.FLAG_GRANT_READ_URI_PERMISSION
+            // de CHUYEN TIEP dung quyen doc tam thoi nay sang Activity moi.
             val intent = Intent(this, BackgroundCropActivity::class.java).apply {
                 putExtra(BackgroundCropActivity.EXTRA_IMAGE_URI, uri.toString())
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            // THEM: xin quyen truoc CHO CHINH SettingsActivity nay - dam bao
+            // quyen KHONG bi thu hoi giua chung truoc khi BackgroundCropActivity
+            // kip mo Uri (1 vai nha cung cap chi giu quyen tam thoi RAT
+            // ngan).
+            try {
+                grantUriPermission(packageName, uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            } catch (e: Exception) {
+                // Bo qua - khong phai nha cung cap nao cung can/ho tro
+                // buoc nay, van tiep tuc voi co FLAG_GRANT_READ_URI_PERMISSION
+                // o tren la du trong da so truong hop.
             }
             startBackgroundCrop.launch(intent)
         }
