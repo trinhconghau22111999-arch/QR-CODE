@@ -141,10 +141,23 @@ class BackgroundCropActivity : ComponentActivity() {
     private fun loadBitmapRespectingExif(uri: Uri): Bitmap? {
         val resolver = contentResolver
 
+        // SUA LOI THUC SU (nguyen nhan CHINH khien "van khong doc duoc anh"
+        // - KHONG lien quan gi den quyen URI da sua truoc do): khi
+        // [inJustDecodeBounds] = true, BitmapFactory.decodeStream() THEO
+        // DUNG THIET KE se LUON tra ve null (day la 1 CHE DO CHi DO KICH
+        // THUOC, KHONG giai ma pixel that su, nen KHONG CO Bitmap nao ca de
+        // tra ve) - dong "?: return null" TRUOC DAY vo tinh COI gia tri
+        // null BINH THUONG nay la 1 LOI THAT SU, khien ham nay LUON return
+        // null NGAY LAP TUC cho MOI TAM ANH, bat ke anh co doc duoc hay
+        // khong! SUA: tach rieng viec kiem tra "mo duoc stream hay khong"
+        // (that su co the that bai, can return null) khoi ket qua cua
+        // decodeStream o CHE DO CHI DO KICH THUOC (LUON null, khong phai
+        // dau hieu loi).
         val boundsOptions = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        resolver.openInputStream(uri)?.use { input ->
+        val boundsStream = resolver.openInputStream(uri) ?: return null
+        boundsStream.use { input ->
             android.graphics.BitmapFactory.decodeStream(input, null, boundsOptions)
-        } ?: return null
+        }
 
         var sampleSize = 1
         while ((boundsOptions.outWidth / sampleSize) > MAX_DIMENSION_PX ||
@@ -154,7 +167,8 @@ class BackgroundCropActivity : ComponentActivity() {
         }
 
         val decodeOptions = android.graphics.BitmapFactory.Options().apply { inSampleSize = sampleSize }
-        val original: Bitmap = resolver.openInputStream(uri)?.use { input: InputStream ->
+        val decodeStream = resolver.openInputStream(uri) ?: return null
+        val original: Bitmap = decodeStream.use { input: InputStream ->
             android.graphics.BitmapFactory.decodeStream(input, null, decodeOptions)
         } ?: return null
 
