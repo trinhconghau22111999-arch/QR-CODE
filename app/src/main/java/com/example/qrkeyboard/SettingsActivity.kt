@@ -107,12 +107,19 @@ class SettingsActivity : AppCompatActivity() {
     ) { /* Ket qua the nao cung khong sao - chi la 1 co gang, khong bat buoc. */ }
 
     // THEM (theo yeu cau nguoi dung: "thêm 1 lớp đặt nền bằng hình ảnh...
-    // bấm vào là mở thư mục chọn ảnh...chọn ảnh để đặt nền"): dung Photo
-    // Picker CUA HE THONG (PickVisualMedia) - KHONG can xin quyen doc bo
-    // nho/thu vien gi ca (day la thiet ke moi cua Android, tu dong an
-    // toan, hoat dong tu API 21 tro len qua thu vien tuong thich).
+    // bấm vào là mở thư mục chọn ảnh...chọn ảnh để đặt nền"): SUA LOI THUC
+    // SU (nguoi dung phan anh "khong the chon anh lam nen"): TRUOC DAY dung
+    // [ActivityResultContracts.PickVisualMedia] (Photo Picker HIEN DAI cua
+    // Google) - photo picker nay PHU THUOC vao phien ban Google Play
+    // Services/WebView he thong duoc cap nhat, co the KHONG hoat dong on
+    // dinh tren mot so may/ROM tuy bien (dac biet may khong co san du dich
+    // vu Google moi nhat). SUA sang [ActivityResultContracts.GetContent]
+    // (dung ACTION_GET_CONTENT chuan, CO TU RAT LAU, hoat dong DONG NHAT
+    // tren MOI phien ban/hang may Android, khong phu thuoc dich vu Google
+    // nao ca) - danh doi 1 chut giao dien dep hon cua Photo Picker de lay
+    // do TIN CAY/TUONG THICH RONG hon.
     private val pickBackgroundImage = registerForActivityResult(
-        ActivityResultContracts.PickVisualMedia()
+        ActivityResultContracts.GetContent()
     ) { uri ->
         if (uri != null) {
             val intent = Intent(this, BackgroundCropActivity::class.java).apply {
@@ -609,9 +616,7 @@ class SettingsActivity : AppCompatActivity() {
 
         if (!hasImage) {
             backgroundImageContainer.addView(neonButton("\ud83d\uddbc\ufe0f  Ch\u1ecdn \u1EA3nh l\u00e0m n\u1EC1n", accentNow) {
-                pickBackgroundImage.launch(androidx.activity.result.PickVisualMediaRequest(
-                    ActivityResultContracts.PickVisualMedia.ImageOnly
-                ))
+                pickBackgroundImage.launch("image/*")
             })
             return
         }
@@ -641,9 +646,7 @@ class SettingsActivity : AppCompatActivity() {
             }
         }
         buttonsCol.addView(neonButton("\ud83d\uddbc\ufe0f  \u0110\u1ed5i \u1EA3nh kh\u00e1c", accentNow) {
-            pickBackgroundImage.launch(androidx.activity.result.PickVisualMediaRequest(
-                ActivityResultContracts.PickVisualMedia.ImageOnly
-            ))
+            pickBackgroundImage.launch("image/*")
         })
         buttonsCol.addView(spacer(8))
         buttonsCol.addView(neonButton("\u274c  Xo\u00e1 h\u00ecnh n\u1EC1n, d\u00f9ng l\u1EA1i m\u00e0u", accentNow) {
