@@ -829,6 +829,41 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
      *  SettingsActivity.kt + KeyboardThemePrefs.kt). */
     private var isDarkTheme: Boolean = true
 
+    // SUA LOI THAT SU (nguoi dung phan anh: "bấm xoá nền ảnh nó không xóa"):
+    // [onWindowShown] ben duoi TRUOC DAY chi so sanh glowColor/isDarkTheme/
+    // ngon ngu/RGB de quyet dinh co can XAY LAI TOAN BO ban phim
+    // ([needsFullRebuild]) hay khong - hoan toan KHONG kiem tra gi ve HINH
+    // NEN BANG ANH ca (dat/doi/xoa qua SettingsActivity). Hau qua: dat mau
+    // "ColorDrawable" nen thuong LUON duoc ap dung ngay (vi glowColor/
+    // isDarkTheme co doi), nhung XOA hinh nen (hoac chon anh nen MOI, hoac
+    // dang KHONG doi anh nen nhung co bat/tat) se KHONG lam gi ca - ban phim
+    // (dang dung View/Drawable da cache tu truoc, xem giai thich o dau file)
+    // tiep tuc hien THANG anh nen CU, nhin nhu nut "Xoa hinh nen" khong co
+    // tac dung, du du lieu THAT SU da bi xoa dung (xem KeyboardThemePrefs.
+    // clearBackgroundImage) - chi la ban phim dang HIEN chua duoc bao ve
+    // xay lai. SUA: luu lai 1 "chu ky" (signature) don gian cua trang thai
+    // anh nen o LAN xay dung GAN NHAT (co anh hay khong + thoi diem sua doi
+    // file lan cuoi - du file luon CUNG 1 ten, [File.lastModified()] van
+    // doi moi lan ghi de anh MOI, giup phan biet duoc "anh MOI" voi "anh
+    // CU" du trung ten file), so sanh lai trong [onWindowShown] y het cach
+    // lam voi glowColor/isDarkTheme.
+    // SUA: KHONG goi [backgroundImageSignatureNow] ngay o day de khoi tao -
+    // ham do can Context (filesDir) that su da san sang, nhung field nay co
+    // the duoc khoi tao TRUOC khi Service.attachBaseContext() chay xong (luc
+    // Context CHUA dung duoc, se nem NullPointerException). Bat dau bang 0L
+    // (coi nhu "chua co anh nen nao tung duoc biet"), gia tri THAT SU dung
+    // se duoc doc va gan lai an toan trong [onCreate] (Context da san sang).
+    private var lastBuiltBackgroundImageSignature: Long = 0L
+
+    private fun backgroundImageSignatureNow(): Long {
+        if (!KeyboardThemePrefs.hasBackgroundImage(this)) return 0L
+        return try {
+            KeyboardThemePrefs.backgroundImageFile(this).lastModified()
+        } catch (e: Exception) {
+            -1L
+        }
+    }
+
     // ───────────────── THEM: hieu ung "den RGB chay" tren vien phim ─────────────────
     // (theo yeu cau nguoi dung - giong bàn phim co gaming that). Mac dinh TAT,
     // doc/dong bo tu [RgbEffectPrefs] giong het co che glowColor/isDarkTheme o tren.
@@ -1267,8 +1302,24 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         return android.graphics.drawable.ColorDrawable(keyboardBackgroundColor())
     }
 
+    // SUA (theo yeu cau nguoi dung: "khi đặt nền ảnh thì nền bên trong phím
+    // phải trong suốt để nhìn thấy ảnh bên trong nền phím luôn"): TRUOC DAY
+    // ham nay LUON tra ve 1 mau DAC (Toi/#0A0A0F hoac Sang/#F1F1F4) lam nen
+    // rieng cho TUNG PHIM, BAT KE ban phim dang dung mau nen thuong hay anh
+    // nen - hau qua la khi da dat hinh nen bang anh (xem
+    // [buildKeyboardBackgroundDrawable]), lop nen dac nay VAN duoc ve DE LEN
+    // TREN anh o ben trong moi phim, che gan het anh nen, chi con thay anh o
+    // phan KHE HO giua cac phim - nguoi dung KHONG the "nhin thay anh o ben
+    // trong tung phim" nhu mong muon. SUA: KHI dang dung anh nen
+    // ([KeyboardThemePrefs.hasBackgroundImage]), tra ve Color.TRANSPARENT
+    // (trong suot HOAN TOAN) thay vi mau dac - anh nen se xuyen qua duoc
+    // NGAY CA phan ben trong tung phim, chi con lai duong VIEN phat sang
+    // (khong doi, xem [buildGlowKeyBackground]) de nguoi dung van nhan ra
+    // ranh gioi/vi tri tung phim de bam. Khi CHUA dat anh nen, giu NGUYEN
+    // hanh vi cu (mau dac Toi/Sang nhu truoc).
     private fun keyFillColor(): Int =
-        if (isDarkTheme) Color.parseColor("#0A0A0F") else Color.parseColor("#F1F1F4")
+        if (KeyboardThemePrefs.hasBackgroundImage(this)) Color.TRANSPARENT
+        else if (isDarkTheme) Color.parseColor("#0A0A0F") else Color.parseColor("#F1F1F4")
 
     private fun primaryTextColor(): Int =
         if (isDarkTheme) Color.WHITE else Color.BLACK
@@ -2050,11 +2101,35 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
 
     /** True neu [info] khai bao o nhap CHI NHAN SO (vd o nhap ma PIN/OTP -
      *  TYPE_CLASS_NUMBER, hoac o nhap so dien thoai - TYPE_CLASS_PHONE).
-     *  Dung de TU DONG chuyen sang [KeyboardMode.NUMPAD] - xem [onStartInputView]. */
+     *  Dung de TU DONG chuyen sang [KeyboardMode.NUMPAD] - xem [onStartInputView].
+     *
+     *  SUA (theo yeu cau nguoi dung: "bàn phím số phải tự động bật khi nhập
+     *  mã pin"): THEM 1 dau hieu NHAN BIET nua ngoai [InputType] - nhieu app
+     *  (dac biet man hinh OTP/xac thuc 2 lop) khai bao o nhap ma OTP qua
+     *  "autofill hint" chuan cua Android (AUTOFILL_HINT_SMS_OTP, tu API 26)
+     *  thay vi dat rieng inputType thanh so - IME truoc gio hoan toan bo qua
+     *  tin hieu nay nen KHONG tu chuyen sang NUMPAD duoc cho dung nhung man
+     *  hinh do. Kiem tra THEM autofillHints (neu co, tu API 26) truoc khi
+     *  ket luan "khong phai o nhap so". */
     private fun isNumericOnlyField(info: EditorInfo?): Boolean {
         if (info == null) return false
         val inputClass = info.inputType and InputType.TYPE_MASK_CLASS
-        return inputClass == InputType.TYPE_CLASS_NUMBER || inputClass == InputType.TYPE_CLASS_PHONE
+        if (inputClass == InputType.TYPE_CLASS_NUMBER || inputClass == InputType.TYPE_CLASS_PHONE) {
+            return true
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val hints = try {
+                info.autofillHints
+            } catch (e: Exception) {
+                null
+            }
+            if (hints != null && hints.any {
+                    it.equals(android.view.View.AUTOFILL_HINT_SMS_OTP, ignoreCase = true)
+                }) {
+                return true
+            }
+        }
+        return false
     }
 
     /** True neu [info] khai bao o nhap la MAT KHAU (password) - ca lop TEXT
@@ -4291,13 +4366,27 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         rgbChaseColorMode = RgbEffectPrefs.getColorMode(this)
         rgbChaseSpeedPercent = RgbEffectPrefs.getSpeedPercent(this)
         vibrationLevelPercent = VibrationPrefs.getLevelPercent(this)
-        // THEM (theo yeu cau nguoi dung: "boc no lai khong cho no tat"):
-        // dam bao [KeepAliveService] dang chay - GIU tien trinh cua CA ban
-        // phim o muc do quan trong cao hon trong mat He Dieu Hanh, giam
-        // kha nang bi giet khi thieu RAM (LMK) - xem gioi han THAT SU cua
-        // ky thuat nay trong KeepAliveService.kt (khong giup duoc truoc
-        // cac trinh "toi uu pin" rieng cua tung hang may).
-        KeepAliveService.ensureRunning(this)
+        // SUA (theo yeu cau nguoi dung: "tắt thông báo đang chạy nền"):
+        // TRUOC DAY o day co goi [KeepAliveService.ensureRunning] de bat 1
+        // Foreground Service phu, giu tien trinh ban phim it bi He Dieu
+        // Hanh giet khi thieu RAM - nhung Foreground Service theo QUY DINH
+        // cua Android BAT BUOC phai kem 1 thong bao (notification) LUON
+        // HIEN, khong the an di duoc (day chinh la thong bao "Đang chạy nền
+        // để gõ không bị gián đoạn" nguoi dung muon tat). KHONG con cach nao
+        // giu ca 2 (vua tat thong bao, vua giu Foreground Service) cung
+        // luc - theo dung yeu cau moi nhat cua nguoi dung (uu tien tat
+        // thong bao), BO HAN dong goi nay. (Anh huong: ban phim co the hoi
+        // de bi He Dieu Hanh giet khi may RAT thieu RAM hon truoc mot chut -
+        // xem gioi han THAT SU cua ky thuat nay da ghi trong KeepAliveService.kt,
+        // von di cung KHONG bao ve duoc truoc cac trinh "toi uu pin" rieng
+        // cua tung hang may.)
+        //     KeepAliveService.ensureRunning(this)
+
+        // SUA (theo yeu cau nguoi dung "bấm xoá nền ảnh nó không xóa" - xem
+        // giai thich day du o khai bao [lastBuiltBackgroundImageSignature]):
+        // ghi lai chu ky anh nen HIEN TAI ngay luc Service duoc tao, dung
+        // lam moc so sanh cho [onWindowShown] ve sau.
+        lastBuiltBackgroundImageSignature = backgroundImageSignatureNow()
     }
 
     /** THEM: man Cai dat (SettingsActivity) gio la noi DUY NHAT nguoi dung
@@ -4327,11 +4416,21 @@ class QrKeyboardService : InputMethodService(), LifecycleOwner {
         // khung hinh (xem getter), nen chi can cap nhat bien la hieu ung
         // doi toc do NGAY LAP TUC, KHONG can xay lai ca ban phim.
         rgbChaseSpeedPercent = RgbEffectPrefs.getSpeedPercent(this)
+        // SUA LOI THAT SU (nguoi dung phan anh "bấm xoá nền ảnh nó không
+        // xóa" - xem giai thich day du o khai bao
+        // [lastBuiltBackgroundImageSignature] o tren): THEM chu ky anh nen
+        // vao dieu kien [needsFullRebuild] - TRUOC DAY dieu kien nay hoan
+        // toan "mu" truoc moi thay doi ve hinh nen bang anh (dat/doi/xoa),
+        // nen container ban phim dang hien KHONG BAO GIO duoc xay lai chi
+        // vi ly do do, du du lieu da luu THAT SU thay doi dung.
+        val newBackgroundImageSignature = backgroundImageSignatureNow()
         val needsFullRebuild = newColor != glowColor || newDark != isDarkTheme ||
-            newLang1 != lang1 || newLang2 != lang2 || newRgbEnabled != rgbChaseEnabled
+            newLang1 != lang1 || newLang2 != lang2 || newRgbEnabled != rgbChaseEnabled ||
+            newBackgroundImageSignature != lastBuiltBackgroundImageSignature
         if (needsFullRebuild) {
             glowColor = newColor
             isDarkTheme = newDark
+            lastBuiltBackgroundImageSignature = newBackgroundImageSignature
             // THEM: neu 2 ngon ngu vua doi trong man Cai dat KHONG con chua
             // ngon ngu DANG active hien tai (vd dang o "en" nhung nguoi dung
             // vua doi bo "en" ra khoi 2 lua chon) - ve lai ngon ngu 1 cho an
